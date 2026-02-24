@@ -34,15 +34,6 @@ interface LogEntry {
   name: string;
   content: string;
   isCommand: boolean;
-  illustrationUrl?: string;
-}
-
-interface AppliedSettings {
-  fontSize: number;
-  fontFamily: string;
-  theme: 'dark' | 'light';
-  disableOtherColor: boolean;
-  cssFormat: 'inline' | 'internal';
 }
 
 interface CharSetting {
@@ -102,18 +93,7 @@ export default function App() {
   const [renamingChar, setRenamingChar] = useState<string | null>(null);
   const [newNameInput, setNewNameInput] = useState('');
   const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
-  const [editingLogId, setEditingLogId] = useState<string | null>(null);
-  const [editContentInput, setEditContentInput] = useState('');
-  const [insertingIllustrationId, setInsertingIllustrationId] = useState<string | null>(null);
-  const [illustrationUrlInput, setIllustrationUrlInput] = useState('');
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [appliedSettings, setAppliedSettings] = useState<AppliedSettings>({
-    fontSize: 14,
-    fontFamily: 'Pretendard',
-    theme: 'dark',
-    disableOtherColor: false,
-    cssFormat: 'internal'
-  });
+  const [previewHtml, setPreviewHtml] = useState('');
   const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'settings'>('files');
 
   const fonts = [
@@ -174,28 +154,7 @@ export default function App() {
     });
     setRenamingChar(null);
   };
-
-  const updateLogContent = (id: string, newContent: string) => {
-    setLogs(prev => prev.map(log => log.id === id ? { ...log, content: newContent } : log));
-    setEditingLogId(null);
-  };
-
-  const setLogIllustration = (id: string, url: string) => {
-    setLogs(prev => prev.map(log => log.id === id ? { ...log, illustrationUrl: url } : log));
-    setInsertingIllustrationId(null);
-    setIllustrationUrlInput('');
-  };
   
-  const applySettings = () => {
-    setAppliedSettings({
-      fontSize,
-      fontFamily,
-      theme,
-      disableOtherColor,
-      cssFormat
-    });
-  };
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const styleInputRef = useRef<HTMLInputElement>(null);
 
@@ -329,18 +288,6 @@ export default function App() {
       .log-container { width: 100%; max-width: 800px; margin: 0 auto; }
       .log-item { position: relative; margin-bottom: 2px; }
       
-      .illustration-container {
-        margin: 20px auto;
-        max-width: 90%;
-        text-align: center;
-      }
-      .illustration-img {
-        max-width: 100%;
-        height: auto;
-        border-radius: 8px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-      }
-      
       /* Main Format */
       .main-row { 
         display: flex; 
@@ -424,13 +371,6 @@ export default function App() {
           `;
         }
         html += `</div>`;
-        if (log.illustrationUrl) {
-          html += `
-            <div style="margin: 20px auto; max-width: 90%; text-align: center;">
-              <img src="${log.illustrationUrl}" style="max-width: 100%; height: auto; border-radius: 8px;" />
-            </div>
-          `;
-        }
       } else {
         html += `<div class="log-item">`;
 
@@ -453,13 +393,6 @@ export default function App() {
           `;
         }
         html += `</div>`;
-        if (log.illustrationUrl) {
-          html += `
-            <div class="illustration-container">
-              <img src="${log.illustrationUrl}" class="illustration-img" />
-            </div>
-          `;
-        }
       }
     });
 
@@ -482,8 +415,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    // No longer auto-applying settings to previewHtml
-  }, []);
+    if (logs.length > 0) {
+      setPreviewHtml(generateFinalHtml());
+    }
+  }, [logs, charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor]);
 
   const downloadHtml = () => {
     const html = generateFinalHtml();
@@ -495,197 +430,27 @@ export default function App() {
     a.click();
   };
 
-const LogItem = React.memo(({ 
-  log, 
-  tabSettings, 
-  charSettings, 
-  appliedSettings,
-  isEditMode,
-  editingLogId,
-  editContentInput,
-  insertingIllustrationId,
-  illustrationUrlInput,
-  setEditingLogId,
-  setEditContentInput,
-  setInsertingIllustrationId,
-  setIllustrationUrlInput,
-  updateLogContent,
-  setLogIllustration
-}: { 
-  log: LogEntry; 
-  tabSettings: Record<string, TabSetting>;
-  charSettings: Record<string, CharSetting>;
-  appliedSettings: AppliedSettings;
-  isEditMode: boolean;
-  editingLogId: string | null;
-  editContentInput: string;
-  insertingIllustrationId: string | null;
-  illustrationUrlInput: string;
-  setEditingLogId: (id: string | null) => void;
-  setEditContentInput: (val: string) => void;
-  setInsertingIllustrationId: (id: string | null) => void;
-  setIllustrationUrlInput: (val: string) => void;
-  updateLogContent: (id: string, content: string) => void;
-  setLogIllustration: (id: string, url: string) => void;
-}) => {
-  const tabSet = tabSettings[log.tab];
-  const format = tabSet?.format || 'main';
-  const char = charSettings[log.name];
-  const color = char?.color || log.color;
-  const isDark = appliedSettings.theme === 'dark';
-  const textColor = isDark ? '#EEEEEE' : '#1A1A1A';
-  const otherTextColor = isDark ? '#AAAAAA' : '#666666';
-  const infoBg = isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)';
-  const borderColor = isDark ? '#444' : '#DDD';
-  const avatarPlaceholder = isDark ? '#1e1e1e' : '#f0f0f0';
-  
-  const scale = appliedSettings.fontSize / 14;
-  const avatarSize = 40 * scale;
-  const gapSize = 12 * scale;
-  const paddingSize = 12 * scale;
-  const nameSize = 13 * scale;
-
-  const otherNameColor = appliedSettings.disableOtherColor ? otherTextColor : color;
-
   return (
-    <div className="group/log relative">
-      {/* Interaction Buttons */}
-      {isEditMode && (
-        <div className="absolute -right-12 top-2 flex flex-col gap-2 opacity-0 group-hover/log:opacity-100 transition-all z-30">
-          <button 
-            onClick={() => { setEditingLogId(log.id); setEditContentInput(log.content); }}
-            className="p-2 bg-white shadow-lg rounded-full text-stone-400 hover:text-[#e6005c] hover:scale-110 transition-all"
-            title="내용 수정"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-          <button 
-            onClick={() => setInsertingIllustrationId(log.id)}
-            className="p-2 bg-white shadow-lg rounded-full text-stone-400 hover:text-blue-500 hover:scale-110 transition-all"
-            title="삽화 삽입"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* Edit UI */}
-      <AnimatePresence>
-        {editingLogId === log.id && (
-          <motion.div 
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="absolute inset-x-0 top-0 bg-white shadow-2xl border border-pink-100 rounded-xl p-4 z-40 mb-4"
-          >
-            <textarea 
-              value={editContentInput}
-              onChange={(e) => setEditContentInput(e.target.value)}
-              className="w-full h-24 p-3 text-sm border border-stone-200 rounded-lg outline-none focus:border-[#e6005c] resize-none mb-3"
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setEditingLogId(null)} className="px-3 py-1.5 text-[11px] font-bold text-stone-400 hover:text-stone-600">취소</button>
-              <button onClick={() => updateLogContent(log.id, editContentInput)} className="px-4 py-1.5 bg-[#e6005c] text-white text-[11px] font-bold rounded-lg">저장</button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Illustration UI */}
-      <AnimatePresence>
-        {insertingIllustrationId === log.id && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-80 bg-white shadow-2xl border border-blue-100 rounded-xl p-4 z-40"
-          >
-            <p className="text-[10px] font-bold text-stone-400 mb-2 uppercase">삽화 이미지 URL</p>
-            <input 
-              type="text" 
-              placeholder="https://..."
-              value={illustrationUrlInput}
-              onChange={(e) => setIllustrationUrlInput(e.target.value)}
-              className="w-full p-2 text-xs border border-stone-200 rounded-lg outline-none focus:border-blue-500 mb-3"
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setInsertingIllustrationId(null)} className="px-3 py-1.5 text-[11px] font-bold text-stone-400 hover:text-stone-600">취소</button>
-              <button onClick={() => setLogIllustration(log.id, illustrationUrlInput)} className="px-4 py-1.5 bg-blue-500 text-white text-[11px] font-bold rounded-lg">삽입하기</button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Actual Log Content */}
-      <div className="log-item">
-        {log.isCommand ? (
-          <div className="command-box" style={{ background: 'rgba(0,0,0,0.1)', border: `1px solid ${borderColor}`, padding: `${paddingSize}px ${paddingSize * 1.3}px`, borderRadius: '8px', margin: `8px ${paddingSize * 1.3}px` }}>
-            <span className="command-text" style={{ color: color, fontFamily: 'monospace' }}>[ {log.name} ]</span> <span className="command-text" style={{ color: otherTextColor, fontFamily: 'monospace' }}>{log.content}</span>
-          </div>
-        ) : format === 'other' ? (
-          <div className="other-row" style={{ padding: `${paddingSize / 3}px ${paddingSize * 1.3}px`, display: 'flex', gap: `${gapSize / 1.5}px`, alignItems: 'baseline' }}>
-            <span className="other-name" style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px`, flexShrink: 0 }}>{log.name}</span> <span className="other-content" style={{ color: otherTextColor }}>{log.content}</span>
-          </div>
-        ) : format === 'info' ? (
-          <div className="info-row" style={{ padding: `${paddingSize * 1.3}px ${paddingSize * 1.6}px`, background: infoBg, borderLeft: `4px solid ${borderColor}`, margin: `8px ${paddingSize * 1.3}px`, borderRadius: '4px' }}>
-            <span className="main-name" style={{ fontWeight: 'bold', color: color, display: 'block', marginBottom: '4px' }}>{log.name}</span> <div className="main-content" style={{ color: textColor }}>{log.content}</div>
-          </div>
-        ) : (
-          <div className="main-row" style={{ display: 'flex', gap: `${gapSize}px`, padding: `${paddingSize}px ${paddingSize * 1.3}px`, alignItems: 'flex-start' }}>
-            {char?.imageUrl ? (
-              <img src={char.imageUrl} className="main-avatar" style={{ width: `${avatarSize}px`, height: `${avatarSize}px`, flexShrink: 0, backgroundColor: avatarPlaceholder, borderRadius: '4px', objectFit: 'contain' }} />
-            ) : (
-              <div className="main-avatar" style={{ width: `${avatarSize}px`, height: `${avatarSize}px`, flexShrink: 0, backgroundColor: avatarPlaceholder, borderRadius: '4px' }} />
-            )}
-            <div className="main-body" style={{ flexGrow: 1, lineHeight: 1.5 }}>
-              <span className="main-name" style={{ fontWeight: 'bold', color: color, fontSize: `${nameSize}px`, marginBottom: '2px', display: 'block' }}>{log.name}</span>
-              <div className="main-content" style={{ color: textColor }}>{log.content}</div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Illustration Display */}
-      {log.illustrationUrl && (
-        <div className="illustration-container group/ill relative" style={{ margin: '20px auto', maxWidth: '90%', textAlign: 'center' }}>
-          <img src={log.illustrationUrl} className="illustration-img" style={{ maxWidth: '100%', height: 'auto', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }} />
-          {isEditMode && (
-            <button 
-              onClick={() => setLogIllustration(log.id, '')}
-              className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-full opacity-0 group-hover/ill:opacity-100 transition-opacity"
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-});
-
-  return (
-    <div className="flex h-screen bg-stone-50 font-sans text-stone-900 overflow-hidden">
+    <div className="flex h-screen bg-[#121212] font-sans text-stone-200 overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-[400px] bg-white border-r border-stone-200 flex flex-col shadow-xl z-20">
+      <aside className="w-[400px] bg-[#1a1a1a] border-r border-white/5 flex flex-col shadow-2xl z-20">
         {/* Sidebar Header */}
-        <div className="p-6 border-b border-stone-100 bg-white shrink-0">
+        <div className="p-6 border-b border-white/5 bg-[#1a1a1a] shrink-0">
           <div className="flex items-center gap-3 mb-1">
-            <div className="p-2 bg-stone-900 rounded-xl">
-              <img src="https://ccfolia.com/images/logo-white.svg" alt="CCFOLIA" className="h-5 w-auto" />
+            <div className="p-2 bg-stone-900 rounded-xl border border-white/10">
+              <img src="https://ccfolia.com/images/logo-white.svg" alt="CCFOLIA" className="h-4 w-auto" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-stone-800 tracking-tight">
+              <h1 className="text-lg font-bold text-white tracking-tight">
                 코코포리아 로그 백업 툴
               </h1>
-              <p className="text-[10px] font-medium text-stone-400 uppercase tracking-widest">CCFOLIA Log Formatter</p>
+              <p className="text-[10px] font-medium text-stone-500 uppercase tracking-widest">CCFOLIA Log Formatter</p>
             </div>
           </div>
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-stone-100 shrink-0">
+        <div className="flex border-b border-white/5 bg-[#1a1a1a] shrink-0">
           {[
             { id: 'files', icon: Upload, label: '파일' },
             { id: 'tabs', icon: Settings, label: '탭' },
@@ -696,7 +461,7 @@ const LogItem = React.memo(({
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={`flex-1 py-3 flex flex-col items-center gap-1 transition-all relative ${
-                activeTab === tab.id ? 'text-[#e6005c]' : 'text-stone-400 hover:text-stone-600'
+                activeTab === tab.id ? 'text-[#e6005c]' : 'text-stone-500 hover:text-stone-300'
               }`}
             >
               <tab.icon className="w-4 h-4" />
@@ -728,13 +493,13 @@ const LogItem = React.memo(({
                   </h2>
                   <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full flex items-center gap-3 p-3 border-2 border-dashed border-stone-200 rounded-xl hover:border-[#e6005c] hover:bg-pink-50 transition-all group"
+                    className="w-full flex items-center gap-3 p-3 border-2 border-dashed border-white/5 rounded-xl hover:border-[#e6005c] hover:bg-pink-500/5 transition-all group"
                   >
-                    <div className="p-1.5 bg-stone-50 rounded-lg group-hover:bg-pink-100 transition-colors">
-                      <Upload className="w-3.5 h-3.5 text-stone-400 group-hover:text-[#e6005c]" />
+                    <div className="p-1.5 bg-[#242424] rounded-lg group-hover:bg-[#e6005c]/20 transition-colors">
+                      <Upload className="w-3.5 h-3.5 text-stone-500 group-hover:text-[#e6005c]" />
                     </div>
                     <div className="text-left">
-                      <p className="text-[11px] font-bold text-stone-700">HTML 로그 파일 선택</p>
+                      <p className="text-[11px] font-bold text-stone-300">HTML 로그 파일 선택</p>
                     </div>
                   </button>
                   <input type="file" ref={fileInputRef} onChange={handleLogUpload} accept=".html" className="hidden" />
@@ -746,12 +511,12 @@ const LogItem = React.memo(({
                   </h2>
                   <button 
                     onClick={() => styleInputRef.current?.click()}
-                    className="w-full flex items-center gap-3 p-4 border border-stone-200 rounded-xl hover:bg-stone-50 transition-all"
+                    className="w-full flex items-center gap-3 p-4 border border-white/5 bg-[#242424] rounded-xl hover:bg-[#2a2a2a] transition-all"
                   >
-                    <FileJson className="w-5 h-5 text-blue-500" />
+                    <FileJson className="w-5 h-5 text-blue-400" />
                     <div className="text-left">
-                      <p className="text-xs font-bold text-stone-700">JSON 설정 파일</p>
-                      <p className="text-[10px] text-stone-400">이전에 저장한 스타일 불러오기</p>
+                      <p className="text-xs font-bold text-stone-300">JSON 설정 파일</p>
+                      <p className="text-[10px] text-stone-500">이전에 저장한 스타일 불러오기</p>
                     </div>
                   </button>
                   <input type="file" ref={styleInputRef} onChange={handleStyleUpload} accept=".json" className="hidden" />
@@ -769,13 +534,13 @@ const LogItem = React.memo(({
               >
                 {Object.keys(tabSettings).length > 0 ? (
                   (Object.values(tabSettings) as TabSetting[]).map(tab => (
-                    <div key={tab.name} className="p-2 bg-white rounded-xl border border-stone-100 shadow-sm flex items-center gap-2">
+                    <div key={tab.name} className="p-2 bg-[#242424] rounded-xl border border-white/5 shadow-sm flex items-center gap-2">
                       <Toggle 
                         enabled={tab.visible} 
                         onChange={(val) => setTabSettings(prev => ({ ...prev, [tab.name]: { ...tab, visible: val } }))} 
                       />
-                      <span className="text-[11px] font-bold truncate flex-1 text-stone-700">{tab.name}</span>
-                      <div className="flex bg-stone-50 p-0.5 rounded-lg border border-stone-100 shrink-0">
+                      <span className="text-[11px] font-bold truncate flex-1 text-stone-300">{tab.name}</span>
+                      <div className="flex bg-[#1a1a1a] p-0.5 rounded-lg border border-white/5 shrink-0">
                         {(['main', 'other', 'info'] as TabFormat[]).map(f => (
                           <button
                             key={f}
@@ -783,7 +548,7 @@ const LogItem = React.memo(({
                             className={`px-2 py-1 text-[9px] font-bold rounded-md transition-all ${
                               tab.format === f 
                                 ? 'bg-[#e6005c] text-white shadow-sm' 
-                                : 'text-stone-400 hover:text-stone-600'
+                                : 'text-stone-500 hover:text-stone-300'
                             }`}
                           >
                             {f === 'main' ? '메인' : f === 'other' ? '잡담' : '정보'}
@@ -793,7 +558,7 @@ const LogItem = React.memo(({
                     </div>
                   ))
                 ) : (
-                  <div className="text-center py-20 text-stone-300">
+                  <div className="text-center py-20 text-stone-700">
                     <Settings className="w-12 h-12 mx-auto mb-3 opacity-20" />
                     <p className="text-sm font-medium">로그를 먼저 업로드하세요</p>
                   </div>
@@ -814,7 +579,7 @@ const LogItem = React.memo(({
                     const char = charSettings[charName];
                     if (!char) return null;
                     return (
-                      <div key={char.name} className="p-2 bg-white rounded-2xl border border-stone-100 shadow-sm flex items-center gap-2 relative">
+                      <div key={char.name} className="p-2 bg-[#242424] rounded-2xl border border-white/5 shadow-sm flex items-center gap-2 relative">
                         <div className="shrink-0">
                           <Toggle 
                             enabled={char.visible} 
@@ -828,7 +593,7 @@ const LogItem = React.memo(({
                               type="text" 
                               value={newNameInput}
                               onChange={(e) => setNewNameInput(e.target.value)}
-                              className="w-full text-[10px] font-bold px-1 py-0.5 border border-[#e6005c] rounded outline-none"
+                              className="w-full text-[10px] font-bold px-1 py-0.5 bg-[#1a1a1a] text-white border border-[#e6005c] rounded outline-none"
                               autoFocus
                             />
                             <button 
@@ -840,10 +605,10 @@ const LogItem = React.memo(({
                           </div>
                         ) : (
                           <div className="flex items-center gap-1 w-20 shrink-0 overflow-hidden">
-                            <span className="text-[10px] font-bold truncate flex-1 text-stone-600">{char.name}</span>
+                            <span className="text-[10px] font-bold truncate flex-1 text-stone-300">{char.name}</span>
                             <button 
                               onClick={() => { setRenamingChar(char.name); setNewNameInput(char.name); }}
-                              className="p-0.5 text-stone-300 hover:text-[#e6005c] transition-colors"
+                              className="p-0.5 text-stone-600 hover:text-[#e6005c] transition-colors"
                             >
                               <Pencil className="w-2.5 h-2.5" />
                             </button>
@@ -853,49 +618,49 @@ const LogItem = React.memo(({
                         <div className="relative shrink-0">
                           <button
                             onClick={() => setActiveColorPicker(activeColorPicker === char.name ? null : char.name)}
-                            className="w-5 h-5 rounded-md border border-stone-200 shadow-sm transition-transform active:scale-90"
+                            className="w-5 h-5 rounded-md border border-white/10 shadow-sm transition-transform active:scale-90"
                             style={{ backgroundColor: char.color }}
                           />
                           {activeColorPicker === char.name && (
-                            <div className="absolute top-full left-0 mt-2 p-4 bg-white rounded-2xl shadow-2xl border border-stone-100 z-50 w-64 space-y-4">
+                            <div className="absolute top-full left-0 mt-2 p-4 bg-[#1a1a1a] rounded-2xl shadow-2xl border border-white/10 z-50 w-64 space-y-4">
                               <HexColorPicker 
                                 color={char.color} 
                                 onChange={(newColor) => setCharSettings(prev => ({ ...prev, [char.name]: { ...char, color: newColor } }))} 
                               />
                               
-                              <div className="flex items-center gap-3 bg-stone-50 p-2 rounded-xl border border-stone-100">
-                                <div className="w-8 h-8 rounded-lg shadow-inner border border-stone-200" style={{ backgroundColor: char.color }} />
+                              <div className="flex items-center gap-3 bg-stone-900 p-2 rounded-xl border border-white/5">
+                                <div className="w-8 h-8 rounded-lg shadow-inner border border-white/10" style={{ backgroundColor: char.color }} />
                                 <div className="flex-1">
                                   <input 
                                     type="text"
                                     value={char.color.toUpperCase()}
                                     onChange={(e) => setCharSettings(prev => ({ ...prev, [char.name]: { ...char, color: e.target.value } }))}
-                                    className="w-full bg-transparent text-xs font-mono font-bold text-stone-700 outline-none"
+                                    className="w-full bg-transparent text-xs font-mono font-bold text-white outline-none"
                                   />
-                                  <p className="text-[8px] font-bold text-stone-400 uppercase tracking-tighter">HEX</p>
+                                  <p className="text-[8px] font-bold text-stone-500 uppercase tracking-tighter">HEX</p>
                                 </div>
                               </div>
 
                               <div className="grid grid-cols-2 gap-x-4 gap-y-1 px-1">
                                 <div className="flex justify-between items-center">
-                                  <span className="text-[8px] font-bold text-stone-400">RGB</span>
-                                  <span className="text-[9px] font-mono text-stone-600">{hexToRgb(char.color)}</span>
+                                  <span className="text-[8px] font-bold text-stone-500">RGB</span>
+                                  <span className="text-[9px] font-mono text-stone-400">{hexToRgb(char.color)}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                  <span className="text-[8px] font-bold text-stone-400">HSL</span>
-                                  <span className="text-[9px] font-mono text-stone-600">{hexToHsl(char.color)}</span>
+                                  <span className="text-[8px] font-bold text-stone-500">HSL</span>
+                                  <span className="text-[9px] font-mono text-stone-400">{hexToHsl(char.color)}</span>
                                 </div>
                               </div>
 
                               {extractedColors.length > 0 && (
-                                <div className="pt-3 border-t border-stone-100">
-                                  <p className="text-[9px] font-bold text-stone-400 mb-2 uppercase tracking-wide">로그에서 추출된 색상</p>
+                                <div className="pt-3 border-t border-white/5">
+                                  <p className="text-[9px] font-bold text-stone-500 mb-2 uppercase tracking-wide">로그에서 추출된 색상</p>
                                   <div className="grid grid-cols-8 gap-1.5 max-h-24 overflow-y-auto pr-1 custom-scrollbar">
                                     {extractedColors.map(c => (
                                       <button
                                         key={c}
                                         onClick={() => setCharSettings(prev => ({ ...prev, [char.name]: { ...char, color: c } }))}
-                                        className="w-5 h-5 rounded-sm border border-stone-200 hover:scale-110 transition-transform"
+                                        className="w-5 h-5 rounded-sm border border-white/10 hover:scale-110 transition-transform"
                                         style={{ backgroundColor: c }}
                                         title={c}
                                       />
@@ -906,7 +671,7 @@ const LogItem = React.memo(({
 
                               <button 
                                 onClick={() => setActiveColorPicker(null)}
-                                className="w-full py-2 bg-stone-900 text-white text-[10px] font-bold rounded-xl hover:bg-stone-800 transition-colors"
+                                className="w-full py-2 bg-[#e6005c] text-white text-[10px] font-bold rounded-xl hover:bg-[#ff0066] transition-colors"
                               >
                                 닫기
                               </button>
@@ -919,14 +684,14 @@ const LogItem = React.memo(({
                           placeholder="이미지 URL"
                           value={char.imageUrl}
                           onChange={(e) => setCharSettings(prev => ({ ...prev, [char.name]: { ...char, imageUrl: e.target.value } }))}
-                          className="flex-1 text-[10px] px-2 py-1.5 bg-stone-50 border border-stone-100 rounded-lg outline-none focus:border-[#e6005c] transition-colors"
+                          className="flex-1 text-[10px] px-2 py-1.5 bg-[#1a1a1a] text-white border border-white/5 rounded-lg outline-none focus:border-[#e6005c] transition-colors"
                         />
                         
-                        <div className="w-7 h-7 rounded-lg bg-stone-50 border border-stone-100 overflow-hidden shrink-0 flex items-center justify-center">
+                        <div className="w-7 h-7 rounded-lg bg-[#1a1a1a] border border-white/5 overflow-hidden shrink-0 flex items-center justify-center">
                           {char.imageUrl ? (
-                            <img src={char.imageUrl} alt="" className="max-w-full max-h-full object-contain" />
+                            <img src={char.imageUrl} alt="" className="w-full h-full object-contain" />
                           ) : (
-                            <ImageIcon className="w-3.5 h-3.5 text-stone-200" />
+                            <ImageIcon className="w-3.5 h-3.5 text-stone-700" />
                           )}
                         </div>
                       </div>
@@ -958,8 +723,8 @@ const LogItem = React.memo(({
                       onClick={() => setTheme('dark')}
                       className={`py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                         theme === 'dark' 
-                          ? 'bg-stone-900 border-stone-900 text-white' 
-                          : 'bg-white border-stone-100 text-stone-500 hover:border-stone-200'
+                          ? 'bg-stone-900 border-[#e6005c] text-white' 
+                          : 'bg-[#242424] border-white/5 text-stone-500 hover:border-white/10'
                       }`}
                     >
                       다크 모드
@@ -968,8 +733,8 @@ const LogItem = React.memo(({
                       onClick={() => setTheme('light')}
                       className={`py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                         theme === 'light' 
-                          ? 'bg-white border-stone-900 text-stone-900' 
-                          : 'bg-white border-stone-100 text-stone-500 hover:border-stone-200'
+                          ? 'bg-white border-[#e6005c] text-stone-900' 
+                          : 'bg-white border-stone-100 text-stone-400 hover:border-stone-200'
                       }`}
                     >
                       화이트 모드
@@ -986,14 +751,14 @@ const LogItem = React.memo(({
                   <select 
                     value={fontFamily}
                     onChange={(e) => setFontFamily(e.target.value)}
-                    className="w-full p-3 bg-white border border-stone-200 rounded-xl text-xs font-bold outline-none focus:border-[#e6005c] transition-all"
+                    className="w-full p-3 bg-[#242424] text-white border border-white/5 rounded-xl text-xs font-bold outline-none focus:border-[#e6005c] transition-all"
                   >
                     {fonts.map(f => (
-                      <option key={f.name} value={f.name}>{f.name}</option>
+                      <option key={f.name} value={f.name} className="bg-[#1a1a1a]">{f.name}</option>
                     ))}
                   </select>
                   {fonts.find(f => f.name === fontFamily)?.help && (
-                    <p className="text-[10px] text-stone-400 text-center">
+                    <p className="text-[10px] text-stone-500 text-center">
                       {fonts.find(f => f.name === fontFamily)?.help}
                     </p>
                   )}
@@ -1011,7 +776,7 @@ const LogItem = React.memo(({
                         autoFocus
                         onBlur={() => setIsEditingFontSize(false)}
                         onChange={(e) => setFontSize(parseFloat(e.target.value) || 12)}
-                        className="w-12 text-right text-xs font-bold text-[#e6005c] bg-pink-50 border border-pink-200 rounded px-1 outline-none"
+                        className="w-12 text-right text-xs font-bold text-[#e6005c] bg-[#e6005c]/10 border border-[#e6005c]/20 rounded px-1 outline-none"
                       />
                     ) : (
                       <span 
@@ -1029,17 +794,17 @@ const LogItem = React.memo(({
                     step="1"
                     value={fontSize} 
                     onChange={(e) => setFontSize(parseFloat(e.target.value))}
-                    className="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-[#e6005c]"
+                    className="w-full h-2 bg-stone-800 rounded-lg appearance-none cursor-pointer accent-[#e6005c]"
                   />
-                  <p className="text-[10px] text-stone-400 text-center">폰트 크기에 맞춰 아바타 및 간격이 자동 조절됩니다.</p>
+                  <p className="text-[10px] text-stone-500 text-center">폰트 크기에 맞춰 아바타 및 간격이 자동 조절됩니다.</p>
                 </div>
 
                 <div className="space-y-4">
                   <h2 className="text-xs font-bold text-stone-500 flex items-center gap-2">
                     <Palette className="w-3.5 h-3.5" /> 잡담 설정
                   </h2>
-                  <div className="flex items-center justify-between p-3 bg-white border border-stone-100 rounded-xl shadow-sm">
-                    <span className="text-[11px] font-bold text-stone-700">캐릭터 색상을 회색으로 통일</span>
+                  <div className="flex items-center justify-between p-3 bg-[#242424] border border-white/5 rounded-xl shadow-sm">
+                    <span className="text-[11px] font-bold text-stone-300">캐릭터 색상을 회색으로 통일</span>
                     <Toggle enabled={disableOtherColor} onChange={setDisableOtherColor} />
                   </div>
                 </div>
@@ -1054,7 +819,7 @@ const LogItem = React.memo(({
                       className={`py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                         cssFormat === 'internal' 
                           ? 'bg-[#e6005c] border-[#e6005c] text-white' 
-                          : 'bg-white border-stone-100 text-stone-500 hover:border-stone-200'
+                          : 'bg-[#242424] border-white/5 text-stone-500 hover:border-white/10'
                       }`}
                     >
                       내부 스타일
@@ -1064,7 +829,7 @@ const LogItem = React.memo(({
                       className={`py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                         cssFormat === 'inline' 
                           ? 'bg-[#e6005c] border-[#e6005c] text-white' 
-                          : 'bg-white border-stone-100 text-stone-500 hover:border-stone-200'
+                          : 'bg-[#242424] border-white/5 text-stone-500 hover:border-white/10'
                       }`}
                     >
                       인라인 스타일
@@ -1077,10 +842,10 @@ const LogItem = React.memo(({
         </div>
 
         {/* Apply Button (Sticky) */}
-        <div className="p-6 border-t border-stone-100 bg-white shrink-0">
+        <div className="p-6 border-t border-white/5 bg-[#1a1a1a] shrink-0">
           <button 
-            onClick={applySettings}
-            className="w-full py-4 bg-stone-900 text-white rounded-2xl text-sm font-bold hover:bg-stone-800 transition-all shadow-xl shadow-stone-200 flex items-center justify-center gap-2 active:scale-95"
+            onClick={() => setPreviewHtml(generateFinalHtml())}
+            className="w-full py-4 bg-[#e6005c] text-white rounded-2xl text-sm font-bold hover:bg-[#ff0066] transition-all shadow-xl shadow-black/20 flex items-center justify-center gap-2 active:scale-95"
           >
             <CheckSquare className="w-4 h-4" /> 설정 적용하기
           </button>
@@ -1091,13 +856,9 @@ const LogItem = React.memo(({
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {/* Header */}
         <header className="h-20 bg-white/80 backdrop-blur-md border-b border-stone-200 flex items-center justify-between px-10 shrink-0 z-10">
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 px-3 py-1.5 bg-stone-100 rounded-full text-xs font-bold text-stone-500">
               <Eye className="w-3.5 h-3.5" /> 미리보기
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wider">편집 모드</span>
-              <Toggle enabled={isEditMode} onChange={setIsEditMode} />
             </div>
             {logs.length > 0 && (
               <div className="text-xs font-medium text-stone-400">
@@ -1114,7 +875,7 @@ const LogItem = React.memo(({
             </button>
             <button 
               onClick={downloadHtml}
-              className="flex items-center gap-2 px-6 py-2.5 bg-[#e6005c] text-white rounded-2xl text-sm font-bold hover:bg-[#cc0052] transition-all shadow-lg shadow-pink-100 active:scale-95"
+              className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 text-white rounded-2xl text-sm font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 active:scale-95"
             >
               <Download className="w-4 h-4" /> HTML 다운로드
             </button>
@@ -1122,39 +883,16 @@ const LogItem = React.memo(({
         </header>
 
         {/* Preview Area */}
-        <div className="flex-1 overflow-y-auto bg-white flex justify-center custom-scrollbar">
-          <div 
-            className="w-full max-w-4xl min-h-full flex flex-col p-10 transition-colors duration-300 relative"
-            style={{ 
-              backgroundColor: appliedSettings.theme === 'dark' ? '#242424' : '#FFFFFF',
-              fontFamily: fonts.find(f => f.name === appliedSettings.fontFamily)?.value || 'sans-serif'
-            }}
-          >
+        <div className="flex-1 overflow-y-auto bg-white flex justify-center">
+          <div className="w-full max-w-4xl min-h-full flex flex-col">
             {logs.length > 0 ? (
-              <div className="log-container flex-1">
-                {logs.filter(log => tabSettings[log.tab]?.visible && charSettings[log.name]?.visible).map((log) => (
-                  <LogItem 
-                    key={log.id} 
-                    log={log} 
-                    tabSettings={tabSettings}
-                    charSettings={charSettings}
-                    appliedSettings={appliedSettings}
-                    isEditMode={isEditMode}
-                    editingLogId={editingLogId}
-                    editContentInput={editContentInput}
-                    insertingIllustrationId={insertingIllustrationId}
-                    illustrationUrlInput={illustrationUrlInput}
-                    setEditingLogId={setEditingLogId}
-                    setEditContentInput={setEditContentInput}
-                    setInsertingIllustrationId={setInsertingIllustrationId}
-                    setIllustrationUrlInput={setIllustrationUrlInput}
-                    updateLogContent={updateLogContent}
-                    setLogIllustration={setLogIllustration}
-                  />
-                ))}
-              </div>
+              <iframe 
+                srcDoc={previewHtml}
+                title="Preview"
+                className="w-full flex-1 border-none"
+              />
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-stone-400 space-y-6 py-40 bg-stone-50 rounded-3xl">
+              <div className="flex-1 flex flex-col items-center justify-center text-stone-400 space-y-6 py-40 bg-stone-50">
                 <div className="relative">
                   <div className="w-32 h-32 bg-stone-50 rounded-full flex items-center justify-center animate-pulse">
                     <Upload className="w-12 h-12 text-stone-200" />
@@ -1162,18 +900,31 @@ const LogItem = React.memo(({
                   <motion.div 
                     animate={{ y: [0, -10, 0] }}
                     transition={{ repeat: Infinity, duration: 2 }}
-                    className="absolute -top-2 -right-2 p-3 bg-[#e6005c] text-white rounded-2xl shadow-lg"
+                    className="absolute -top-2 -right-2 p-3 bg-emerald-500 text-white rounded-2xl shadow-lg"
                   >
                     <Plus className="w-5 h-5" />
                   </motion.div>
                 </div>
                 <div className="text-center space-y-2">
-                  <p className="text-lg font-bold text-stone-600">업로드된 로그가 없습니다</p>
-                  <p className="text-sm text-stone-400">왼쪽 메뉴에서 HTML 파일을 업로드하여 시작하세요</p>
+                  <p className="text-2xl font-bold text-stone-800 tracking-tight">로그 파일을 기다리고 있어요</p>
+                  <p className="text-sm font-medium text-stone-400">CCFOLIA에서 추출한 HTML 파일을 업로드하여 시작하세요</p>
                 </div>
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-8 py-3 bg-stone-900 text-white rounded-2xl text-sm font-bold hover:bg-stone-800 transition-all shadow-xl shadow-stone-200 active:scale-95"
+                >
+                  지금 업로드하기
+                </button>
               </div>
             )}
           </div>
+        </div>
+
+        {/* Floating Help Button */}
+        <div className="absolute bottom-8 right-8">
+          <button className="w-12 h-12 bg-white border border-stone-200 rounded-full shadow-lg flex items-center justify-center text-stone-400 hover:text-emerald-600 hover:border-emerald-200 transition-all group">
+            <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-500" />
+          </button>
         </div>
       </main>
     </div>
