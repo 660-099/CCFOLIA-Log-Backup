@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Upload, 
   Download, 
@@ -27,7 +28,8 @@ import {
   ChevronRight,
   ChevronLeft,
   FileText,
-  ChevronsUpDown
+  ChevronsUpDown,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorPicker, RgbColorPicker } from 'react-colorful';
@@ -98,7 +100,8 @@ const linkify = (text: string) => {
 };
 
 export default function App() {
-  const [pageTitle, setPageTitle] = useState('코코포리아 로그 백업');
+  const [pageTitle, setPageTitle] = useState('');
+  const [originalFileName, setOriginalFileName] = useState('');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [charSettings, setCharSettings] = useState<Record<string, CharSetting>>({});
   const [charOrder, setCharOrder] = useState<string[]>([]);
@@ -107,14 +110,17 @@ export default function App() {
   const [cssFormat, setCssFormat] = useState<'inline' | 'internal'>('internal');
   const [fontSize, setFontSize] = useState<number>(14);
   const [fontFamily, setFontFamily] = useState<string>('Noto Sans KR');
+  const [customFontUrl, setCustomFontUrl] = useState<string>('');
+  const [customFontName, setCustomFontName] = useState<string>('');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [disableOtherColor, setDisableOtherColor] = useState(false);
   const [isEditingFontSize, setIsEditingFontSize] = useState(false);
   const [renamingChar, setRenamingChar] = useState<string | null>(null);
   const [newNameInput, setNewNameInput] = useState('');
   const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
-  const [previewHtml, setPreviewHtml] = useState('');
+  const [colorPickerRect, setColorPickerRect] = useState<DOMRect | null>(null);
   const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'settings'>('files');
+  const [mobileTab, setMobileTab] = useState<'settings' | 'preview'>('settings');
   
   // History for Undo/Redo
   const [history, setHistory] = useState<any[]>([]);
@@ -127,12 +133,25 @@ export default function App() {
     { name: '나눔고딕', value: "'Nanum Gothic', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');" },
     { name: 'Noto Serif KR', value: "'Noto Serif KR', serif", import: "@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700&display=swap');" },
     { name: 'Gothic A1', value: "'Gothic A1', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;700&display=swap');" },
-    { name: 'Orbit', value: "'Orbit', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Orbit&display=swap');" }
+    { name: 'Orbit', value: "'Orbit', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Orbit&display=swap');" },
+    { name: '직접 입력', value: "custom", import: "" }
   ];
 
   const saveToHistory = (state: any) => {
+    const fullState = {
+      charSettings,
+      tabSettings,
+      cssFormat,
+      fontSize,
+      fontFamily,
+      customFontUrl,
+      customFontName,
+      theme,
+      disableOtherColor,
+      ...state
+    };
     const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(JSON.parse(JSON.stringify(state)));
+    newHistory.push(JSON.parse(JSON.stringify(fullState)));
     if (newHistory.length > 50) newHistory.shift();
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
@@ -160,6 +179,8 @@ export default function App() {
     setCssFormat(state.cssFormat);
     setFontSize(state.fontSize);
     setFontFamily(state.fontFamily);
+    setCustomFontUrl(state.customFontUrl || '');
+    setCustomFontName(state.customFontName || '');
     setTheme(state.theme);
     setDisableOtherColor(state.disableOtherColor);
   };
@@ -172,6 +193,8 @@ export default function App() {
         cssFormat: 'internal' as const,
         fontSize: 14,
         fontFamily: 'Noto Sans KR',
+        customFontUrl: '',
+        customFontName: '',
         theme: 'dark' as const,
         disableOtherColor: false
       };
@@ -242,6 +265,10 @@ export default function App() {
   const handleLogUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const fileName = file.name.replace(/\.[^/.]+$/, "");
+    setOriginalFileName(fileName);
+    setPageTitle(''); // Reset custom title on new upload
 
     const text = await file.text();
     const parser = new DOMParser();
@@ -330,7 +357,8 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'trpg_style_settings.json';
+    const fileName = pageTitle || originalFileName || 'ccfolia';
+    a.download = `${fileName}_style.json`;
     a.click();
   };
 
@@ -341,6 +369,15 @@ export default function App() {
     );
 
     const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
+    
+    let fontImport = selectedFont.import;
+    let fontValue = selectedFont.value;
+    
+    if (fontFamily === 'custom') {
+      fontImport = customFontUrl ? `@import url('${customFontUrl}');` : '';
+      fontValue = customFontName ? `'${customFontName}', sans-serif` : 'sans-serif';
+    }
+
     const isDark = theme === 'dark';
     const bgColor = isDark ? '#242424' : '#FFFFFF';
     const textColor = isDark ? '#EEEEEE' : '#1A1A1A';
@@ -361,13 +398,13 @@ export default function App() {
     const nameSize = 13 * scale;
 
     const css = `
-      ${selectedFont.import}
+      ${fontImport}
       * { box-sizing: border-box; min-width: 0; }
       .log-container { 
         width: 100%; 
         max-width: 800px; 
         margin: 0 auto; 
-        font-family: ${selectedFont.value}; 
+        font-family: ${fontValue}; 
         background: ${bgColor}; 
         color: ${textColor}; 
         line-height: 1.6; 
@@ -551,11 +588,10 @@ export default function App() {
     `;
   };
 
-  useEffect(() => {
-    if (logs.length > 0) {
-      setPreviewHtml(generateFinalHtml());
-    }
-  }, [logs, charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor]);
+  const previewHtml = useMemo(() => {
+    if (logs.length === 0) return '';
+    return generateFinalHtml();
+  }, [logs, charSettings, tabSettings, cssFormat, fontSize, fontFamily, customFontUrl, customFontName, theme, disableOtherColor, pageTitle, originalFileName]);
 
   const downloadHtml = () => {
     const html = generateFinalHtml();
@@ -563,32 +599,28 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${pageTitle}_log.html`;
+    const fileName = pageTitle || originalFileName || 'ccfolia';
+    a.download = `${fileName}_log.html`;
     a.click();
   };
 
   return (
-    <div className="flex h-screen bg-[#121212] font-sans text-stone-200 overflow-x-hidden">
-      {/* Sidebar */}
-      <aside className="w-[400px] bg-[#1a1a1a] border-r border-white/5 flex flex-col shadow-2xl z-20">
+    <div className="flex flex-col md:flex-row h-screen bg-[#121212] font-sans text-stone-200 overflow-hidden">
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar */}
+        <aside className={cn(
+          "w-full md:w-[400px] bg-[#1a1a1a] border-r border-white/5 flex-col shadow-2xl z-20 shrink-0",
+          mobileTab === 'settings' ? 'flex' : 'hidden md:flex'
+        )}>
         {/* Sidebar Header */}
         <div className="p-6 border-b border-white/5 bg-[#1a1a1a] shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#e6005c] rounded-xl shadow-lg shadow-pink-500/20">
-              <FileText className="w-5 h-5 text-white" />
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-[#e6005c] rounded-2xl shadow-lg shadow-pink-500/20 shrink-0">
+              <FileText className="w-6 h-6 text-white" />
             </div>
-            <div className="flex-1">
-              <p className="text-[8px] font-bold text-white/20 uppercase tracking-[0.2em] mb-0.5">CCFOLIA Log Formatter</p>
-              <div className="flex items-center gap-1.5 group">
-                <input 
-                  type="text"
-                  value={pageTitle}
-                  onChange={(e) => setPageTitle(e.target.value)}
-                  className="w-full bg-transparent text-base font-bold text-white tracking-tight outline-none focus:text-pink-400 transition-colors"
-                  placeholder="제목을 입력하세요"
-                />
-                <Pencil className="w-3 h-3 text-white/10 group-hover:text-white/30 transition-colors shrink-0" />
-              </div>
+            <div className="flex-1 min-w-0 flex flex-col justify-center">
+              <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.15em] mb-1">CCFOLIA LOG FORMATTER</p>
+              <h1 className="text-lg font-bold text-white whitespace-nowrap">코코포리아 로그 백업</h1>
             </div>
           </div>
         </div>
@@ -632,7 +664,7 @@ export default function App() {
                 className="space-y-6"
               >
                 <div className="space-y-3">
-                  <h2 className="text-xs font-bold text-stone-500 flex items-center gap-2">
+                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                     <MessageSquare className="w-3.5 h-3.5" /> 로그 업로드
                   </h2>
                   <button 
@@ -640,17 +672,17 @@ export default function App() {
                     className="w-full flex items-center gap-3 p-3 border-2 border-dashed border-white/5 rounded-xl hover:border-[#e6005c] hover:bg-pink-500/5 transition-all group"
                   >
                     <div className="p-1.5 bg-[#242424] rounded-lg group-hover:bg-[#e6005c]/20 transition-colors">
-                      <Upload className="w-3.5 h-3.5 text-stone-500 group-hover:text-[#e6005c]" />
+                      <Upload className="w-3.5 h-3.5 text-white/20 group-hover:text-[#e6005c]" />
                     </div>
                     <div className="text-left">
-                      <p className="text-[11px] font-bold text-stone-300">HTML 로그 파일 선택</p>
+                      <p className="text-[11px] font-bold text-white/60">HTML 로그 파일 선택</p>
                     </div>
                   </button>
                   <input type="file" ref={fileInputRef} onChange={handleLogUpload} accept=".html" className="hidden" />
                 </div>
 
                 <div className="space-y-3">
-                  <h2 className="text-xs font-bold text-stone-500 flex items-center gap-2">
+                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                     <Palette className="w-3.5 h-3.5" /> 스타일 불러오기
                   </h2>
                   <button 
@@ -659,8 +691,8 @@ export default function App() {
                   >
                     <FileJson className="w-5 h-5 text-blue-400" />
                     <div className="text-left">
-                      <p className="text-xs font-bold text-stone-300">JSON 설정 파일</p>
-                      <p className="text-[10px] text-stone-500">이전에 저장한 스타일 불러오기</p>
+                      <p className="text-[11px] font-bold text-white/60">JSON 설정 파일</p>
+                      <p className="text-[10px] text-white/20">이전에 저장한 스타일 불러오기</p>
                     </div>
                   </button>
                   <input type="file" ref={styleInputRef} onChange={handleStyleUpload} accept=".json" className="hidden" />
@@ -677,7 +709,7 @@ export default function App() {
                 className="space-y-6"
               >
                 <div className="space-y-3">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
+                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                     <Palette className="w-3.5 h-3.5" /> 잡담 설정
                   </h2>
                   <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm">
@@ -687,7 +719,7 @@ export default function App() {
                 </div>
 
                 <div className="space-y-2">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
+                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                     <Settings className="w-3.5 h-3.5" /> 탭별 출력 설정
                   </h2>
                   {Object.keys(tabSettings).length > 0 ? (
@@ -728,7 +760,15 @@ export default function App() {
                           <div className="relative">
                             <button
                               disabled={tab.format !== 'secret'}
-                              onClick={() => setActiveColorPicker(activeColorPicker === `tab-${tab.name}` ? null : `tab-${tab.name}`)}
+                              onClick={(e) => {
+                                if (activeColorPicker === `tab-${tab.name}`) {
+                                  setActiveColorPicker(null);
+                                  setColorPickerRect(null);
+                                } else {
+                                  setActiveColorPicker(`tab-${tab.name}`);
+                                  setColorPickerRect(e.currentTarget.getBoundingClientRect());
+                                }
+                              }}
                               className={`w-6 h-6 rounded-md border border-white/10 shadow-sm transition-all ${
                                 tab.format === 'secret' ? 'opacity-100 hover:scale-105' : 'opacity-20 cursor-not-allowed'
                               }`}
@@ -754,85 +794,100 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="space-y-2"
+                className="space-y-4"
               >
+                <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
+                  <Users className="w-3.5 h-3.5" /> 캐릭터 설정
+                </h2>
                 {charOrder.length > 0 ? (
-                  charOrder.map(charName => {
-                    const char = charSettings[charName];
-                    if (!char) return null;
-                    return (
-                      <div key={char.name} className="p-2 bg-white/5 rounded-2xl border border-white/5 shadow-sm flex items-center gap-2 relative">
-                        <div className="shrink-0">
-                          <Toggle 
-                            enabled={char.visible} 
-                            onChange={(val) => {
-                              const next = { ...charSettings, [char.name]: { ...char, visible: val } };
-                              setCharSettings(next);
-                              saveToHistory({ charSettings: next, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
-                            }} 
-                          />
-                        </div>
-                        
-                        {renamingChar === char.name ? (
-                          <div className="flex gap-1 w-16 shrink-0">
-                            <input 
-                              type="text" 
-                              value={newNameInput}
-                              onChange={(e) => setNewNameInput(e.target.value)}
-                              className="w-full text-[10px] font-bold px-1 py-0.5 border border-[#e6005c] rounded outline-none bg-black/20 text-white"
-                              autoFocus
+                  <div className="space-y-2">
+                    {charOrder.map(charName => {
+                      const char = charSettings[charName];
+                      if (!char) return null;
+                      return (
+                        <div key={char.name} className="p-2 bg-white/5 rounded-2xl border border-white/5 shadow-sm flex items-center gap-2 relative">
+                          <div className="shrink-0">
+                            <Toggle 
+                              enabled={char.visible} 
+                              onChange={(val) => {
+                                const next = { ...charSettings, [char.name]: { ...char, visible: val } };
+                                setCharSettings(next);
+                                saveToHistory({ charSettings: next, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                              }} 
                             />
-                            <button 
-                              onClick={() => renameCharacter(char.name, newNameInput)}
-                              className="p-0.5 bg-[#e6005c] text-white rounded"
-                            >
-                              <CheckSquare className="w-3 h-3" />
-                            </button>
                           </div>
-                        ) : (
-                          <div className="flex items-center gap-1 w-16 shrink-0 overflow-hidden">
-                            <span className="text-[10px] font-bold truncate flex-1 text-white">{char.name}</span>
-                            <button 
-                              onClick={() => { setRenamingChar(char.name); setNewNameInput(char.name); }}
-                              className="p-0.5 text-white/20 hover:text-[#e6005c] transition-colors"
-                            >
-                              <Pencil className="w-2.5 h-2.5" />
-                            </button>
-                          </div>
-                        )}
-
-                        <div className="relative shrink-0">
-                          <button
-                            onClick={() => setActiveColorPicker(activeColorPicker === char.name ? null : char.name)}
-                            className="w-5 h-5 rounded-md border border-white/10 shadow-sm transition-transform active:scale-90"
-                            style={{ backgroundColor: char.color }}
-                          />
-                        </div>
-
-                        <input 
-                          type="text" 
-                          placeholder="이미지 URL"
-                          value={char.imageUrl}
-                          onChange={(e) => {
-                            const next = { ...charSettings, [char.name]: { ...char, imageUrl: e.target.value } };
-                            setCharSettings(next);
-                            saveToHistory({ charSettings: next, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
-                          }}
-                          className="w-24 text-[10px] px-2 py-1.5 bg-black/20 border border-white/5 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors"
-                        />
-                        
-                        <div className="w-7 h-7 rounded-lg bg-black/20 border border-white/5 overflow-hidden shrink-0 flex items-center justify-center ml-auto">
-                          {char.imageUrl ? (
-                            <img src={char.imageUrl} alt="" className="max-w-full max-h-full object-contain" />
+                          
+                          {renamingChar === char.name ? (
+                            <div className="flex gap-1 w-16 shrink-0">
+                              <input 
+                                type="text" 
+                                value={newNameInput}
+                                onChange={(e) => setNewNameInput(e.target.value)}
+                                className="w-full text-[10px] font-bold px-1 py-0.5 border border-[#e6005c] rounded outline-none bg-black/20 text-white"
+                                autoFocus
+                              />
+                              <button 
+                                onClick={() => renameCharacter(char.name, newNameInput)}
+                                className="p-0.5 bg-[#e6005c] text-white rounded"
+                              >
+                                <CheckSquare className="w-3 h-3" />
+                              </button>
+                            </div>
                           ) : (
-                            <ImageIcon className="w-3.5 h-3.5 text-white/10" />
+                            <div className="flex items-center gap-1 w-16 shrink-0 overflow-hidden">
+                              <span className="text-[10px] font-bold truncate flex-1 text-white">{char.name}</span>
+                              <button 
+                                onClick={() => { setRenamingChar(char.name); setNewNameInput(char.name); }}
+                                className="p-0.5 text-white/20 hover:text-[#e6005c] transition-colors"
+                              >
+                                <Pencil className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
                           )}
+
+                          <div className="relative shrink-0">
+                            <button
+                              onClick={(e) => {
+                                if (activeColorPicker === char.name) {
+                                  setActiveColorPicker(null);
+                                  setColorPickerRect(null);
+                                } else {
+                                  setActiveColorPicker(char.name);
+                                  setColorPickerRect(e.currentTarget.getBoundingClientRect());
+                                }
+                              }}
+                              className="w-5 h-5 rounded-md border border-white/10 shadow-sm transition-transform active:scale-90"
+                              style={{ backgroundColor: char.color }}
+                            />
+                          </div>
+
+                          <input 
+                            type="text" 
+                            placeholder="이미지 URL"
+                            value={char.imageUrl}
+                            onChange={(e) => {
+                              const next = { ...charSettings, [char.name]: { ...char, imageUrl: e.target.value } };
+                              setCharSettings(next);
+                            }}
+                            onBlur={() => {
+                              saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                            }}
+                            className="flex-1 text-[10px] px-2 py-1.5 bg-black/20 border border-white/5 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors"
+                          />
+                          
+                          <div className="w-7 h-7 rounded-lg bg-black/20 border border-white/5 overflow-hidden shrink-0 flex items-center justify-center ml-auto">
+                            {char.imageUrl ? (
+                              <img src={char.imageUrl} alt="" className="max-w-full max-h-full object-contain" />
+                            ) : (
+                              <ImageIcon className="w-3.5 h-3.5 text-white/10" />
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <div className="text-center py-20 text-stone-300">
+                  <div className="text-center py-20 text-white/10">
                     <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-20" />
                     <p className="text-sm font-medium">로그를 먼저 업로드하세요</p>
                   </div>
@@ -849,7 +904,7 @@ export default function App() {
                 className="space-y-8"
               >
                 <div className="space-y-4">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
+                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                     <Layout className="w-3.5 h-3.5" /> 테마 설정
                   </h2>
                   <div className="grid grid-cols-2 gap-2">
@@ -878,25 +933,47 @@ export default function App() {
 
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
+                    <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                       <Type className="w-3.5 h-3.5" /> 폰트 설정
                     </h2>
                   </div>
                   <select 
                     value={fontFamily}
-                    onChange={(e) => { setFontFamily(e.target.value); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily: e.target.value, theme, disableOtherColor }); }}
+                    onChange={(e) => { setFontFamily(e.target.value); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily: e.target.value, customFontUrl, customFontName, theme, disableOtherColor }); }}
                     className="w-full p-3 bg-white/5 border border-white/5 rounded-xl text-xs font-bold outline-none focus:border-[#e6005c] text-white/80 transition-all"
                   >
                     {fonts.map(f => (
                       <option key={f.name} value={f.name} className="bg-[#1a1a1a]">{f.name}</option>
                     ))}
                   </select>
+                  {fontFamily === '직접 입력' && (
+                    <div className="mt-3 space-y-2 p-3 bg-black/20 rounded-xl border border-white/5">
+                      <p className="text-[10px] text-white/40 leading-relaxed mb-2">
+                        웹 폰트 CSS URL과 폰트 이름을 입력해주세요.<br/>
+                        (예: https://fonts.googleapis.com/css2?family=...)
+                      </p>
+                      <input 
+                        type="text" 
+                        placeholder="폰트 CSS URL" 
+                        value={customFontUrl}
+                        onChange={e => { setCustomFontUrl(e.target.value); saveToHistory({ customFontUrl: e.target.value }); }}
+                        className="w-full p-2 bg-white/5 border border-white/5 rounded-lg text-[11px] text-white outline-none focus:border-[#e6005c] transition-all"
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="폰트 이름 (예: 'Noto Sans KR')" 
+                        value={customFontName}
+                        onChange={e => { setCustomFontName(e.target.value); saveToHistory({ customFontName: e.target.value }); }}
+                        className="w-full p-2 bg-white/5 border border-white/5 rounded-lg text-[11px] text-white outline-none focus:border-[#e6005c] transition-all"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
+                      <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                         <Type className="w-3.5 h-3.5" /> 전체 크기 조절
                       </h2>
                       <div className="group relative">
@@ -944,7 +1021,7 @@ export default function App() {
                 </div>
 
                 <div className="space-y-4">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
+                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                     <Palette className="w-3.5 h-3.5" /> CSS 출력 형식
                   </h2>
                   <div className="grid grid-cols-2 gap-2">
@@ -1019,21 +1096,34 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col bg-[#0f0f0f] relative overflow-hidden">
+      <main className={cn(
+        "flex-1 flex-col bg-[#0f0f0f] relative overflow-hidden min-w-0",
+        mobileTab === 'preview' ? 'flex' : 'hidden md:flex'
+      )}>
         {/* Top bar */}
-        <div className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-[#1a1a1a] shrink-0">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-lg border border-white/5">
-              <Eye className="w-3.5 h-3.5 text-white/40" />
-              <span className="text-[11px] font-bold text-white/60">미리보기</span>
+        <div className="h-16 border-b border-white/5 flex items-center justify-between px-4 xl:px-8 bg-[#1a1a1a] shrink-0 gap-4 min-w-0">
+          <div className="flex items-center gap-3 xl:gap-6 shrink-0 min-w-0">
+            <div className="flex items-center justify-center gap-2 px-2.5 xl:px-3 py-1.5 bg-white/5 rounded-lg border border-white/5 shrink-0">
+              <Eye className="w-3.5 h-3.5 text-white/40 shrink-0" />
+              <span className="hidden xl:inline-block text-[11px] font-bold text-white/60 truncate">미리보기</span>
             </div>
-            <div className="h-4 w-px bg-white/10" />
-            <p className="text-[11px] font-bold text-white/30">
+            <div className="hidden xl:block h-4 w-px bg-white/10 shrink-0" />
+            <p className="hidden xl:block text-[11px] font-bold text-white/30 truncate">
               총 <span className="text-white/60">{logs.length}</span>개의 로그 항목
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 xl:gap-3 shrink-1 min-w-0">
+            <div className="relative group w-28 xl:w-48 mr-0 xl:mr-2 shrink-1 min-w-[80px]">
+              <input 
+                type="text"
+                value={pageTitle}
+                onChange={(e) => setPageTitle(e.target.value)}
+                className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-[11px] font-bold text-white outline-none focus:border-[#e6005c] transition-colors placeholder:text-white/20 pr-8 truncate"
+                placeholder="제목 변경"
+              />
+              <Pencil className="w-3.5 h-3.5 text-white/20 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none group-hover:text-white/40 transition-colors shrink-0" />
+            </div>
             <button 
               onClick={() => {
                 const filename = prompt('저장할 스타일 파일 이름을 입력하세요', `${pageTitle}_style`);
@@ -1047,17 +1137,19 @@ export default function App() {
                   a.click();
                 }
               }}
-              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/60 hover:text-white transition-all text-[11px] font-bold"
+              className="flex items-center justify-center gap-2 px-3 xl:px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/60 hover:text-white transition-all text-[11px] font-bold shrink-0"
+              title="스타일 저장"
             >
-              <FileJson className="w-3.5 h-3.5" />
-              스타일 저장
+              <FileJson className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden xl:inline-block truncate">스타일 저장</span>
             </button>
             <button 
               onClick={downloadHtml}
-              className="flex items-center gap-2 px-6 py-2 bg-[#e6005c] hover:bg-[#ff0066] rounded-xl text-white shadow-lg shadow-pink-500/20 transition-all text-[11px] font-bold"
+              className="flex items-center justify-center gap-2 px-3 xl:px-6 py-2 bg-[#e6005c] hover:bg-[#ff0066] rounded-xl text-white shadow-lg shadow-pink-500/20 transition-all text-[11px] font-bold shrink-0"
+              title="HTML 다운로드"
             >
-              <Download className="w-3.5 h-3.5" />
-              HTML 다운로드
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden xl:inline-block truncate">HTML 다운로드</span>
             </button>
           </div>
         </div>
@@ -1072,35 +1164,41 @@ export default function App() {
                   className="w-full min-h-screen border-none bg-white"
                   title="Preview"
                 />
-                {activeColorPicker && (
-                  <div className="fixed bottom-6 left-[424px] z-[70]">
+                {activeColorPicker && colorPickerRect && (
+                  <>
                     {activeColorPicker.startsWith('tab-') ? (
                       <ColorPickerPopup 
-                        char={{ name: activeColorPicker.replace('tab-', ''), color: tabSettings[activeColorPicker.replace('tab-', '')]?.color || '#ffd400', imageUrl: '', visible: true }} 
+                        color={tabSettings[activeColorPicker.replace('tab-', '')]?.color || '#ffd400'} 
                         extractedColors={extractedColors}
-                        onClose={() => setActiveColorPicker(null)}
+                        triggerRect={colorPickerRect}
+                        onClose={() => {
+                          setActiveColorPicker(null);
+                          setColorPickerRect(null);
+                        }}
                         onChange={(newColor) => {
                           const tabName = activeColorPicker.replace('tab-', '');
                           const next = { ...tabSettings, [tabName]: { ...tabSettings[tabName], color: newColor } };
                           setTabSettings(next);
                           saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                         }}
-                        fixed
                       />
                     ) : (
                       <ColorPickerPopup 
-                        char={charSettings[activeColorPicker]} 
+                        color={charSettings[activeColorPicker]?.color || '#ffffff'} 
                         extractedColors={extractedColors}
-                        onClose={() => setActiveColorPicker(null)}
+                        triggerRect={colorPickerRect}
+                        onClose={() => {
+                          setActiveColorPicker(null);
+                          setColorPickerRect(null);
+                        }}
                         onChange={(newColor) => {
                           const next = { ...charSettings, [activeColorPicker]: { ...charSettings[activeColorPicker], color: newColor } };
                           setCharSettings(next);
                           saveToHistory({ charSettings: next, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                         }}
-                        fixed
                       />
                     )}
-                  </div>
+                  </>
                 )}
               </>
             ) : (
@@ -1125,99 +1223,161 @@ export default function App() {
           </div>
         </div>
       </main>
+      </div>
+
+      {/* Mobile Bottom Tab Bar */}
+      <div className="md:hidden h-16 bg-[#1a1a1a] border-t border-white/5 flex shrink-0 z-50">
+        <button 
+          onClick={() => setMobileTab('settings')} 
+          className={cn(
+            "flex-1 flex flex-col items-center justify-center gap-1 transition-colors",
+            mobileTab === 'settings' ? "text-[#e6005c]" : "text-white/40 hover:text-white/60"
+          )}
+        >
+          <Settings className="w-5 h-5" />
+          <span className="text-[10px] font-bold">설정</span>
+        </button>
+        <button 
+          onClick={() => setMobileTab('preview')} 
+          className={cn(
+            "flex-1 flex flex-col items-center justify-center gap-1 transition-colors",
+            mobileTab === 'preview' ? "text-[#e6005c]" : "text-white/40 hover:text-white/60"
+          )}
+        >
+          <Eye className="w-5 h-5" />
+          <span className="text-[10px] font-bold">미리보기</span>
+        </button>
+      </div>
     </div>
   );
 }
 
 // Helper Components
-const ColorPickerPopup = ({ char, extractedColors, onClose, onChange, fixed }: { char: CharSetting; extractedColors: string[]; onClose: () => void; onChange: (color: string) => void; fixed?: boolean }) => {
+interface ColorPickerPopupProps {
+  color: string;
+  extractedColors: string[];
+  triggerRect: DOMRect;
+  onChange: (newColor: string) => void;
+  onClose: () => void;
+}
+
+const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose, onChange }: ColorPickerPopupProps) => {
   const [mode, setMode] = useState<'hex' | 'rgb'>('hex');
   const [isEditing, setIsEditing] = useState(false);
-  const [tempColor, setTempColor] = useState(char.color);
-  const [position, setPosition] = useState<{ v: 'top' | 'bottom', h: 'left' | 'right' }>({ v: 'top', h: 'right' });
+  const [selectedColor, setSelectedColor] = useState(color);
+  const [tempColorInput, setTempColorInput] = useState(color);
+  const [position, setPosition] = useState({ top: -9999, left: -9999 });
+  const [isPositioned, setIsPositioned] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (popupRef.current && !fixed) {
-      const rect = popupRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.top;
-      const spaceRight = window.innerWidth - rect.left;
+  useLayoutEffect(() => {
+    if (popupRef.current && triggerRect) {
+      const popupRect = popupRef.current.getBoundingClientRect();
+      const popupWidth = popupRect.width;
+      const popupHeight = popupRect.height;
       
-      setPosition({
-        v: spaceBelow < 300 ? 'bottom' : 'top',
-        h: spaceRight < 200 ? 'left' : 'right'
+      let top = triggerRect.bottom + 8;
+      let left = triggerRect.left;
+
+      // Check right edge
+      if (left + popupWidth > window.innerWidth) {
+        left = triggerRect.right - popupWidth;
+      }
+      
+      // Check left edge
+      if (left < 0) {
+        left = 8;
+      }
+
+      // Check bottom edge
+      if (top + popupHeight > window.innerHeight) {
+        top = triggerRect.top - popupHeight - 8;
+      }
+      
+      // Check top edge
+      if (top < 0) {
+        top = 8;
+      }
+
+      setPosition({ top, left });
+      
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setIsPositioned(true);
+        });
       });
     }
-  }, [fixed]);
+  }, [triggerRect]);
 
-  const rgb = hexToRgbValues(char.color);
+  const rgb = hexToRgbValues(selectedColor);
 
-  return (
-    <>
-      <div className="fixed inset-0 z-[60]" onClick={onClose} />
+  return createPortal(
+    <div className="fixed inset-0 z-[100]">
+      <div className="absolute inset-0" onClick={onClose} />
       <div 
         ref={popupRef}
         className={cn(
-          "p-3 bg-[#222] rounded-2xl shadow-2xl border border-white/10 z-[70] w-[170px] space-y-3 transition-all duration-200",
-          fixed ? "relative" : cn(
-            "absolute",
-            position.v === 'top' ? "top-[15px]" : "bottom-[15px]",
-            position.h === 'right' ? "left-full ml-[-24px]" : "right-full mr-[-24px]"
-          )
+          "absolute p-4 bg-[#222] rounded-2xl shadow-2xl border border-white/10 w-[240px] space-y-4",
+          isPositioned ? "animate-in fade-in zoom-in-95 duration-200" : "invisible opacity-0"
         )}
+        style={{ 
+          top: position.top, 
+          left: position.left,
+          transition: isPositioned ? undefined : 'none'
+        }}
       >
-        <div className="h-24 overflow-hidden rounded-lg">
+        <div className="h-32 overflow-hidden rounded-lg">
           {mode === 'hex' ? (
-            <HexColorPicker color={char.color} onChange={onChange} className="!w-full !h-full" />
+            <HexColorPicker color={selectedColor} onChange={setSelectedColor} className="!w-full !h-full" />
           ) : (
-            <RgbColorPicker color={rgb} onChange={(c) => onChange(rgbToHexValues(c))} className="!w-full !h-full" />
+            <RgbColorPicker color={rgb} onChange={(c) => setSelectedColor(rgbToHexValues(c))} className="!w-full !h-full" />
           )}
         </div>
         
-        <div className="flex items-center gap-2 bg-black/40 p-1.5 rounded-xl border border-white/5">
-          <div className="w-6 h-6 rounded-lg shadow-inner border border-white/10 shrink-0" style={{ backgroundColor: char.color }} />
+        <div className="flex items-center gap-2 bg-black/40 p-2 rounded-xl border border-white/5">
+          <div className="w-8 h-8 rounded-lg shadow-inner border border-white/10 shrink-0" style={{ backgroundColor: selectedColor }} />
           <div className="flex-1 min-w-0">
             {isEditing ? (
               <input 
                 type="text"
-                value={tempColor}
+                value={tempColorInput}
                 autoFocus
                 onBlur={() => {
                   setIsEditing(false);
-                  onChange(tempColor);
+                  setSelectedColor(tempColorInput);
                 }}
-                onChange={(e) => setTempColor(e.target.value)}
-                className="w-full bg-transparent text-[10px] font-mono font-bold text-white outline-none"
+                onChange={(e) => setTempColorInput(e.target.value)}
+                className="w-full bg-transparent text-xs font-mono font-bold text-white outline-none"
               />
             ) : (
               <p 
                 onClick={() => {
                   setIsEditing(true);
-                  setTempColor(char.color);
+                  setTempColorInput(selectedColor);
                 }}
-                className="text-[10px] font-mono font-bold text-white cursor-text truncate"
+                className="text-xs font-mono font-bold text-white cursor-text truncate"
               >
-                {mode === 'hex' ? char.color.toUpperCase() : `${rgb.r},${rgb.g},${rgb.b}`}
+                {mode === 'hex' ? selectedColor.toUpperCase() : `${rgb.r},${rgb.g},${rgb.b}`}
               </p>
             )}
           </div>
           <button 
             onClick={() => setMode(mode === 'hex' ? 'rgb' : 'hex')}
-            className="p-1 bg-white/5 hover:bg-white/10 rounded-md text-pink-400 transition-colors"
+            className="p-1.5 bg-white/5 hover:bg-white/10 rounded-md text-pink-400 transition-colors"
             title={mode === 'hex' ? 'RGB 모드로 전환' : 'HEX 모드로 전환'}
           >
-            <ChevronsUpDown className="w-3 h-3" />
+            <ChevronsUpDown className="w-4 h-4" />
           </button>
         </div>
 
         {extractedColors.length > 0 && (
-          <div className="pt-2 border-t border-white/5">
-            <div className="grid grid-cols-6 gap-1 max-h-16 overflow-y-auto pr-1 custom-scrollbar">
+          <div className="pt-3 border-t border-white/5">
+            <div className="grid grid-cols-6 gap-1.5 max-h-24 overflow-y-auto pr-1 custom-scrollbar">
               {extractedColors.map(c => (
                 <button
                   key={c}
-                  onClick={() => onChange(c)}
-                  className="w-4 h-4 rounded-sm border border-white/10 hover:scale-110 transition-transform"
+                  onClick={() => setSelectedColor(c)}
+                  className="w-6 h-6 rounded-md border border-white/10 hover:scale-110 transition-transform"
                   style={{ backgroundColor: c }}
                   title={c}
                 />
@@ -1225,8 +1385,19 @@ const ColorPickerPopup = ({ char, extractedColors, onClose, onChange, fixed }: {
             </div>
           </div>
         )}
+
+        <button 
+          onClick={() => {
+            onChange(selectedColor);
+            onClose();
+          }}
+          className="w-full py-2.5 bg-[#e6005c] text-white rounded-xl text-xs font-bold hover:bg-[#ff0066] transition-all active:scale-95"
+        >
+          확인
+        </button>
       </div>
-    </>
+    </div>,
+    document.body
   );
 };
 
