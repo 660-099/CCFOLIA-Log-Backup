@@ -276,13 +276,13 @@ const LogItem = React.memo(({
       {isSplit && (
         <div className="relative mt-4 mb-2">
           <div className="split-line" />
-          <div className="section-header">
+          <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
             <div className="flex items-center gap-2 bg-[#e6005c] px-3 py-1 rounded-t-lg shadow-lg">
               <input 
                 type="text"
                 value={sectionNames[idx] || ''}
                 onChange={(e) => onRenameSection(idx, e.target.value)}
-                placeholder={`섹션 ${splitPointsArray.indexOf(idx) + 2}`}
+                placeholder={`섹션 ${splitPointsArray.indexOf(idx) + 1}`}
                 className="section-name-input text-white border-white/30 placeholder:text-white/40"
               />
               <span className="text-[9px] font-bold text-white/60 whitespace-nowrap">
@@ -1038,11 +1038,8 @@ export default function App() {
                     <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] font-bold text-white/70">캐릭터별 통합</span>
-                        <div className="group relative">
-                          <HelpCircle className="w-3 h-3 text-white/20 cursor-help" />
-                          <div className="absolute bottom-full right-0 mb-2 w-48 p-2 bg-stone-800 text-[10px] text-white/80 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-xl border border-white/10 z-50">
-                            연속된 동일 캐릭터의 대사를 하나로 합쳐 가독성을 높입니다. (메인/잡담 등 탭별 설정 가능)
-                          </div>
+                        <div className="flex items-center gap-1">
+                          <HelpCircle className="w-3 h-3 text-white/20 cursor-help" title="연속된 동일 캐릭터의 대사를 하나로 합칩니다." />
                         </div>
                       </div>
                       <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5">
@@ -1336,7 +1333,7 @@ export default function App() {
                       <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                         <Type className="w-3.5 h-3.5" /> 전체 크기 조절
                       </h2>
-                      <div className="group relative flex items-center mb-4">
+                      <div className="group relative">
                         <HelpCircle className="w-3 h-3 text-white/20 cursor-help" />
                         <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-stone-800 text-white text-[9px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
                           폰트 크기에 맞춰 아바타 및 간격이 자동 조절됩니다.
@@ -1592,41 +1589,32 @@ export default function App() {
         {/* Preview Area */}
         <div 
           ref={previewContainerRef}
-          className="flex-1 overflow-y-auto custom-scrollbar bg-[#1a1a1a] relative min-w-0"
+          className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f0f0f] relative min-w-0"
         >
           <div className="w-full min-w-0">
             {logs.length > 0 ? (
               <div className="relative group/preview">
-                <div className="log-container" style={{ 
-                  maxWidth: '800px', 
-                  margin: '0 auto', 
-                  padding: '40px 0',
-                  backgroundColor: theme === 'dark' ? '#242424' : '#FFFFFF',
-                  color: theme === 'dark' ? '#EEEEEE' : '#1A1A1A',
-                  fontFamily: fontFamily === 'custom' ? (customFontName ? `'${customFontName}', sans-serif` : 'sans-serif') : (fonts.find(f => f.name === fontFamily)?.value || 'sans-serif'),
-                  fontSize: `${fontSize}px`
-                }}>
-                  <div className="relative mb-12 mt-4">
-                    <div className="flex items-center gap-2 bg-[#e6005c] px-3 py-1 rounded-t-lg shadow-lg w-fit ml-4">
-                      <input 
-                        type="text"
-                        value={sectionNames[-1] || ''}
-                        onChange={(e) => setSectionNames(prev => ({ ...prev, [-1]: e.target.value }))}
-                        placeholder="첫 번째 섹션 제목"
-                        className="section-name-input text-white border-white/30 placeholder:text-white/40"
-                      />
-                      <span className="text-[9px] font-bold text-white/60 whitespace-nowrap">
-                        (1번 블록부터 시작)
-                      </span>
-                    </div>
-                    <div className="split-line" />
-                  </div>
-                  
-                  <div className="bg-white min-h-screen relative">
-                    {/* We render the logs as a list of components for interactivity */}
-                    <div className="log-container-inner" style={{ 
-                      backgroundColor: theme === 'dark' ? '#242424' : '#FFFFFF',
-                    }}>
+                <div className="absolute top-4 right-4 z-10 flex gap-2 opacity-0 group-hover/preview:opacity-100 transition-opacity">
+                  <button 
+                    onClick={() => { setSplitPoints(new Set()); setInsertedImages({}); }}
+                    className="p-2 bg-black/60 hover:bg-red-500/80 text-white rounded-lg backdrop-blur-md transition-all border border-white/10"
+                    title="모든 분할/이미지 초기화"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                </div>
+                
+                <div className="bg-white min-h-screen relative">
+                  {/* We render the logs as a list of components for interactivity */}
+                  <div className="log-container" style={{ 
+                    maxWidth: '800px', 
+                    margin: '0 auto', 
+                    padding: '40px 0',
+                    backgroundColor: theme === 'dark' ? '#242424' : '#FFFFFF',
+                    color: theme === 'dark' ? '#EEEEEE' : '#1A1A1A',
+                    fontFamily: fontFamily === 'custom' ? (customFontName ? `'${customFontName}', sans-serif` : 'sans-serif') : (fonts.find(f => f.name === fontFamily)?.value || 'sans-serif'),
+                    fontSize: `${fontSize}px`
+                  }}>
                     {/* Inject Font if custom */}
                     {fontFamily === 'custom' && customFontUrl && (
                       <style>{`@import url('${customFontUrl}');`}</style>
@@ -1676,16 +1664,6 @@ export default function App() {
                         transition: opacity 0.2s;
                         display: flex;
                         gap: 8px;
-                      }
-                      .section-header {
-                        position: absolute;
-                        top: -24px;
-                        left: 16px;
-                        display: flex;
-                        flex-direction: column;
-                        align-items: flex-start;
-                        gap: 4px;
-                        z-index: 25;
                       }
                       .split-line {
                         position: absolute;
