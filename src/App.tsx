@@ -6,6 +6,9 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
+  Scissors,
+  Check,
+  X,
   Upload, 
   Download, 
   Settings, 
@@ -99,6 +102,200 @@ const linkify = (text: string) => {
   return text.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">$1</a>');
 };
 
+// Memoized Log Item Component for performance
+const LogItem = React.memo(({ 
+  log, 
+  idx, 
+  tabSet, 
+  char, 
+  theme, 
+  disableOtherColor, 
+  fontSize, 
+  insertedImages, 
+  splitPoints, 
+  sectionNames,
+  imageInputIdx,
+  onToggleSplit, 
+  onRenameSection,
+  onInsertImage, 
+  onAddImageUrl,
+  onDeleteImage,
+  mergedLogsCount,
+  splitPointsArray
+}: any) => {
+  if (!tabSet?.visible || !char?.visible) return null;
+
+  const format = tabSet.format;
+  const color = char.color || log.color;
+  const otherNameColor = disableOtherColor ? (theme === 'dark' ? '#AAAAAA' : '#666666') : color;
+  const img = char.imageUrl;
+  const isSecret = format === 'secret';
+  const secretColor = tabSet.color || '#ffd400';
+  
+  const getSecretBg = (hex: string) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return theme === 'dark' ? `rgba(${r}, ${g}, ${b}, 0.15)` : `rgba(${r}, ${g}, ${b}, 0.08)`;
+  };
+
+  const scale = fontSize / 14;
+  const avatarSize = 46 * scale;
+  const gapSize = 12 * scale;
+  const paddingSize = 12 * scale;
+  const nameSize = 13 * scale;
+
+  const isSplit = splitPoints.has(idx);
+  
+  // Calculate range for the section if this is a split point
+  const getSectionRange = () => {
+    const sorted = splitPointsArray;
+    const splitIdx = sorted.indexOf(idx);
+    const start = splitIdx === 0 ? 1 : sorted[splitIdx - 1] + 2;
+    const end = idx + 1;
+    return `${start} - ${end}`;
+  };
+
+  return (
+    <div className="log-item-wrapper group/item">
+      <div className="block-number">#{idx + 1}</div>
+      
+      <div className="log-item" style={{ marginBottom: '2px' }}>
+        {log.isCommand ? (
+          <div style={{ 
+            background: isSecret ? getSecretBg(secretColor) : 'rgba(0,0,0,0.1)',
+            border: `1px solid ${theme === 'dark' ? '#444' : '#DDD'}`,
+            padding: `${paddingSize}px ${paddingSize * 1.3}px`,
+            borderRadius: '8px',
+            margin: `8px ${paddingSize * 1.3}px`
+          }}>
+            <span style={{ color, fontWeight: 'bold', fontFamily: 'monospace' }}>[ {log.name} ]</span>
+            <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#1A1A1A', fontWeight: 'bold', fontFamily: 'monospace', marginLeft: '8px' }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
+          </div>
+        ) : format === 'other' ? (
+          <div style={{ padding: `${paddingSize / 3}px ${paddingSize * 1.3}px`, display: 'flex', gap: `${gapSize / 1.5}px`, alignItems: 'baseline' }}>
+            <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px`, flexShrink: 0 }}>{log.name}</span>
+            <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#666666' }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
+          </div>
+        ) : format === 'info' ? (
+          <div style={{ padding: `${paddingSize * 1.3}px ${paddingSize * 1.6}px`, background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', borderLeft: `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`, margin: `8px ${paddingSize * 1.3}px`, borderRadius: '4px' }}>
+            <span style={{ fontWeight: 'bold', color, display: 'block', marginBottom: '4px' }}>{log.name}</span>
+            <div dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
+          </div>
+        ) : (
+          <div style={{ 
+            display: 'flex', 
+            gap: `${gapSize}px`, 
+            padding: `${paddingSize}px ${paddingSize * 1.3}px`, 
+            alignItems: 'flex-start',
+            background: isSecret ? getSecretBg(secretColor) : 'transparent',
+            borderLeft: isSecret ? `4px solid ${secretColor}` : 'none',
+            margin: isSecret ? `4px ${paddingSize * 1.3}px` : '0',
+            borderRadius: isSecret ? '4px' : '0'
+          }}>
+            <div style={{ width: `${avatarSize}px`, height: `${avatarSize}px`, flexShrink: 0, backgroundColor: theme === 'dark' ? '#1e1e1e' : '#f0f0f0', borderRadius: '4px', overflow: 'hidden' }}>
+              {img && <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+            </div>
+            <div style={{ flexGrow: 1, lineHeight: 1.5 }}>
+              <div style={{ fontWeight: 'bold', color, fontSize: `${nameSize}px`, marginBottom: '2px' }}>{log.name}</div>
+              <div dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {insertedImages[idx] && insertedImages[idx].map((url: string, i: number) => (
+        <div key={i} style={{ margin: `10px ${paddingSize * 1.3}px`, position: 'relative' }} className="group/img">
+          <img src={url} alt="" style={{ width: '100%', borderRadius: '8px' }} />
+          <button 
+            onClick={() => onDeleteImage(idx, i)}
+            className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-lg opacity-0 group-hover/img:opacity-100 transition-opacity"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      ))}
+
+      {imageInputIdx === idx && (
+        <div className="mx-4 my-2 p-4 bg-white/5 border border-dashed border-white/20 rounded-xl flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <ImageIcon className="w-4 h-4 text-white/40" />
+            <span className="text-[11px] font-bold text-white/60">이미지 URL 삽입</span>
+          </div>
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="https://..." 
+              className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-[11px] text-white outline-none focus:border-[#e6005c]/50"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  onAddImageUrl(idx, e.currentTarget.value);
+                  e.currentTarget.value = '';
+                }
+              }}
+            />
+            <button 
+              onClick={(e) => {
+                const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                onAddImageUrl(idx, input.value);
+                input.value = '';
+              }}
+              className="px-4 py-2 bg-[#e6005c] text-white rounded-lg text-[11px] font-bold"
+            >
+              추가
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="split-trigger">
+        <button 
+          onClick={() => onToggleSplit(idx)}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all shadow-lg",
+            isSplit 
+              ? "bg-[#e6005c] text-white" 
+              : "bg-white/90 text-stone-900 hover:bg-white"
+          )}
+        >
+          {isSplit ? <X className="w-3 h-3" /> : <Scissors className="w-3 h-3" />}
+          {isSplit ? "분할 해제" : "여기서 분할"}
+        </button>
+        <button 
+          onClick={() => onInsertImage(idx)}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all shadow-lg",
+            imageInputIdx === idx ? "bg-emerald-600 text-white" : "bg-white/90 text-stone-900 hover:bg-white"
+          )}
+        >
+          <ImageIcon className="w-3 h-3" />
+          이미지 삽입
+        </button>
+      </div>
+      
+      {isSplit && (
+        <div className="relative mt-4 mb-2">
+          <div className="split-line" />
+          <div className="section-header">
+            <div className="flex items-center gap-2 bg-[#e6005c] px-3 py-1 rounded-t-lg shadow-lg">
+              <input 
+                type="text"
+                value={sectionNames[idx] || ''}
+                onChange={(e) => onRenameSection(idx, e.target.value)}
+                placeholder={`섹션 ${splitPointsArray.indexOf(idx) + 2}`}
+                className="section-name-input text-white border-white/30 placeholder:text-white/40"
+              />
+              <span className="text-[9px] font-bold text-white/60 whitespace-nowrap">
+                ({getSectionRange()}번 블록)
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
 export default function App() {
   const [pageTitle, setPageTitle] = useState('');
   const [originalFileName, setOriginalFileName] = useState('');
@@ -121,6 +318,35 @@ export default function App() {
   const [colorPickerRect, setColorPickerRect] = useState<DOMRect | null>(null);
   const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'settings'>('files');
   const [mobileTab, setMobileTab] = useState<'settings' | 'preview'>('settings');
+  const [charSortMode, setCharSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
+  const [splitPoints, setSplitPoints] = useState<Set<number>>(new Set());
+  const [insertedImages, setInsertedImages] = useState<Record<number, string[]>>({});
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [initialState, setInitialState] = useState<any>(null);
+  const [visibleCount, setVisibleCount] = useState(50);
+  const [sectionNames, setSectionNames] = useState<Record<number, string>>({});
+  const [mergeTabs, setMergeTabs] = useState<Set<TabFormat>>(new Set());
+  const [imageInputIdx, setImageInputIdx] = useState<number | null>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+
+  // Simple Virtualization: Increase visible count on scroll
+  useEffect(() => {
+    const container = previewContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      if (container.scrollHeight - container.scrollTop - container.clientHeight < 500) {
+        setVisibleCount(prev => Math.min(prev + 50, logs.length));
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [logs.length]);
+
+  useEffect(() => {
+    setVisibleCount(50); // Reset when logs change
+  }, [logs]);
   
   // History for Undo/Redo
   const [history, setHistory] = useState<any[]>([]);
@@ -129,12 +355,12 @@ export default function App() {
   const fonts = [
     { name: 'Noto Sans KR', value: "'Noto Sans KR', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');" },
     { name: '(폰트 적용X)', value: "sans-serif", import: "" },
+    { name: '(직접 입력)', value: "custom", import: "" },
     { name: 'Pretendard', value: "'Pretendard', sans-serif", import: "@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');" },
     { name: '나눔고딕', value: "'Nanum Gothic', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');" },
     { name: 'Noto Serif KR', value: "'Noto Serif KR', serif", import: "@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700&display=swap');" },
     { name: 'Gothic A1', value: "'Gothic A1', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;700&display=swap');" },
-    { name: 'Orbit', value: "'Orbit', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Orbit&display=swap');" },
-    { name: '직접 입력', value: "custom", import: "" }
+    { name: 'Orbit', value: "'Orbit', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Orbit&display=swap');" }
   ];
 
   const saveToHistory = (state: any) => {
@@ -187,19 +413,24 @@ export default function App() {
 
   const resetSettings = () => {
     if (confirm('설정을 초기화하시겠습니까?')) {
-      const defaultState = {
-        charSettings: Object.fromEntries(Object.entries(charSettings).map(([k, v]) => [k, { ...(v as object), color: '#000000', imageUrl: '', visible: true }])),
-        tabSettings: Object.fromEntries(Object.entries(tabSettings).map(([k, v]) => [k, { ...(v as object), format: 'main', visible: true, color: '#ffd400' }])),
-        cssFormat: 'internal' as const,
-        fontSize: 14,
-        fontFamily: 'Noto Sans KR',
-        customFontUrl: '',
-        customFontName: '',
-        theme: 'dark' as const,
-        disableOtherColor: false
-      };
-      applyState(defaultState);
-      saveToHistory(defaultState);
+      if (initialState) {
+        applyState(initialState);
+        saveToHistory(initialState);
+      } else {
+        const defaultState = {
+          charSettings: Object.fromEntries(Object.entries(charSettings).map(([k, v]) => [k, { ...(v as object), color: '#000000', imageUrl: '', visible: true }])),
+          tabSettings: Object.fromEntries(Object.entries(tabSettings).map(([k, v]) => [k, { ...(v as object), format: 'main', visible: true, color: '#ffd400' }])),
+          cssFormat: 'internal' as const,
+          fontSize: 14,
+          fontFamily: 'Noto Sans KR',
+          customFontUrl: '',
+          customFontName: '',
+          theme: 'dark' as const,
+          disableOtherColor: false
+        };
+        applyState(defaultState);
+        saveToHistory(defaultState);
+      }
     }
   };
 
@@ -332,6 +563,19 @@ export default function App() {
     setExtractedColors(Array.from(colorsFound));
     setTabSettings(newTabs);
     setActiveTab('tabs');
+
+    // Save initial state for reset
+    setInitialState({
+      charSettings: newChars,
+      tabSettings: newTabs,
+      cssFormat: 'internal',
+      fontSize: 14,
+      fontFamily: 'Noto Sans KR',
+      customFontUrl: '',
+      customFontName: '',
+      theme: 'dark',
+      disableOtherColor: false
+    });
   };
 
   // Handle Style Upload
@@ -362,8 +606,37 @@ export default function App() {
     a.click();
   };
 
-  const generateFinalHtml = () => {
-    const filteredLogs = logs.filter(log => 
+  const mergedLogs = useMemo(() => {
+    if (logs.length === 0) return [];
+    if (mergeTabs.size === 0) return logs;
+
+    const result: LogEntry[] = [];
+    let current: LogEntry | null = null;
+
+    logs.forEach((log) => {
+      const tabSet = tabSettings[log.tab];
+      const format = tabSet?.format || 'main';
+      
+      if (mergeTabs.has(format) && current && current.name === log.name && current.color === log.color && current.tab === log.tab && !log.isCommand && !current.isCommand) {
+        // Merge with larger line spacing marker
+        current.content += `<div style="margin-top: 0.8em;"></div>` + log.content;
+      } else {
+        current = { ...log };
+        result.push(current);
+      }
+    });
+
+    return result;
+  }, [logs, mergeTabs, tabSettings]);
+
+  const sortedCharOrder = useMemo(() => {
+    if (charSortMode === 'appearance') return charOrder;
+    return [...charOrder].sort((a, b) => a.localeCompare(b, 'ko'));
+  }, [charOrder, charSortMode]);
+
+  const generateFinalHtml = (range?: { start: number; end: number }) => {
+    const targetLogs = range ? mergedLogs.slice(range.start, range.end + 1) : mergedLogs;
+    const filteredLogs = targetLogs.filter(log => 
       tabSettings[log.tab]?.visible && 
       charSettings[log.name]?.visible
     );
@@ -475,7 +748,8 @@ export default function App() {
     const isInline = cssFormat === 'inline';
     let html = '';
 
-    filteredLogs.forEach(log => {
+    filteredLogs.forEach((log, idx) => {
+      const globalIdx = mergedLogs.findIndex(l => l.id === log.id);
       const tabSet = tabSettings[log.tab];
       const format = tabSet?.format || 'main';
       const char = charSettings[log.name];
@@ -485,6 +759,10 @@ export default function App() {
 
       if (isInline) {
         const avatarStyle = `width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; background-color: ${avatarPlaceholder}; border-radius: 4px; object-fit: contain;`;
+        const bodyStyle = `flex-grow: 1; line-height: 1.5;`;
+        const nameStyle = `font-weight: bold; color: ${color}; font-size: ${nameSize}px; margin-bottom: 2px; display: block;`;
+        const contentStyle = `font-size: 1em; color: ${textColor}; white-space: pre-wrap; word-break: break-all;`;
+        const otherContentStyle = `font-size: 1em; color: ${otherTextColor}; white-space: pre-wrap; word-break: break-all;`;
         
         html += `<div style="margin-bottom: 2px;">`;
         
@@ -492,14 +770,14 @@ export default function App() {
           if (format === 'secret') {
             const secretColor = tabSet?.color || '#ffd400';
             const secretBg = getSecretBg(secretColor);
-            html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingSize}px ${paddingSize * 1.3}px; border-radius: 8px; margin: 8px ${paddingSize * 1.3}px;"><span style="color: ${color}; font-family: monospace; font-weight: bold;">[ ${log.name} ]</span> <span style="color: ${textColor}; font-family: monospace; font-weight: bold;">${linkify(log.content)}</span></div>`;
+            html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingSize}px ${paddingSize * 1.3}px; border-radius: 8px; margin: 8px ${paddingSize * 1.3}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${textColor}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em;">${linkify(log.content)}</span></div>`;
           } else {
-            html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${paddingSize * 1.3}px; border-radius: 8px; margin: 8px ${paddingSize * 1.3}px;"><span style="color: ${color}; font-family: monospace;">[ ${log.name} ]</span> <span style="color: ${otherTextColor}; font-family: monospace;">${linkify(log.content)}</span></div>`;
+            html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${paddingSize * 1.3}px; border-radius: 8px; margin: 8px ${paddingSize * 1.3}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${otherTextColor}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">${linkify(log.content)}</span></div>`;
           }
         } else if (format === 'other') {
-          html += `<div style="padding: ${paddingSize / 3}px ${paddingSize * 1.3}px; display: flex; gap: ${gapSize / 1.5}px; align-items: baseline;"><span style="font-weight: bold; color: ${otherNameColor}; font-size: ${nameSize}px; flex-shrink: 0;">${log.name}</span> <span style="color: ${otherTextColor};">${linkify(log.content)}</span></div>`;
+          html += `<div style="padding: ${paddingSize / 3}px ${paddingSize * 1.3}px; display: flex; gap: ${gapSize / 1.5}px; align-items: baseline;"><span style="font-weight: bold; color: ${otherNameColor}; font-size: ${nameSize}px; flex-shrink: 0;">${log.name}</span> <span style="${otherContentStyle}">${linkify(log.content)}</span></div>`;
         } else if (format === 'info') {
-          html += `<div style="padding: ${paddingSize * 1.3}px ${paddingSize * 1.6}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: 8px ${paddingSize * 1.3}px; border-radius: 4px;"><span style="font-weight: bold; color: ${color}; display: block; margin-bottom: 4px;">${log.name}</span><div style="color: ${textColor};">${linkify(log.content)}</div></div>`;
+          html += `<div style="padding: ${paddingSize * 1.3}px ${paddingSize * 1.6}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: 8px ${paddingSize * 1.3}px; border-radius: 4px;"><span style="${nameStyle}">${log.name}</span><div style="${contentStyle}">${linkify(log.content)}</div></div>`;
         } else if (format === 'secret') {
           const secretColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(secretColor);
@@ -507,9 +785,9 @@ export default function App() {
           html += `
             <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${paddingSize * 1.3}px; align-items: flex-start; background: ${secretBg}; border-left: 4px solid ${secretColor}; margin: 4px ${paddingSize * 1.3}px; border-radius: 4px;">
               ${imgTag}
-              <div style="flex-grow: 1; line-height: 1.5;">
-                <div style="font-weight: bold; color: ${color}; font-size: ${nameSize}px; margin-bottom: 2px;">${log.name}</div>
-                <div style="color: ${textColor};">${linkify(log.content)}</div>
+              <div style="${bodyStyle}">
+                <div style="${nameStyle}">${log.name}</div>
+                <div style="${contentStyle}">${linkify(log.content)}</div>
               </div>
             </div>
           `;
@@ -518,9 +796,9 @@ export default function App() {
           html += `
             <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${paddingSize * 1.3}px; align-items: flex-start;">
               ${imgTag}
-              <div style="flex-grow: 1; line-height: 1.5;">
-                <div style="font-weight: bold; color: ${color}; font-size: ${nameSize}px; margin-bottom: 2px;">${log.name}</div>
-                <div style="color: ${textColor};">${linkify(log.content)}</div>
+              <div style="${bodyStyle}">
+                <div style="${nameStyle}">${log.name}</div>
+                <div style="${contentStyle}">${linkify(log.content)}</div>
               </div>
             </div>
           `;
@@ -568,6 +846,17 @@ export default function App() {
         }
         html += `</div>`;
       }
+
+      // Insert images if any
+      if (insertedImages[globalIdx]) {
+        insertedImages[globalIdx].forEach(url => {
+          if (isInline) {
+            html += `<div style="margin: 10px ${paddingSize * 1.3}px;"><img src="${url}" style="width: 100%; border-radius: 8px;" /></div>`;
+          } else {
+            html += `<div style="margin: 10px ${paddingSize * 1.3}px;"><img src="${url}" style="width: 100%; border-radius: 8px;" /></div>`;
+          }
+        });
+      }
     });
 
     return `
@@ -589,18 +878,46 @@ export default function App() {
   };
 
   const previewHtml = useMemo(() => {
-    if (logs.length === 0) return '';
+    if (mergedLogs.length === 0) return '';
     return generateFinalHtml();
-  }, [logs, charSettings, tabSettings, cssFormat, fontSize, fontFamily, customFontUrl, customFontName, theme, disableOtherColor, pageTitle, originalFileName]);
+  }, [mergedLogs, charSettings, tabSettings, cssFormat, fontSize, fontFamily, customFontUrl, customFontName, theme, disableOtherColor, pageTitle, originalFileName, insertedImages]);
 
-  const downloadHtml = () => {
-    const html = generateFinalHtml();
+  const downloadHtml = (range?: { start: number; end: number }) => {
+    const html = generateFinalHtml(range);
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     const fileName = pageTitle || originalFileName || 'ccfolia';
-    a.download = `${fileName}_log.html`;
+    const suffix = range ? `_part${range.start}-${range.end}` : '_log';
+    a.download = `${fileName}${suffix}.html`;
+    a.click();
+  };
+
+  const downloadZip = async () => {
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+    const sortedPoints = Array.from(splitPoints).sort((a: number, b: number) => a - b);
+    const sections: { start: number; end: number }[] = [];
+    
+    let last = 0;
+    sortedPoints.forEach((p: number) => {
+      sections.push({ start: last, end: p });
+      last = p + 1;
+    });
+    sections.push({ start: last, end: mergedLogs.length - 1 });
+
+    sections.forEach((s, i) => {
+      const html = generateFinalHtml(s);
+      zip.file(`section_${i + 1}.html`, html);
+    });
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    a.href = url;
+    const fileName = pageTitle || originalFileName || 'ccfolia';
+    a.download = `${fileName}_all.zip`;
     a.click();
   };
 
@@ -710,11 +1027,45 @@ export default function App() {
               >
                 <div className="space-y-3">
                   <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
-                    <Palette className="w-3.5 h-3.5" /> 잡담 설정
+                    <Palette className="w-3.5 h-3.5" /> 기본 설정
                   </h2>
-                  <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm">
-                    <span className="text-[11px] font-bold text-white/70">잡담 색상을 회색으로 통일</span>
-                    <Toggle enabled={disableOtherColor} onChange={(val) => { setDisableOtherColor(val); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor: val }); }} />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm">
+                      <span className="text-[11px] font-bold text-white/70">잡담 색상을 회색으로 통일</span>
+                      <Toggle enabled={disableOtherColor} onChange={(val) => { setDisableOtherColor(val); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor: val }); }} />
+                    </div>
+                    
+                    <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-white/70">캐릭터별 통합</span>
+                        <div className="group relative">
+                          <HelpCircle className="w-3 h-3 text-white/20 cursor-help" />
+                          <div className="absolute bottom-full right-0 mb-2 w-48 p-2 bg-stone-800 text-[10px] text-white/80 rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-xl border border-white/10 z-50">
+                            연속된 동일 캐릭터의 대사를 하나로 합쳐 가독성을 높입니다. (메인/잡담 등 탭별 설정 가능)
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5">
+                        {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
+                          <button
+                            key={f}
+                            onClick={() => {
+                              const next = new Set(mergeTabs);
+                              if (next.has(f)) next.delete(f);
+                              else next.add(f);
+                              setMergeTabs(next);
+                            }}
+                            className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
+                              mergeTabs.has(f) 
+                                ? 'bg-[#e6005c] text-white shadow-sm' 
+                                : 'text-white/30 hover:text-white/60'
+                            }`}
+                          >
+                            {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -796,12 +1147,21 @@ export default function App() {
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-4"
               >
-                <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
-                  <Users className="w-3.5 h-3.5" /> 캐릭터 설정
-                </h2>
-                {charOrder.length > 0 ? (
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
+                    <Users className="w-3.5 h-3.5" /> 캐릭터 설정
+                  </h2>
+                  <button 
+                    onClick={() => setCharSortMode(charSortMode === 'appearance' ? 'alphabetical' : 'appearance')}
+                    className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    {charSortMode === 'appearance' ? '등장순' : '가나다순'}
+                  </button>
+                </div>
+                {sortedCharOrder.length > 0 ? (
                   <div className="space-y-2">
-                    {charOrder.map(charName => {
+                    {sortedCharOrder.map(charName => {
                       const char = charSettings[charName];
                       if (!char) return null;
                       return (
@@ -946,7 +1306,7 @@ export default function App() {
                       <option key={f.name} value={f.name} className="bg-[#1a1a1a]">{f.name}</option>
                     ))}
                   </select>
-                  {fontFamily === '직접 입력' && (
+                  {fontFamily === '(직접 입력)' && (
                     <div className="mt-3 space-y-2 p-3 bg-black/20 rounded-xl border border-white/5">
                       <p className="text-[10px] text-white/40 leading-relaxed mb-2">
                         웹 폰트 CSS URL과 폰트 이름을 입력해주세요.<br/>
@@ -976,7 +1336,7 @@ export default function App() {
                       <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                         <Type className="w-3.5 h-3.5" /> 전체 크기 조절
                       </h2>
-                      <div className="group relative">
+                      <div className="group relative flex items-center mb-4">
                         <HelpCircle className="w-3 h-3 text-white/20 cursor-help" />
                         <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-stone-800 text-white text-[9px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
                           폰트 크기에 맞춰 아바타 및 간격이 자동 조절됩니다.
@@ -1143,27 +1503,254 @@ export default function App() {
               <FileJson className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden xl:inline-block truncate">스타일 저장</span>
             </button>
-            <button 
-              onClick={downloadHtml}
-              className="flex items-center justify-center gap-2 px-3 xl:px-6 py-2 bg-[#e6005c] hover:bg-[#ff0066] rounded-xl text-white shadow-lg shadow-pink-500/20 transition-all text-[11px] font-bold shrink-0"
-              title="HTML 다운로드"
-            >
-              <Download className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden xl:inline-block truncate">HTML 다운로드</span>
-            </button>
+            <div className="relative">
+              <button 
+                onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+                className="flex items-center justify-center gap-2 px-3 xl:px-6 py-2 bg-[#e6005c] hover:bg-[#ff0066] rounded-xl text-white shadow-lg shadow-pink-500/20 transition-all text-[11px] font-bold shrink-0"
+                title="HTML 다운로드"
+              >
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden xl:inline-block truncate">HTML 다운로드</span>
+              </button>
+              
+              <AnimatePresence>
+                {showDownloadMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowDownloadMenu(false)} />
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 mt-2 w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
+                    >
+                      <button 
+                        onClick={() => { downloadHtml(); setShowDownloadMenu(false); }}
+                        className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
+                      >
+                        <FileText className="w-4 h-4 text-emerald-400" />
+                        <div>
+                          <p className="text-[11px] font-bold text-white">전체 다운로드</p>
+                          <p className="text-[9px] text-white/30">하나의 HTML 파일로 저장</p>
+                        </div>
+                      </button>
+                      
+                      {splitPoints.size > 0 && (
+                        <>
+                          <div className="h-px bg-white/5 my-1" />
+                          <div className="px-3 py-2">
+                            <p className="text-[9px] font-bold text-white/20 uppercase tracking-widest">분할 섹션</p>
+                          </div>
+                          <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                            {(() => {
+                              const sortedPoints = Array.from(splitPoints).sort((a: number, b: number) => a - b);
+                              const sections: { start: number; end: number }[] = [];
+                              let last = 0;
+                              sortedPoints.forEach((p: number) => {
+                                sections.push({ start: last, end: p });
+                                last = p + 1;
+                              });
+                              sections.push({ start: last, end: mergedLogs.length - 1 });
+                              
+                              return sections.map((s, i) => (
+                                <button 
+                                  key={i}
+                                  onClick={() => { downloadHtml(s); setShowDownloadMenu(false); }}
+                                  className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
+                                >
+                                  <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[9px] font-bold text-white/40">
+                                    {i + 1}
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] font-bold text-white">{sectionNames[sortedPoints[i-1] ?? -1] || `섹션 ${i + 1}`}</p>
+                                    <p className="text-[9px] text-white/30">{s.start + 1} ~ {s.end + 1}번 블록</p>
+                                  </div>
+                                </button>
+                              ));
+                            })()}
+                          </div>
+                          <div className="h-px bg-white/5 my-1" />
+                          <button 
+                            onClick={() => { downloadZip(); setShowDownloadMenu(false); }}
+                            className="w-full flex items-center gap-3 p-3 hover:bg-[#e6005c]/20 rounded-xl transition-colors text-left group"
+                          >
+                            <Plus className="w-4 h-4 text-[#e6005c]" />
+                            <div>
+                              <p className="text-[11px] font-bold text-[#e6005c]">ZIP으로 모두 저장</p>
+                              <p className="text-[9px] text-[#e6005c]/40">모든 섹션을 압축파일로 저장</p>
+                            </div>
+                          </button>
+                        </>
+                      )}
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
 
         {/* Preview Area */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#0f0f0f] relative min-w-0">
-          <div className="max-w-[800px] mx-auto min-w-0">
+        <div 
+          ref={previewContainerRef}
+          className="flex-1 overflow-y-auto custom-scrollbar bg-[#1a1a1a] relative min-w-0"
+        >
+          <div className="w-full min-w-0">
             {logs.length > 0 ? (
-              <>
-                <iframe
-                  srcDoc={previewHtml}
-                  className="w-full min-h-screen border-none bg-white"
-                  title="Preview"
-                />
+              <div className="relative group/preview">
+                <div className="log-container" style={{ 
+                  maxWidth: '800px', 
+                  margin: '0 auto', 
+                  padding: '40px 0',
+                  backgroundColor: theme === 'dark' ? '#242424' : '#FFFFFF',
+                  color: theme === 'dark' ? '#EEEEEE' : '#1A1A1A',
+                  fontFamily: fontFamily === 'custom' ? (customFontName ? `'${customFontName}', sans-serif` : 'sans-serif') : (fonts.find(f => f.name === fontFamily)?.value || 'sans-serif'),
+                  fontSize: `${fontSize}px`
+                }}>
+                  <div className="relative mb-12 mt-4">
+                    <div className="flex items-center gap-2 bg-[#e6005c] px-3 py-1 rounded-t-lg shadow-lg w-fit ml-4">
+                      <input 
+                        type="text"
+                        value={sectionNames[-1] || ''}
+                        onChange={(e) => setSectionNames(prev => ({ ...prev, [-1]: e.target.value }))}
+                        placeholder="첫 번째 섹션 제목"
+                        className="section-name-input text-white border-white/30 placeholder:text-white/40"
+                      />
+                      <span className="text-[9px] font-bold text-white/60 whitespace-nowrap">
+                        (1번 블록부터 시작)
+                      </span>
+                    </div>
+                    <div className="split-line" />
+                  </div>
+                  
+                  <div className="bg-white min-h-screen relative">
+                    {/* We render the logs as a list of components for interactivity */}
+                    <div className="log-container-inner" style={{ 
+                      backgroundColor: theme === 'dark' ? '#242424' : '#FFFFFF',
+                    }}>
+                    {/* Inject Font if custom */}
+                    {fontFamily === 'custom' && customFontUrl && (
+                      <style>{`@import url('${customFontUrl}');`}</style>
+                    )}
+                    {/* Inject Base Styles */}
+                    <style>{`
+                      .log-item-wrapper { position: relative; }
+                      .log-item-wrapper:hover .block-number { opacity: 1; }
+                      .log-item-wrapper:hover .split-trigger { opacity: 1; }
+                      .block-number { 
+                        position: absolute; 
+                        right: 12px; 
+                        top: 8px; 
+                        font-size: 10px; 
+                        font-weight: bold; 
+                        color: #666; 
+                        opacity: 0; 
+                        transition: opacity 0.2s;
+                        pointer-events: none;
+                        z-index: 10;
+                        background: rgba(0,0,0,0.05);
+                        padding: 2px 6px;
+                        border-radius: 4px;
+                      }
+                      .section-name-input {
+                        background: transparent;
+                        border: none;
+                        border-bottom: 1px dashed #e6005c;
+                        color: #e6005c;
+                        font-size: 11px;
+                        font-weight: bold;
+                        padding: 2px 4px;
+                        width: 150px;
+                        outline: none;
+                      }
+                      .section-name-input::placeholder {
+                        color: #e6005c;
+                        opacity: 0.4;
+                      }
+                      .split-trigger {
+                        position: absolute;
+                        bottom: -14px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        z-index: 30;
+                        opacity: 0;
+                        transition: opacity 0.2s;
+                        display: flex;
+                        gap: 8px;
+                      }
+                      .section-header {
+                        position: absolute;
+                        top: -24px;
+                        left: 16px;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: flex-start;
+                        gap: 4px;
+                        z-index: 25;
+                      }
+                      .split-line {
+                        position: absolute;
+                        bottom: 0;
+                        left: 0;
+                        right: 0;
+                        height: 2px;
+                        background: #e6005c;
+                        box-shadow: 0 0 10px rgba(230,0,92,0.5);
+                        z-index: 10;
+                      }
+                    `}</style>
+
+                    {mergedLogs.slice(0, visibleCount).map((log, idx) => (
+                      <LogItem 
+                        key={log.id}
+                        log={log}
+                        idx={idx}
+                        tabSet={tabSettings[log.tab]}
+                        char={charSettings[log.name]}
+                        theme={theme}
+                        disableOtherColor={disableOtherColor}
+                        fontSize={fontSize}
+                        insertedImages={insertedImages}
+                        splitPoints={splitPoints}
+                        sectionNames={sectionNames}
+                        imageInputIdx={imageInputIdx}
+                        onToggleSplit={(i: number) => {
+                          const next = new Set(splitPoints);
+                          if (next.has(i)) next.delete(i);
+                          else next.add(i);
+                          setSplitPoints(next);
+                        }}
+                        onRenameSection={(i: number, name: string) => {
+                          setSectionNames(prev => ({ ...prev, [i]: name }));
+                        }}
+                        onInsertImage={(i: number) => {
+                          setImageInputIdx(i === imageInputIdx ? null : i);
+                        }}
+                        onAddImageUrl={(i: number, url: string) => {
+                          const next = { ...insertedImages };
+                          if (!next[i]) next[i] = [];
+                          next[i].push(url);
+                          setInsertedImages(next);
+                          setImageInputIdx(null);
+                        }}
+                        onDeleteImage={(i: number, imgIdx: number) => {
+                          const next = { ...insertedImages };
+                          next[i] = next[i].filter((_: any, j: number) => j !== imgIdx);
+                          if (next[i].length === 0) delete next[i];
+                          setInsertedImages(next);
+                        }}
+                        mergedLogsCount={mergedLogs.length}
+                        splitPointsArray={Array.from(splitPoints).sort((a: number, b: number) => a - b)}
+                      />
+                    ))}
+                    
+                    {visibleCount < mergedLogs.length && (
+                      <div className="py-10 text-center text-stone-400 text-xs font-bold">
+                        스크롤하여 더 보기... ({visibleCount} / {mergedLogs.length})
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {activeColorPicker && colorPickerRect && (
                   <>
                     {activeColorPicker.startsWith('tab-') ? (
@@ -1200,7 +1787,7 @@ export default function App() {
                     )}
                   </>
                 )}
-              </>
+              </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-white/20 space-y-6 py-40">
                 <div className="relative">
