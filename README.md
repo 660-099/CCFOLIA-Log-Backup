@@ -1,20 +1,13 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 코코포리아 로그 백업 (CCFOLIA Log Backup)
 
-# Run and deploy your AI Studio app
+CCFOLIA에서 추출한 TRPG 로그를 가독성 좋게 정리하고 백업하는 도구입니다.
 
-This contains everything you need to run your app locally.
-
-View your app in AI Studio: https://ai.studio/apps/f3537e9f-ad1f-445a-b831-e96aab136014
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 주요 기능
+- **로그 업로드**: CCFOLIA HTML 로그 파일을 업로드하여 즉시 변환
+- **캐릭터 설정**: 이름, 색상, 아바타 이미지 설정 및 가시성 조절
+- **탭 설정**: 탭별 출력 형식(메인, 보조, 정보, 비밀 등) 및 색상 설정
+- **미리보기 편집**: 로그 내용 수정, 삭제, 이미지 삽입 및 정렬
+- **로그 분할**: 원하는 지점에서 로그를 분할하여 관리 및 저장
+- **내보내기**: 전체 또는 섹션별 HTML 다운로드 및 클립보드 복사
+- **스타일 관리**: 설정한 스타일을 JSON 파일로 저장하고 불러오기
+- **실시간 테마**: 다크 모드와 라이트 모드 지원

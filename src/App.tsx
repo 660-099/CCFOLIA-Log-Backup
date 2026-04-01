@@ -33,7 +33,11 @@ import {
   FileText,
   ChevronsUpDown,
   Users,
-  ImageOff
+  ImageOff,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorPicker, RgbColorPicker } from 'react-colorful';
@@ -53,6 +57,7 @@ interface LogEntry {
   name: string;
   content: string;
   isCommand: boolean;
+  isContinuation?: boolean;
 }
 
 interface CharSetting {
@@ -103,12 +108,23 @@ const linkify = (text: string) => {
   return text.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">$1</a>');
 };
 
-const LogImage = React.memo(({ url, onDelete, paddingSize }: any) => {
+const LogImage = React.memo(({ url, width, align = 'center', onDelete, onUpdateWidth, onUpdateAlign, paddingSize }: any) => {
   const [hasError, setHasError] = useState(false);
+  const [widthInput, setWidthInput] = useState(width || '');
+
+  useEffect(() => {
+    setWidthInput(width || '');
+  }, [width]);
+
   return (
-    <div style={{ margin: `10px ${paddingSize * 1.3}px`, position: 'relative' }} className="group/img">
+    <div style={{ 
+      margin: `10px ${paddingSize * 1.3}px`, 
+      position: 'relative',
+      display: 'flex',
+      justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start'
+    }} className="group/img">
       {hasError ? (
-        <div className="flex flex-col items-center justify-center p-8 bg-red-500/10 border border-red-500/20 rounded-xl gap-2">
+        <div className="flex flex-col items-center justify-center p-8 bg-red-500/10 border border-red-500/20 rounded-xl gap-2 w-full">
           <div className="text-red-400/40">
             <ImageOff className="w-8 h-8" />
           </div>
@@ -119,17 +135,60 @@ const LogImage = React.memo(({ url, onDelete, paddingSize }: any) => {
         <img 
           src={url} 
           alt="" 
-          style={{ width: '100%', borderRadius: '8px' }} 
+          style={{ 
+            maxWidth: '100%', 
+            width: width ? `${width}px` : 'auto',
+            height: 'auto',
+            borderRadius: '8px',
+            display: 'block'
+          }} 
           onError={() => setHasError(true)}
           referrerPolicy="no-referrer"
         />
       )}
-      <button 
-        onClick={onDelete}
-        className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-lg opacity-0 group-hover/img:opacity-100 transition-opacity z-10"
-      >
-        <Trash2 className="w-3 h-3" />
-      </button>
+      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/img:opacity-100 transition-opacity z-10">
+        <div className="flex items-center bg-stone-900/90 backdrop-blur-sm rounded-lg overflow-hidden border border-white/20 shadow-xl">
+          <div className="flex border-r border-white/10">
+            <button 
+              onClick={() => onUpdateAlign('left')} 
+              className={cn("p-1.5 hover:bg-white/10 transition-colors", align === 'left' ? "text-[#e6005c]" : "text-white/40")}
+              title="좌측 정렬"
+            >
+              <AlignLeft className="w-3 h-3" />
+            </button>
+            <button 
+              onClick={() => onUpdateAlign('center')} 
+              className={cn("p-1.5 hover:bg-white/10 transition-colors", align === 'center' ? "text-[#e6005c]" : "text-white/40")}
+              title="중앙 정렬"
+            >
+              <AlignCenter className="w-3 h-3" />
+            </button>
+            <button 
+              onClick={() => onUpdateAlign('right')} 
+              className={cn("p-1.5 hover:bg-white/10 transition-colors", align === 'right' ? "text-[#e6005c]" : "text-white/40")}
+              title="우측 정렬"
+            >
+              <AlignRight className="w-3 h-3" />
+            </button>
+          </div>
+          <input 
+            type="text"
+            value={widthInput}
+            onChange={(e) => setWidthInput(e.target.value)}
+            onBlur={() => onUpdateWidth(widthInput)}
+            onKeyDown={(e) => e.key === 'Enter' && onUpdateWidth(widthInput)}
+            placeholder="너비(px)"
+            className="w-16 bg-transparent text-[10px] text-white px-2 py-1.5 outline-none placeholder:text-white/30"
+          />
+          <div className="px-1.5 py-1.5 bg-white/10 text-[9px] text-white/50 border-l border-white/10">px</div>
+        </div>
+        <button 
+          onClick={onDelete}
+          className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors shadow-xl"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
     </div>
   );
 });
@@ -172,8 +231,15 @@ const LogItem = React.memo(({
   onInsertImage, 
   onAddImageUrl,
   onDeleteImage,
+  onUpdateImageWidth,
+  onUpdateImageAlign,
+  onEditLog,
+  onDeleteLog,
   splitPointsArray
 }: any) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(log.content);
+
   if (!tabSet?.visible || !char?.visible) return null;
 
   const format = tabSet.format;
@@ -207,11 +273,56 @@ const LogItem = React.memo(({
   };
 
   return (
-    <div className="log-item-wrapper group/item">
-      <div className="block-number font-sans">{idx + 1}</div>
+    <div className={cn(
+      "log-item-wrapper group/item relative",
+      log.isContinuation && "mt-[-4px]"
+    )}>
+      <div className="absolute top-0 right-4 flex gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity z-20">
+        <button 
+          onClick={() => { setIsEditing(true); setEditContent(log.content); }} 
+          className="p-1 bg-stone-800/80 text-white/60 hover:text-white rounded border border-white/10 shadow-lg backdrop-blur-sm"
+          title="수정"
+        >
+          <Pencil className="w-3 h-3" />
+        </button>
+        <button 
+          onClick={() => onDeleteLog(log.id)} 
+          className="p-1 bg-stone-800/80 text-white/60 hover:text-red-400 rounded border border-white/10 shadow-lg backdrop-blur-sm"
+          title="삭제"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+
+      {!log.isContinuation && (
+        <div className="block-number font-sans">{idx + 1}</div>
+      )}
       
-      <div className="log-item" style={{ marginBottom: '2px' }}>
-        {log.isCommand ? (
+      <div className="log-item" style={{ marginBottom: log.isContinuation ? '0' : '2px' }}>
+        {isEditing ? (
+          <div className="mx-4 my-2 p-3 bg-black/20 rounded-xl border border-white/10 flex flex-col gap-2">
+            <textarea 
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              className="w-full bg-black/40 text-white text-sm p-2 rounded-lg border border-white/10 outline-none focus:border-[#e6005c] min-h-[80px]"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button 
+                onClick={() => setIsEditing(false)} 
+                className="px-3 py-1 text-[11px] font-bold text-white/40 hover:text-white transition-colors"
+              >
+                취소
+              </button>
+              <button 
+                onClick={() => { onEditLog(log.id, editContent); setIsEditing(false); }} 
+                className="px-4 py-1 bg-[#e6005c] text-white rounded-lg text-[11px] font-bold hover:bg-[#ff0066] transition-colors"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        ) : log.isCommand ? (
           <div style={{ 
             background: isSecret ? getSecretBg(secretColor) : 'rgba(0,0,0,0.1)',
             border: `1px solid ${theme === 'dark' ? '#444' : '#DDD'}`,
@@ -224,39 +335,61 @@ const LogItem = React.memo(({
           </div>
         ) : format === 'other' ? (
           <div style={{ padding: `${paddingSize / 3}px ${paddingSize * 1.3}px`, display: 'flex', gap: `${gapSize / 1.5}px`, alignItems: 'baseline' }}>
-            <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px`, flexShrink: 0 }}>{log.name}</span>
-            <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444' }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
+            {!log.isContinuation && (
+              <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px`, flexShrink: 0 }}>{log.name}</span>
+            )}
+            <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', marginLeft: log.isContinuation ? `${nameSize * 4}px` : '0' }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
           </div>
         ) : format === 'info' ? (
           <div style={{ padding: `${paddingSize * 1.3}px ${paddingSize * 1.6}px`, background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', borderLeft: `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`, margin: `8px ${paddingSize * 1.3}px`, borderRadius: '4px' }}>
-            <span style={{ fontWeight: 'bold', color, display: 'block', marginBottom: '4px' }}>{log.name}</span>
+            {!log.isContinuation && (
+              <span style={{ fontWeight: 'bold', color, display: 'block', marginBottom: '4px' }}>{log.name}</span>
+            )}
             <div dangerouslySetInnerHTML={{ __html: linkify(log.content) }} style={{ color: theme === 'dark' ? 'inherit' : '#333333' }} />
           </div>
         ) : (
           <div style={{ 
             display: 'flex', 
             gap: `${gapSize}px`, 
-            padding: `${paddingSize}px ${paddingSize * 1.3}px`, 
+            padding: log.isContinuation ? `2px ${paddingSize * 1.3}px ${paddingSize}px ${paddingSize * 1.3}px` : `${paddingSize}px ${paddingSize * 1.3}px`, 
             alignItems: 'flex-start',
             background: isSecret ? getSecretBg(secretColor) : 'transparent',
             borderLeft: isSecret ? `4px solid ${secretColor}` : 'none',
             margin: isSecret ? `4px ${paddingSize * 1.3}px` : '0',
             borderRadius: isSecret ? '4px' : '0'
           }}>
-            <LogAvatar img={img} theme={theme} avatarSize={avatarSize} />
+            {log.isContinuation ? (
+              <div style={{ width: `${avatarSize}px`, flexShrink: 0 }} />
+            ) : (
+              <LogAvatar img={img} theme={theme} avatarSize={avatarSize} />
+            )}
             <div style={{ flexGrow: 1, lineHeight: 1.5 }}>
-              <div style={{ fontWeight: 'bold', color, fontSize: `${nameSize}px`, marginBottom: '2px' }}>{log.name}</div>
+              {!log.isContinuation && (
+                <div 
+                  className="group/name relative inline-block"
+                  style={{ fontWeight: 'bold', color, fontSize: `${nameSize}px`, marginBottom: '2px' }}
+                >
+                  <span className="cursor-default">{log.name}</span>
+                  <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 group-hover/name:opacity-100 transition-opacity duration-0 pointer-events-none z-50 shadow-xl border border-white/10">
+                    {log.name}
+                  </div>
+                </div>
+              )}
               <div dangerouslySetInnerHTML={{ __html: linkify(log.content) }} style={{ color: theme === 'dark' ? 'inherit' : '#333333' }} />
             </div>
           </div>
         )}
       </div>
 
-      {insertedImages[idx] && insertedImages[idx].map((url: string, i: number) => (
+      {insertedImages[idx] && insertedImages[idx].map((imgData: any, i: number) => (
         <LogImage 
           key={i} 
-          url={url} 
+          url={typeof imgData === 'string' ? imgData : imgData.url} 
+          width={typeof imgData === 'string' ? undefined : imgData.width}
+          align={typeof imgData === 'string' ? 'center' : imgData.align}
           onDelete={() => onDeleteImage(idx, i)} 
+          onUpdateWidth={(w: string) => onUpdateImageWidth(idx, i, w)}
+          onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateImageAlign(idx, i, a)}
           paddingSize={paddingSize} 
         />
       ))}
@@ -382,8 +515,9 @@ export default function App() {
   const [mobileTab, setMobileTab] = useState<'settings' | 'preview'>('settings');
   const [charSortMode, setCharSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
   const [splitPoints, setSplitPoints] = useState<Set<number>>(new Set());
-  const [insertedImages, setInsertedImages] = useState<Record<number, string[]>>({});
+  const [insertedImages, setInsertedImages] = useState<Record<number, { url: string; width?: string; align?: 'left' | 'center' | 'right' }[]>>({});
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [showCopyMenu, setShowCopyMenu] = useState(false);
   const [initialState, setInitialState] = useState<any>(null);
   const [visibleCount, setVisibleCount] = useState(50);
   const [sectionNames, setSectionNames] = useState<Record<number, string>>({});
@@ -436,6 +570,10 @@ export default function App() {
       fontFamily,
       theme,
       disableOtherColor,
+      logs,
+      insertedImages,
+      splitPoints: Array.from(splitPoints),
+      sectionNames,
       ...state
     };
     const newHistory = history.slice(0, historyIndex + 1);
@@ -469,6 +607,10 @@ export default function App() {
     setFontFamily(state.fontFamily);
     setTheme(state.theme);
     setDisableOtherColor(state.disableOtherColor);
+    if (state.logs) setLogs(state.logs);
+    if (state.insertedImages) setInsertedImages(state.insertedImages);
+    if (state.splitPoints) setSplitPoints(new Set(state.splitPoints));
+    if (state.sectionNames) setSectionNames(state.sectionNames);
   };
 
   const resetSettings = () => {
@@ -616,6 +758,13 @@ export default function App() {
     });
 
     setLogs(newLogs);
+    
+    // Filter out leading empty logs
+    let firstNonEmptyIndex = newLogs.findIndex(log => log.content.trim() !== '' && log.content.trim() !== '&nbsp;');
+    if (firstNonEmptyIndex === -1) firstNonEmptyIndex = 0;
+    const trimmedLogs = newLogs.slice(firstNonEmptyIndex);
+
+    setLogs(trimmedLogs);
     setCharSettings(newChars);
     setCharOrder(newCharOrder);
     setExtractedColors(Array.from(colorsFound));
@@ -664,22 +813,21 @@ export default function App() {
 
   const mergedLogs = useMemo(() => {
     if (logs.length === 0) return [];
-    if (mergeTabs.size === 0) return logs;
+    if (mergeTabs.size === 0) return logs.map(l => ({ ...l, isContinuation: false }));
 
     const result: LogEntry[] = [];
-    let current: LogEntry | null = null;
+    let lastLog: LogEntry | null = null;
 
     logs.forEach((log) => {
       const tabSet = tabSettings[log.tab];
       const format = tabSet?.format || 'main';
       
-      if (mergeTabs.has(format) && current && current.name === log.name && current.color === log.color && current.tab === log.tab && !log.isCommand && !current.isCommand) {
-        // Merge with larger line spacing marker
-        current.content += `<div style="margin-top: 0.8em;"></div>` + log.content;
+      if (mergeTabs.has(format) && lastLog && lastLog.name === log.name && lastLog.color === log.color && lastLog.tab === log.tab && !log.isCommand && !lastLog.isCommand) {
+        result.push({ ...log, isContinuation: true });
       } else {
-        current = { ...log };
-        result.push(current);
+        result.push({ ...log, isContinuation: false });
       }
+      lastLog = log;
     });
 
     return result;
@@ -689,6 +837,26 @@ export default function App() {
     if (charSortMode === 'appearance') return charOrder;
     return [...charOrder].sort((a, b) => a.localeCompare(b, 'ko'));
   }, [charOrder, charSortMode]);
+
+  const onEditLog = (id: string, content: string) => {
+    const next = logs.map(l => l.id === id ? { ...l, content } : l);
+    setLogs(next);
+    saveToHistory({ logs: next });
+  };
+
+  const onDeleteLog = (id: string) => {
+    const next = logs.filter(l => l.id !== id);
+    setLogs(next);
+    saveToHistory({ logs: next });
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      alert('클립보드에 복사되었습니다.');
+    }).catch(err => {
+      console.error('복사 실패:', err);
+    });
+  };
 
   const generateFinalHtml = (range?: { start: number; end: number }) => {
     const targetLogs = range ? mergedLogs.slice(range.start, range.end + 1) : mergedLogs;
@@ -807,6 +975,7 @@ export default function App() {
       const color = char?.color || log.color;
       const otherNameColor = disableOtherColor ? otherTextColor : color;
       const img = char?.imageUrl;
+      const isCont = log.isContinuation;
 
       if (isInline) {
         const avatarStyle = `width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; background-color: ${avatarPlaceholder}; border-radius: 4px; object-fit: contain;`;
@@ -826,33 +995,37 @@ export default function App() {
             html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${paddingSize * 1.3}px; border-radius: 8px; margin: 8px ${paddingSize * 1.3}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${otherTextColor}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">${linkify(log.content)}</span></div>`;
           }
         } else if (format === 'other') {
-          html += `<div style="padding: ${paddingSize / 3}px ${paddingSize * 1.3}px; display: flex; gap: ${gapSize / 1.5}px; align-items: baseline;"><span style="font-weight: bold; color: ${otherNameColor}; font-size: ${nameSize}px; flex-shrink: 0;">${log.name}</span> <span style="${otherContentStyle}">${linkify(log.content)}</span></div>`;
+          html += `<div style="padding: ${paddingSize / 3}px ${paddingSize * 1.3}px; display: flex; gap: ${gapSize / 1.5}px; align-items: baseline;">
+            ${!isCont ? `<span style="font-weight: bold; color: ${otherNameColor}; font-size: ${nameSize}px; flex-shrink: 0;">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}
+            <span style="${otherContentStyle}">${linkify(log.content)}</span>
+          </div>`;
         } else if (format === 'info') {
-          html += `<div style="padding: ${paddingSize * 1.3}px ${paddingSize * 1.6}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: 8px ${paddingSize * 1.3}px; border-radius: 4px;"><span style="${nameStyle}">${log.name}</span><div style="${contentStyle}">${linkify(log.content)}</div></div>`;
+          html += `<div style="padding: ${paddingSize * 1.3}px ${paddingSize * 1.6}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: 8px ${paddingSize * 1.3}px; border-radius: 4px;">
+            ${!isCont ? `<span style="${nameStyle}">${log.name}</span>` : ''}
+            <div style="${contentStyle}">${linkify(log.content)}</div>
+          </div>`;
         } else if (format === 'secret') {
           const secretColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(secretColor);
           const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
           html += `
             <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${paddingSize * 1.3}px; align-items: flex-start; background: ${secretBg}; border-left: 4px solid ${secretColor}; margin: 4px ${paddingSize * 1.3}px; border-radius: 4px;">
-              ${imgTag}
+              ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
               <div style="${bodyStyle}">
-                <div style="${nameStyle}">${log.name}</div>
+                ${!isCont ? `<div style="${nameStyle}">${log.name}</div>` : ''}
                 <div style="${contentStyle}">${linkify(log.content)}</div>
               </div>
-            </div>
-          `;
+            </div>`;
         } else {
           const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
           html += `
-            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${paddingSize * 1.3}px; align-items: flex-start;">
-              ${imgTag}
+            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${paddingSize * 1.3}px; align-items: flex-start; ${isCont ? 'padding-top: 2px;' : ''}">
+              ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
               <div style="${bodyStyle}">
-                <div style="${nameStyle}">${log.name}</div>
+                ${!isCont ? `<div style="${nameStyle}">${log.name}</div>` : ''}
                 <div style="${contentStyle}">${linkify(log.content)}</div>
               </div>
-            </div>
-          `;
+            </div>`;
         }
         html += `</div>`;
       } else {
@@ -867,45 +1040,50 @@ export default function App() {
             html += `<div class="command-box"><span class="command-text" style="color: ${color}">[ ${log.name} ]</span> <span class="command-text">${linkify(log.content)}</span></div>`;
           }
         } else if (format === 'other') {
-          html += `<div class="other-row"><span class="other-name" style="color: ${otherNameColor}">${log.name}</span> <span class="other-content">${linkify(log.content)}</span></div>`;
+          html += `<div class="other-row">
+            ${!isCont ? `<span class="other-name" style="color: ${otherNameColor}">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}
+            <span class="other-content">${linkify(log.content)}</span>
+          </div>`;
         } else if (format === 'info') {
-          html += `<div class="info-row"><span class="main-name" style="color: ${color}">${log.name}</span> <div class="main-content">${linkify(log.content)}</div></div>`;
+          html += `<div class="info-row">
+            ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
+            <div class="main-content">${linkify(log.content)}</div>
+          </div>`;
         } else if (format === 'secret') {
           const secretColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(secretColor);
           const imgTag = img ? `<img src="${img}" class="main-avatar" />` : `<div class="main-avatar"></div>`;
           html += `
             <div class="secret-row" style="background: ${secretBg}; border-left: 4px solid ${secretColor};">
-              ${imgTag}
+              ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
               <div class="main-body">
-                <span class="main-name" style="color: ${color}">${log.name}</span>
+                ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
                 <div class="main-content">${linkify(log.content)}</div>
               </div>
-            </div>
-          `;
+            </div>`;
         } else {
           const imgTag = img ? `<img src="${img}" class="main-avatar" />` : `<div class="main-avatar"></div>`;
           html += `
-            <div class="main-row">
-              ${imgTag}
+            <div class="main-row ${isCont ? 'continuation' : ''}">
+              ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
               <div class="main-body">
-                <span class="main-name" style="color: ${color}">${log.name}</span>
+                ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
                 <div class="main-content">${linkify(log.content)}</div>
               </div>
-            </div>
-          `;
+            </div>`;
         }
         html += `</div>`;
       }
 
       // Insert images if any
       if (insertedImages[globalIdx]) {
-        insertedImages[globalIdx].forEach(url => {
-          if (isInline) {
-            html += `<div style="margin: 10px ${paddingSize * 1.3}px;"><img src="${url}" style="width: 100%; border-radius: 8px;" /></div>`;
-          } else {
-            html += `<div style="margin: 10px ${paddingSize * 1.3}px;"><img src="${url}" style="width: 100%; border-radius: 8px;" /></div>`;
-          }
+        insertedImages[globalIdx].forEach(imgData => {
+          const align = imgData.align || 'center';
+          const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
+          const widthStyle = imgData.width ? `width: ${imgData.width}px;` : 'max-width: 100%;';
+          html += `<div style="display: flex; justify-content: ${justify}; margin: 10px ${paddingSize * 1.3}px;">
+            <img src="${imgData.url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" />
+          </div>`;
         });
       }
     });
@@ -1095,14 +1273,11 @@ export default function App() {
                     <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] font-bold text-white/70">캐릭터별 통합</span>
-                        <div className="group relative">
-                          <HelpCircle className="w-3 h-3 text-white/20 cursor-help" />
-                          <div className="absolute right-0 bottom-full mb-2 px-2 py-1 bg-stone-800 text-white text-[9px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                            연속된 동일 캐릭터의 대사를 하나로 합칩니다.
-                          </div>
+                        <div className="text-[9px] text-white/30 font-medium">
+                          연속된 동일 캐릭터의 대사를 하나로 합칩니다.
                         </div>
                       </div>
-                      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5">
+                      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-1.5">
                         {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
                           <button
                             key={f}
@@ -1235,7 +1410,7 @@ export default function App() {
                           </div>
                           
                           {renamingChar === char.name ? (
-                            <div className="flex gap-1 w-16 shrink-0">
+                            <div className="flex gap-1 w-32 shrink-0">
                               <input 
                                 type="text" 
                                 value={newNameInput}
@@ -1251,13 +1426,13 @@ export default function App() {
                               </button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1 w-16 shrink-0 overflow-hidden group/charname relative">
+                            <div className="flex items-center gap-1 w-24 shrink-0 overflow-hidden group/charname relative">
                               <span 
                                 className="text-[10px] font-bold truncate flex-1 text-white cursor-default"
                               >
                                 {char.name}
                               </span>
-                              <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[9px] rounded whitespace-nowrap opacity-0 group-hover/charname:opacity-100 transition-opacity duration-0 pointer-events-none z-50">
+                              <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 group-hover/charname:opacity-100 transition-opacity duration-0 pointer-events-none z-50 shadow-xl border border-white/10">
                                 {char.name}
                               </div>
                               <button 
@@ -1296,16 +1471,16 @@ export default function App() {
                             onBlur={() => {
                               saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                             }}
-                            className="flex-1 text-[10px] px-2 py-1.5 bg-black/20 border border-white/5 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors"
+                            className="flex-1 min-w-0 text-[10px] px-2 py-1.5 bg-black/20 border border-white/5 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors"
                           />
                           
                           <div className="group/charimg relative w-7 h-7 rounded-lg bg-black/20 border border-white/5 shrink-0 flex items-center justify-center ml-auto">
                             {char.imageUrl ? (
                               <>
-                                <img src={char.imageUrl} alt="" className="max-w-full max-h-full object-contain rounded-lg" />
-                                <div className="absolute right-full mr-3 top-0 z-[100] hidden group-hover/charimg:block pointer-events-none">
-                                  <div className="bg-[#1a1a1a] p-1 rounded-xl border border-white/20 shadow-2xl overflow-hidden">
-                                    <img src={char.imageUrl} alt="" className="w-32 h-32 object-contain rounded-lg" />
+                                <img src={char.imageUrl} alt="" referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain rounded-lg" />
+                                <div className="absolute right-full mr-3 top-1/2 -translate-y-1/2 z-[100] hidden group-hover/charimg:block pointer-events-none">
+                                  <div className="bg-[#1a1a1a] p-1.5 rounded-xl border border-white/20 shadow-2xl overflow-hidden min-w-[128px] min-h-[128px] flex items-center justify-center">
+                                    <img src={char.imageUrl} alt="" referrerPolicy="no-referrer" className="w-32 h-32 object-contain rounded-lg block" />
                                   </div>
                                 </div>
                               </>
@@ -1580,6 +1755,83 @@ export default function App() {
               <FileJson className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden xl:inline-block truncate">스타일 저장</span>
             </button>
+
+            <div className="relative">
+              <button 
+                onClick={() => setShowCopyMenu(!showCopyMenu)}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-3 xl:px-4 py-2 border rounded-xl transition-all text-[11px] font-bold shrink-0",
+                  "bg-white/5 hover:bg-white/10 border-white/10 text-white/60 hover:text-white"
+                )}
+                title="HTML 복사"
+              >
+                <Copy className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden xl:inline-block truncate">HTML 복사</span>
+              </button>
+
+              <AnimatePresence>
+                {showCopyMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowCopyMenu(false)} />
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
+                    >
+                      <button 
+                        onClick={() => { copyToClipboard(generateFinalHtml()); setShowCopyMenu(false); }}
+                        className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
+                      >
+                        <Copy className="w-4 h-4 text-emerald-400" />
+                        <div>
+                          <p className="text-[11px] font-bold text-white">전체 복사</p>
+                          <p className="text-[9px] text-white/30">전체 HTML 코드를 클립보드에 복사</p>
+                        </div>
+                      </button>
+                      
+                      {splitPoints.size > 0 && (
+                        <>
+                          <div className="h-px bg-white/5 my-1" />
+                          <div className="px-3 py-2">
+                            <p className="text-[9px] font-bold text-white/20 uppercase tracking-widest">분할 섹션 복사</p>
+                          </div>
+                          <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                            {(() => {
+                              const sortedPoints = Array.from(splitPoints).sort((a: number, b: number) => a - b);
+                              const sections: { start: number; end: number }[] = [];
+                              let last = 0;
+                              sortedPoints.forEach((p: number) => {
+                                sections.push({ start: last, end: p });
+                                last = p + 1;
+                              });
+                              sections.push({ start: last, end: mergedLogs.length - 1 });
+                              
+                              return sections.map((s, i) => (
+                                <button 
+                                  key={i}
+                                  onClick={() => { copyToClipboard(generateFinalHtml(s)); setShowCopyMenu(false); }}
+                                  className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
+                                >
+                                  <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[9px] font-bold text-white/40">
+                                    {i + 1}
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] font-bold text-white truncate max-w-[120px]">{sectionNames[s.start] || `섹션 ${i + 1}`}</p>
+                                    <p className="text-[9px] text-white/30">{s.start + 1} ~ {s.end + 1}번 블록</p>
+                                  </div>
+                                </button>
+                              ));
+                            })()}
+                          </div>
+                        </>
+                      )}
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+
             <div className="relative">
               <button 
                 onClick={() => setShowDownloadMenu(!showDownloadMenu)}
@@ -1598,18 +1850,27 @@ export default function App() {
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 mt-2 w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
+                      className="absolute right-0 mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
                     >
-                      <button 
-                        onClick={() => { downloadHtml(); setShowDownloadMenu(false); }}
-                        className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
-                      >
-                        <FileText className="w-4 h-4 text-emerald-400" />
-                        <div>
-                          <p className="text-[11px] font-bold text-white">전체 다운로드</p>
-                          <p className="text-[9px] text-white/30">하나의 HTML 파일로 저장</p>
-                        </div>
-                      </button>
+                      <div className="flex items-center group">
+                        <button 
+                          onClick={() => { downloadHtml(); setShowDownloadMenu(false); }}
+                          className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-l-xl transition-colors text-left"
+                        >
+                          <FileText className="w-4 h-4 text-emerald-400" />
+                          <div>
+                            <p className="text-[11px] font-bold text-white">전체 다운로드</p>
+                            <p className="text-[9px] text-white/30">하나의 HTML 파일로 저장</p>
+                          </div>
+                        </button>
+                        <button 
+                          onClick={() => { copyToClipboard(generateFinalHtml()); setShowDownloadMenu(false); }}
+                          className="p-3 hover:bg-white/5 rounded-r-xl text-white/20 hover:text-white transition-colors"
+                          title="전체 복사"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                       
                       {splitPoints.size > 0 && (
                         <>
@@ -1617,7 +1878,7 @@ export default function App() {
                           <div className="px-3 py-2">
                             <p className="text-[9px] font-bold text-white/20 uppercase tracking-widest">분할 섹션</p>
                           </div>
-                          <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                          <div className="max-h-64 overflow-y-auto custom-scrollbar">
                             {(() => {
                               const sortedPoints = Array.from(splitPoints).sort((a: number, b: number) => a - b);
                               const sections: { start: number; end: number }[] = [];
@@ -1629,19 +1890,27 @@ export default function App() {
                               sections.push({ start: last, end: mergedLogs.length - 1 });
                               
                               return sections.map((s, i) => (
-                                <button 
-                                  key={i}
-                                  onClick={() => { downloadHtml(s); setShowDownloadMenu(false); }}
-                                  className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
-                                >
-                                  <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[9px] font-bold text-white/40">
-                                    {i + 1}
-                                  </div>
-                                  <div>
-                                    <p className="text-[11px] font-bold text-white">{sectionNames[s.start] || `섹션 ${i + 1}`}</p>
-                                    <p className="text-[9px] text-white/30">{s.start + 1} ~ {s.end + 1}번 블록</p>
-                                  </div>
-                                </button>
+                                <div key={i} className="flex items-center group">
+                                  <button 
+                                    onClick={() => { downloadHtml(s); setShowDownloadMenu(false); }}
+                                    className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-l-xl transition-colors text-left"
+                                  >
+                                    <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[9px] font-bold text-white/40 group-hover:text-white/60">
+                                      {i + 1}
+                                    </div>
+                                    <div>
+                                      <p className="text-[11px] font-bold text-white truncate max-w-[120px]">{sectionNames[s.start] || `섹션 ${i + 1}`}</p>
+                                      <p className="text-[9px] text-white/30">{s.start + 1} ~ {s.end + 1}번 블록</p>
+                                    </div>
+                                  </button>
+                                  <button 
+                                    onClick={() => { copyToClipboard(generateFinalHtml(s)); setShowDownloadMenu(false); }}
+                                    className="p-3 hover:bg-white/5 rounded-r-xl text-white/20 hover:text-white transition-colors"
+                                    title="복사"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               ));
                             })()}
                           </div>
@@ -1796,9 +2065,12 @@ export default function App() {
                           if (next.has(i)) next.delete(i);
                           else next.add(i);
                           setSplitPoints(next);
+                          saveToHistory({ splitPoints: Array.from(next) });
                         }}
                         onRenameSection={(i: number, name: string) => {
-                          setSectionNames(prev => ({ ...prev, [i]: name }));
+                          const next = { ...sectionNames, [i]: name };
+                          setSectionNames(next);
+                          saveToHistory({ sectionNames: next });
                         }}
                         onInsertImage={(i: number) => {
                           setImageInputIdx(i === imageInputIdx ? null : i);
@@ -1806,8 +2078,9 @@ export default function App() {
                         onAddImageUrl={(i: number, url: string) => {
                           const next = { ...insertedImages };
                           if (!next[i]) next[i] = [];
-                          next[i].push(url);
+                          next[i].push({ url, align: 'center' });
                           setInsertedImages(next);
+                          saveToHistory({ insertedImages: next });
                           setImageInputIdx(null);
                         }}
                         onDeleteImage={(i: number, imgIdx: number) => {
@@ -1815,7 +2088,26 @@ export default function App() {
                           next[i] = next[i].filter((_: any, j: number) => j !== imgIdx);
                           if (next[i].length === 0) delete next[i];
                           setInsertedImages(next);
+                          saveToHistory({ insertedImages: next });
                         }}
+                        onUpdateImageWidth={(i: number, imgIdx: number, width: string) => {
+                          const next = { ...insertedImages };
+                          if (next[i] && next[i][imgIdx]) {
+                            next[i][imgIdx] = { ...next[i][imgIdx], width };
+                            setInsertedImages(next);
+                            saveToHistory({ insertedImages: next });
+                          }
+                        }}
+                        onUpdateImageAlign={(i: number, imgIdx: number, align: 'left' | 'center' | 'right') => {
+                          const next = { ...insertedImages };
+                          if (next[i] && next[i][imgIdx]) {
+                            next[i][imgIdx] = { ...next[i][imgIdx], align };
+                            setInsertedImages(next);
+                            saveToHistory({ insertedImages: next });
+                          }
+                        }}
+                        onEditLog={onEditLog}
+                        onDeleteLog={onDeleteLog}
                         mergedLogsCount={mergedLogs.length}
                         splitPointsArray={Array.from(splitPoints).sort((a: number, b: number) => a - b)}
                       />
