@@ -49,6 +49,8 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const r = (n: number) => Math.round(n * 10) / 10;
+
 type TabFormat = 'main' | 'other' | 'info' | 'secret';
 
 interface LogEntry {
@@ -123,7 +125,7 @@ const LogImage = React.memo(({ url, width, align = 'center', onDelete, onUpdateW
 
   return (
     <div style={{ 
-      margin: `10px ${paddingSize * 1.3}px`, 
+      margin: `10px ${r(paddingSize * 1.3)}px`, 
       position: 'relative',
       display: 'flex',
       justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start'
@@ -331,13 +333,13 @@ const LogItem = React.memo(({
       )}
 
       {shouldShowIndex && (
-        <div style={{ margin: `12px ${paddingSize * 1.3}px 4px ${paddingSize * 1.3}px`, display: 'flex' }}>
+        <div style={{ margin: `12px ${r(paddingSize * 1.3)}px 4px ${r(paddingSize * 1.3)}px`, display: 'flex' }}>
           <div style={{ 
             background: getSecretBg(tabColor), 
             color: tabColor,
             padding: '2px 10px',
             borderRadius: '4px',
-            fontSize: `${nameSize * 0.8}px`,
+            fontSize: `${r(nameSize * 0.8)}px`,
             fontWeight: 'bold',
             border: `1px solid ${tabColor}44`
           }}>
@@ -377,28 +379,28 @@ const LogItem = React.memo(({
           <div style={{ 
             background: isSecret ? getSecretBg(tabColor) : 'rgba(0,0,0,0.1)',
             border: `1px solid ${theme === 'dark' ? '#444' : '#DDD'}`,
-            padding: `${paddingSize}px ${paddingSize * 1.3}px`,
+            padding: `${paddingSize}px ${r(paddingSize * 1.3)}px`,
             borderRadius: '8px',
-            margin: `8px ${paddingSize * 1.3}px`
+            margin: `8px ${r(paddingSize * 1.3)}px`
           }}>
             <span style={{ color, fontWeight: 'bold', fontFamily: 'monospace' }}>[ {log.name} ]</span>
             <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#333333', fontWeight: 'bold', fontFamily: 'monospace', marginLeft: '8px', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
           </div>
         ) : format === 'other' ? (
-          <div style={{ padding: `${paddingSize / 3}px ${paddingSize * 1.3}px`, display: 'flex', gap: `${gapSize / 1.5}px`, alignItems: 'baseline' }}>
+          <div style={{ padding: `${r(paddingSize / 3)}px ${r(paddingSize * 1.3)}px`, display: 'flex', gap: `${r(gapSize / 1.5)}px`, alignItems: 'baseline' }}>
             {!log.isContinuation && (
               <div className="relative inline-block flex-shrink-0">
                 <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px` }} className="cursor-default">{log.name}</span>
               </div>
             )}
-            <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', marginLeft: log.isContinuation ? `${nameSize * 4}px` : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
+            <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', marginLeft: log.isContinuation ? `${r(nameSize * 4)}px` : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
           </div>
         ) : format === 'info' ? (
           <div style={{ 
-            padding: `${paddingSize * 1.3}px ${paddingSize * 1.6}px`, 
+            padding: `${r(paddingSize * 1.3)}px ${r(paddingSize * 1.6)}px`, 
             background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', 
             borderLeft: `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`, 
-            margin: shouldMergeStyle ? `0 ${paddingSize * 1.3}px` : `8px ${paddingSize * 1.3}px`, 
+            margin: shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `8px ${r(paddingSize * 1.3)}px`, 
             borderRadius: shouldMergeStyle 
               ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
               : '4px',
@@ -416,11 +418,11 @@ const LogItem = React.memo(({
           <div style={{ 
             display: 'flex', 
             gap: `${gapSize}px`, 
-            padding: log.isContinuation ? `6px ${paddingSize * 1.3}px ${paddingSize}px ${paddingSize * 1.3}px` : `${paddingSize}px ${paddingSize * 1.3}px`, 
+            padding: log.isContinuation ? `6px ${r(paddingSize * 1.3)}px ${paddingSize}px ${r(paddingSize * 1.3)}px` : `${paddingSize}px ${r(paddingSize * 1.3)}px`, 
             alignItems: 'flex-start',
             background: isSecret ? getSecretBg(tabColor) : 'transparent',
             borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
-            margin: shouldMergeStyle ? (isSecret ? `0 ${paddingSize * 1.3}px` : '0') : (isSecret ? `4px ${paddingSize * 1.3}px` : '0'),
+            margin: shouldMergeStyle ? (isSecret ? `0 ${r(paddingSize * 1.3)}px` : '0') : (isSecret ? `4px ${r(paddingSize * 1.3)}px` : '0'),
             borderRadius: shouldMergeStyle && isSecret
               ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
               : (isSecret ? '4px' : '0'),
@@ -1163,14 +1165,14 @@ export default function App() {
         overflow-x: hidden;
       }
       .log-item { position: relative; margin-bottom: 2px; }
-      .tab-name-block { margin: 12px ${paddingSize * 1.3}px 4px ${paddingSize * 1.3}px; display: flex; }
+      .tab-name-block { margin: 12px ${r(paddingSize * 1.3)}px 4px ${r(paddingSize * 1.3)}px; display: flex; }
       .tab-name-badge { padding: 2px 10px; border-radius: 4px; font-size: 0.8em; font-weight: bold; }
       
       /* Main Format */
       .main-row { 
         display: flex; 
         gap: ${gapSize}px; 
-        padding: ${paddingSize}px ${paddingSize * 1.3}px; 
+        padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; 
         align-items: flex-start; 
       }
       .main-avatar { 
@@ -1187,9 +1189,9 @@ export default function App() {
 
       /* Other Format */
       .other-row { 
-        padding: ${paddingSize / 3}px ${paddingSize * 1.3}px; 
+        padding: ${r(paddingSize / 3)}px ${r(paddingSize * 1.3)}px; 
         display: flex;
-        gap: ${gapSize / 1.5}px;
+        gap: ${r(gapSize / 1.5)}px;
         align-items: baseline;
       }
       .other-name { font-weight: bold; flex-shrink: 0; font-size: 1em; }
@@ -1197,19 +1199,19 @@ export default function App() {
 
       /* Info Format */
       .info-row { 
-        padding: ${paddingSize * 1.3}px ${paddingSize * 1.6}px; 
+        padding: ${r(paddingSize * 1.3)}px ${r(paddingSize * 1.6)}px; 
         background: ${infoBg};
         border-left: 4px solid ${borderColor};
-        margin: 8px ${paddingSize * 1.3}px;
+        margin: 8px ${r(paddingSize * 1.3)}px;
         border-radius: 4px;
       }
       
       .command-box { 
         background: rgba(0, 0, 0, 0.1); 
         border: 1px solid ${borderColor}; 
-        padding: ${paddingSize}px ${paddingSize * 1.3}px; 
+        padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; 
         border-radius: 8px; 
-        margin: 8px ${paddingSize * 1.3}px; 
+        margin: 8px ${r(paddingSize * 1.3)}px; 
       }
       .command-text { font-family: 'JetBrains Mono', monospace; color: ${otherTextColor}; font-size: 0.9em; }
 
@@ -1217,9 +1219,9 @@ export default function App() {
       .secret-row {
         display: flex; 
         gap: ${gapSize}px; 
-        padding: ${paddingSize}px ${paddingSize * 1.3}px; 
+        padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; 
         align-items: flex-start;
-        margin: 4px ${paddingSize * 1.3}px;
+        margin: 4px ${r(paddingSize * 1.3)}px;
         border-radius: 4px;
       }
     `;
@@ -1269,8 +1271,8 @@ export default function App() {
         const tabBg = getSecretBg(tabColor);
         
         if (isInline) {
-          html += `<div style="margin: 12px ${paddingSize * 1.3}px 4px ${paddingSize * 1.3}px; display: flex;">
-            <div style="background: ${tabBg}; color: ${tabColor}; padding: 2px 10px; border-radius: 4px; font-size: ${nameSize * 0.8}px; font-weight: bold; border: 1px solid ${tabColor}44;">
+          html += `<div style="margin: 12px ${r(paddingSize * 1.3)}px 4px ${r(paddingSize * 1.3)}px; display: flex;">
+            <div style="background: ${tabBg}; color: ${tabColor}; padding: 2px 10px; border-radius: 4px; font-size: ${r(nameSize * 0.8)}px; font-weight: bold; border: 1px solid ${tabColor}44;">
               ${tabName}
             </div>
           </div>`;
@@ -1304,24 +1306,24 @@ export default function App() {
           if (format === 'secret') {
             const tabColor = tabSet?.color || '#ffd400';
             const secretBg = getSecretBg(tabColor);
-            html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingSize}px ${paddingSize * 1.3}px; border-radius: 8px; margin: 8px ${paddingSize * 1.3}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${textColor}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em; margin-left: 8px;">${linkify(log.content)}</span></div>`;
+            html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${textColor}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em; margin-left: 8px;">${linkify(log.content)}</span></div>`;
           } else {
-            html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${paddingSize * 1.3}px; border-radius: 8px; margin: 8px ${paddingSize * 1.3}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${otherTextColor}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em; margin-left: 8px;">${linkify(log.content)}</span></div>`;
+            html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${otherTextColor}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em; margin-left: 8px;">${linkify(log.content)}</span></div>`;
           }
         } else if (format === 'other') {
-          html += `<div style="padding: ${paddingSize / 3}px ${paddingSize * 1.3}px; display: flex; gap: ${gapSize / 1.5}px; align-items: baseline;">
+          html += `<div style="padding: ${r(paddingSize / 3)}px ${r(paddingSize * 1.3)}px; display: flex; gap: ${r(gapSize / 1.5)}px; align-items: baseline;">
             ${!isCont ? `<span style="font-weight: bold; color: ${otherNameColor}; font-size: ${nameSize}px; flex-shrink: 0;">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}
             <span style="${otherContentStyle}">${linkify(log.content)}</span>
           </div>`;
         } else if (format === 'info') {
-          const infoMargin = shouldMergeStyle ? `0 ${paddingSize * 1.3}px` : `8px ${paddingSize * 1.3}px`;
+          const infoMargin = shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `8px ${r(paddingSize * 1.3)}px`;
           const infoRadius = shouldMergeStyle 
             ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
             : '4px';
           const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : `4px solid ${borderColor}`;
           const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : 'none';
 
-          html += `<div style="padding: ${paddingSize * 1.3}px ${paddingSize * 1.6}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: ${infoMargin}; border-radius: ${infoRadius}; border-top: ${infoBorderTop}; border-bottom: ${infoBorderBottom};">
+          html += `<div style="padding: ${r(paddingSize * 1.3)}px ${r(paddingSize * 1.6)}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: ${infoMargin}; border-radius: ${infoRadius}; border-top: ${infoBorderTop}; border-bottom: ${infoBorderBottom};">
             ${!isCont ? `<span style="${nameStyle}">${log.name}</span>` : ''}
             <div style="${contentStyle}">${linkify(log.content)}</div>
           </div>`;
@@ -1329,7 +1331,7 @@ export default function App() {
           const tabColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(tabColor);
           const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
-          const secretMargin = shouldMergeStyle ? `0 ${paddingSize * 1.3}px` : `4px ${paddingSize * 1.3}px`;
+          const secretMargin = shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `4px ${r(paddingSize * 1.3)}px`;
           const secretRadius = shouldMergeStyle 
             ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
             : '4px';
@@ -1337,7 +1339,7 @@ export default function App() {
           const secretBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : 'none';
 
           html += `
-            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${paddingSize * 1.3}px; align-items: flex-start; background: ${secretBg}; border-left: 4px solid ${tabColor}; margin: ${secretMargin}; border-radius: ${secretRadius}; border-top: ${secretBorderTop}; border-bottom: ${secretBorderBottom};">
+            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; align-items: flex-start; background: ${secretBg}; border-left: 4px solid ${tabColor}; margin: ${secretMargin}; border-radius: ${secretRadius}; border-top: ${secretBorderTop}; border-bottom: ${secretBorderBottom};">
               ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
               <div style="${bodyStyle}">
                 ${!isCont ? `<div style="${nameStyle}">${log.name}</div>` : ''}
@@ -1352,7 +1354,7 @@ export default function App() {
           const contAvatarHtml = `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`;
 
           html += `
-            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${paddingSize * 1.3}px; align-items: flex-start; ${isCont ? 'padding-top: 2px;' : ''}">
+            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; align-items: flex-start; ${isCont ? 'padding-top: 2px;' : ''}">
               ${!isCont ? avatarHtml : contAvatarHtml}
               <div style="${bodyStyle}">
                 ${!isCont ? `<div style="${nameStyle}">${log.name}</div>` : ''}
@@ -1385,7 +1387,7 @@ export default function App() {
             <span class="other-content">${linkify(log.content)}</span>
           </div>`;
         } else if (format === 'info') {
-          const infoMargin = shouldMergeStyle ? `0 ${paddingSize * 1.3}px` : `8px ${paddingSize * 1.3}px`;
+          const infoMargin = shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `8px ${r(paddingSize * 1.3)}px`;
           const infoRadius = shouldMergeStyle 
             ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
             : '4px';
@@ -1399,7 +1401,7 @@ export default function App() {
           const tabColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(tabColor);
           const avatarHtml = img ? `<img src="${img}" class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}" />` : `<div class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}"></div>`;
-          const secretMargin = shouldMergeStyle ? `0 ${paddingSize * 1.3}px` : `4px ${paddingSize * 1.3}px`;
+          const secretMargin = shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `4px ${r(paddingSize * 1.3)}px`;
           const secretRadius = shouldMergeStyle 
             ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
             : '4px';
@@ -1438,7 +1440,7 @@ export default function App() {
           const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
           const width = typeof imgData === 'string' ? undefined : imgData.width;
           const widthStyle = width ? `width: ${width}px;` : 'max-width: 100%;';
-          html += `<div style="display: flex; justify-content: ${justify}; margin: 10px ${paddingSize * 1.3}px;">
+          html += `<div style="display: flex; justify-content: ${justify}; margin: 10px ${r(paddingSize * 1.3)}px;">
             <img src="${url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
           </div>`;
         });
