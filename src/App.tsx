@@ -5,6 +5,7 @@
 
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { Analytics } from "@vercel/analytics/react";
 import { 
   Scissors,
   Check,
@@ -2691,6 +2692,7 @@ export default function App() {
           <span className="text-[10px] font-bold">미리보기</span>
         </button>
       </div>
+      <Analytics />
     </div>
   );
 }
