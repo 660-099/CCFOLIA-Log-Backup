@@ -297,8 +297,9 @@ const LogItem = React.memo(({
   const getSectionRange = () => {
     const sorted = splitPointsArray;
     const splitIdx = sorted.indexOf(idx);
-    const start = splitIdx === 0 ? 1 : sorted[splitIdx - 1] + 2;
-    const end = idx + 1;
+    const start = idx + 2;
+    const nextSplitIdx = splitIdx + 1;
+    const end = nextSplitIdx < sorted.length ? sorted[nextSplitIdx] + 1 : mergedLogsCount;
     return `${start} - ${end}`;
   };
 
@@ -386,10 +387,7 @@ const LogItem = React.memo(({
           <div style={{ padding: `${paddingSize / 3}px ${paddingSize * 1.3}px`, display: 'flex', gap: `${gapSize / 1.5}px`, alignItems: 'baseline' }}>
             {!log.isContinuation && (
               <div className="relative inline-block flex-shrink-0">
-                <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px` }} className="peer cursor-default">{log.name}</span>
-                <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 peer-hover:opacity-100 transition-all duration-200 pointer-events-none z-[100] shadow-2xl border border-white/10">
-                  {log.name}
-                </div>
+                <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px` }} className="cursor-default">{log.name}</span>
               </div>
             )}
             <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', marginLeft: log.isContinuation ? `${nameSize * 4}px` : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
@@ -408,10 +406,7 @@ const LogItem = React.memo(({
           }}>
             {!log.isContinuation && (
               <div className="relative inline-block mb-1">
-                <span style={{ fontWeight: 'bold', color, display: 'block' }} className="peer cursor-default">{log.name}</span>
-                <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 peer-hover:opacity-100 transition-all duration-200 pointer-events-none z-[100] shadow-2xl border border-white/10">
-                  {log.name}
-                </div>
+                <span style={{ fontWeight: 'bold', color, display: 'block' }} className="cursor-default">{log.name}</span>
               </div>
             )}
             <div dangerouslySetInnerHTML={{ __html: linkify(log.content) }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', lineHeight: 1.6 }} />
@@ -442,10 +437,7 @@ const LogItem = React.memo(({
                   className="relative inline-block"
                   style={{ fontWeight: 'bold', color, fontSize: `${nameSize}px`, marginBottom: '2px' }}
                 >
-                  <span className="peer cursor-default">{log.name}</span>
-                  <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 peer-hover:opacity-100 transition-all duration-200 pointer-events-none z-[100] shadow-2xl border border-white/10">
-                    {log.name}
-                  </div>
+                  <span className="cursor-default">{log.name}</span>
                 </div>
               )}
               <div dangerouslySetInnerHTML={{ __html: linkify(log.content) }} style={{ color: theme === 'dark' ? 'inherit' : '#333333' }} />
@@ -567,7 +559,14 @@ const fonts = [
 ];
 
 export default function App() {
+  const [isTitleEditing, setIsTitleEditing] = useState(false);
   const [pageTitle, setPageTitle] = useState('');
+  const [tempTitle, setTempTitle] = useState('');
+
+  // Sync tempTitle when pageTitle changes (e.g. from history)
+  useEffect(() => {
+    setTempTitle(pageTitle);
+  }, [pageTitle]);
   const [originalFileName, setOriginalFileName] = useState('');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [charSettings, setCharSettings] = useState<Record<string, CharSetting>>({});
@@ -597,7 +596,7 @@ export default function App() {
   const [initialState, setInitialState] = useState<any>(null);
   const [visibleCount, setVisibleCount] = useState(50);
   const [sectionNames, setSectionNames] = useState<Record<number, string>>({});
-  const [mergeTabs, setMergeTabs] = useState<Set<TabFormat>>(new Set(['main', 'other', 'secret']));
+  const [mergeTabs, setMergeTabs] = useState<Set<TabFormat>>(new Set(['main', 'secret']));
   const [showTabNames, setShowTabNames] = useState<Set<TabFormat>>(new Set(['main', 'secret']));
   const [mergeTabStyles, setMergeTabStyles] = useState<Set<TabFormat>>(new Set(['secret']));
   const [hideEmptyAvatars, setHideEmptyAvatars] = useState(false);
@@ -648,11 +647,11 @@ export default function App() {
     const svg = `
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
         <circle cx="50" cy="50" r="50" fill="#e6005c" />
-        <path d="M32 28h26l10 10v34c0 3.3-2.7 6-6 6H32c-3.3 0-6-2.7-6-6V34c0-3.3 2.7-6 6-6z" fill="white" />
-        <path d="M58 28v10h10" fill="none" stroke="#e6005c" stroke-width="2" />
-        <rect x="34" y="46" width="20" height="4" rx="1" fill="#e6005c" />
-        <rect x="34" y="56" width="32" height="4" rx="1" fill="#e6005c" />
-        <rect x="34" y="66" width="32" height="4" rx="1" fill="#e6005c" />
+        <path d="M35 28h26l10 10v34c0 3.3-2.7 6-6 6H35c-3.3 0-6-2.7-6-6V34c0-3.3 2.7-6 6-6z" fill="white" />
+        <path d="M61 28v10h10" fill="none" stroke="#e6005c" stroke-width="2" />
+        <rect x="37" y="46" width="20" height="4" rx="1" fill="#e6005c" />
+        <rect x="37" y="56" width="32" height="4" rx="1" fill="#e6005c" />
+        <rect x="37" y="66" width="32" height="4" rx="1" fill="#e6005c" />
       </svg>
     `.trim();
     (favicon as HTMLLinkElement).href = `data:image/svg+xml;base64,${btoa(svg)}`;
@@ -1014,6 +1013,8 @@ export default function App() {
     return result;
   }, [logs, mergeTabs, tabSettings]);
 
+  const splitPointsArray = useMemo(() => Array.from(splitPoints).sort((a: number, b: number) => a - b), [splitPoints]);
+
   const sortedCharOrder = useMemo(() => {
     if (charSortMode === 'appearance') return charOrder;
     return [...charOrder].sort((a, b) => a.localeCompare(b, 'ko'));
@@ -1036,6 +1037,9 @@ export default function App() {
   };
 
   const onDeleteLog = (id: string) => {
+    // Find index in mergedLogs before deleting
+    const idx = mergedLogs.findIndex(l => l.id === id);
+
     if (id.startsWith('merged:')) {
       const ids = id.replace('merged:', '').split(',');
       const next = logs.filter(l => !ids.includes(l.id));
@@ -1045,6 +1049,49 @@ export default function App() {
       const next = logs.filter(l => l.id !== id);
       setLogs(next);
       saveToHistory({ logs: next });
+    }
+
+    if (idx !== -1) {
+      // Shift insertedImages
+      const updatedImages: any = {};
+      Object.keys(insertedImages).forEach(key => {
+        const i = parseInt(key);
+        if (i < idx) {
+          updatedImages[i] = insertedImages[i];
+        } else if (i > idx) {
+          updatedImages[i - 1] = insertedImages[i];
+        } else {
+          // i === idx. Image was after the deleted log.
+          // Move it to idx - 1 if possible
+          if (idx > 0) {
+            updatedImages[idx - 1] = [...(updatedImages[idx - 1] || []), ...insertedImages[i]];
+          }
+        }
+      });
+      setInsertedImages(updatedImages);
+      
+      // Shift splitPoints
+      const nextSplits = new Set<number>();
+      splitPoints.forEach(i => {
+        if (i < idx) nextSplits.add(i);
+        else if (i > idx) nextSplits.add(i - 1);
+      });
+      setSplitPoints(nextSplits);
+
+      // Shift sectionNames
+      const nextNames: any = {};
+      Object.keys(sectionNames).forEach(key => {
+        const i = parseInt(key);
+        if (i < idx) nextNames[i] = sectionNames[i];
+        else if (i > idx) nextNames[i - 1] = sectionNames[i];
+      });
+      setSectionNames(nextNames);
+      
+      saveToHistory({ 
+        insertedImages: updatedImages, 
+        splitPoints: Array.from(nextSplits), 
+        sectionNames: nextNames 
+      });
     }
   };
 
@@ -1434,18 +1481,21 @@ export default function App() {
     });
     sections.push({ start: last, end: mergedLogs.length - 1 });
 
+    const fileName = pageTitle || originalFileName || 'ccfolia';
+    const folderName = `${fileName}_log`;
+    const folder = zip.folder(folderName);
+
     sections.forEach((s, i) => {
       const html = generateFinalHtml(s);
       const name = sectionNames[s.start] || `section_${i + 1}`;
-      zip.file(`${name}.html`, html);
+      folder?.file(`${name}.html`, html);
     });
 
     const content = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(content);
     const a = document.createElement('a');
     a.href = url;
-    const fileName = pageTitle || originalFileName || 'ccfolia';
-    a.download = `${fileName}_all.zip`;
+    a.download = `${folderName}.zip`;
     a.click();
   };
 
@@ -1461,12 +1511,12 @@ export default function App() {
         <div className="p-5 border-b border-white/5 bg-[#1a1a1a] shrink-0">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="p-2.5 bg-[#e6005c] rounded-xl shadow-lg shadow-pink-500/20 shrink-0">
+              <div className="w-10 h-10 bg-[#e6005c] rounded-xl shadow-lg shadow-pink-500/20 shrink-0 flex items-center justify-center">
                 <FileText className="w-5 h-5 text-white" />
               </div>
               <div className="min-w-0 flex flex-col justify-center">
                 <p className="text-[9px] font-bold text-white/30 uppercase tracking-[0.15em]">CCFOLIA LOG FORMATTER</p>
-                <h1 className="text-base font-bold text-white whitespace-nowrap leading-tight">코코포리아 로그 편집</h1>
+                <h1 className="text-[17px] font-bold text-white whitespace-nowrap leading-tight">코코포리아 로그 편집기</h1>
               </div>
             </div>
 
@@ -1486,7 +1536,7 @@ export default function App() {
                 href="https://posty.pe/7oldqj" 
                 target="_blank" 
                 rel="noopener noreferrer" 
-                className="text-[9px] font-bold text-white/40 hover:text-white transition-colors flex items-center gap-1"
+                className="text-[9px] font-bold text-white/40 hover:text-white transition-all flex items-center gap-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-2 py-1"
               >
                 도움말 보기
                 <ExternalLink className="w-2.5 h-2.5 opacity-30" />
@@ -1822,7 +1872,7 @@ export default function App() {
                       const char = charSettings[charName];
                       if (!char) return null;
                       return (
-                        <div key={char.name} className="p-2 bg-white/5 rounded-2xl border border-white/5 shadow-sm flex items-center gap-2 relative">
+                        <div key={char.name} className="p-2 bg-white/5 rounded-2xl border border-white/5 shadow-sm flex items-center gap-2 relative group/charitem">
                           <div className="shrink-0">
                             <Toggle 
                               enabled={char.visible} 
@@ -1851,15 +1901,8 @@ export default function App() {
                               </button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1 w-24 shrink-0 overflow-hidden relative">
-                              <span 
-                                className="peer text-[10px] font-bold truncate flex-1 text-white cursor-default"
-                              >
-                                {char.name}
-                              </span>
-                              <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 peer-hover:opacity-100 transition-all duration-200 pointer-events-none z-50 shadow-xl border border-white/10">
-                                {char.name}
-                              </div>
+                            <div className="flex items-center gap-1 w-24 shrink-0 overflow-visible relative">
+                              <CharacterNameWithTooltip name={char.name} />
                               <button 
                                 onClick={() => { setRenamingChar(char.name); setNewNameInput(char.name); }}
                                 className="p-0.5 text-white/20 hover:text-[#e6005c] transition-colors"
@@ -1988,7 +2031,7 @@ export default function App() {
                       <div className="group relative">
                         <HelpCircle className="w-3 h-3 text-white/20 cursor-help" />
                         <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-stone-800 text-white text-[9px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                          폰트 크기에 맞춰 아바타 및 간격이 자동 조절됩니다.
+                          폰트 크기에 맞춰 인장 및 간격이 자동 조절됩니다.
                         </div>
                       </div>
                     </div>
@@ -2072,32 +2115,32 @@ export default function App() {
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t border-white/5 bg-[#1a1a1a] shrink-0 space-y-2">
-          <div className="flex items-center gap-1.5">
+        <div className="p-2 border-t border-white/5 bg-[#1a1a1a] shrink-0 space-y-1">
+          <div className="flex items-center gap-1">
             <button 
               onClick={undo}
               disabled={historyIndex <= 0}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white disabled:opacity-10 transition-all text-[10px] font-bold border border-white/5"
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white disabled:opacity-10 transition-all text-[9px] font-bold border border-white/5"
               title="되돌리기"
             >
-              <Undo2 className="w-3.5 h-3.5" />
+              <Undo2 className="w-3 h-3" />
               되돌리기
             </button>
             <button 
               onClick={redo}
               disabled={historyIndex >= history.length - 1}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white disabled:opacity-10 transition-all text-[10px] font-bold border border-white/5"
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white disabled:opacity-10 transition-all text-[9px] font-bold border border-white/5"
               title="다시 실행"
             >
-              <Redo2 className="w-3.5 h-3.5" />
+              <Redo2 className="w-3 h-3" />
               다시 실행
             </button>
             <button 
               onClick={resetSettings}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/5 hover:bg-red-500/20 rounded-lg text-white/40 hover:text-red-400 transition-all text-[10px] font-bold border border-white/5"
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/5 hover:bg-red-500/20 rounded-lg text-white/40 hover:text-red-400 transition-all text-[9px] font-bold border border-white/5"
               title="초기화"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-3 h-3" />
               초기화
             </button>
           </div>
@@ -2132,22 +2175,64 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 xl:gap-3 shrink-1 min-w-0">
-            <div className="relative group w-28 xl:w-48 mr-0 xl:mr-2 shrink-1 min-w-[80px]">
-              <input 
-                type="text"
-                value={pageTitle}
-                onChange={(e) => setPageTitle(e.target.value)}
-                className={cn(
-                  "w-full border rounded-xl px-3 py-2 text-[11px] font-bold outline-none transition-colors pr-8 truncate",
-                  "bg-black/20 border-white/10 text-white focus:border-[#e6005c] placeholder:text-white/20"
-                )}
-                placeholder="제목 변경"
-              />
-              <Pencil className={cn(
-                "w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors shrink-0",
-                "text-white/20 group-hover:text-white/40"
-              )} />
-            </div>
+            {isTitleEditing ? (
+              <div className="flex items-center gap-1 shrink-1 min-w-0">
+                <div className="relative w-28 xl:w-48 shrink-1 min-w-[80px]">
+                  <input 
+                    type="text"
+                    value={tempTitle}
+                    onChange={(e) => setTempTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setPageTitle(tempTitle);
+                        saveToHistory({ pageTitle: tempTitle });
+                        setIsTitleEditing(false);
+                      } else if (e.key === 'Escape') {
+                        setTempTitle(pageTitle);
+                        setIsTitleEditing(false);
+                      }
+                    }}
+                    className={cn(
+                      "w-full border rounded-xl px-3 py-2 text-[11px] font-bold outline-none transition-colors",
+                      "bg-black/20 border-[#e6005c] text-white placeholder:text-white/20"
+                    )}
+                    placeholder="제목 입력"
+                    autoFocus
+                    onBlur={() => {
+                      // Small delay to allow button click
+                      setTimeout(() => setIsTitleEditing(false), 200);
+                    }}
+                  />
+                </div>
+                <button
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setPageTitle(tempTitle);
+                    saveToHistory({ pageTitle: tempTitle });
+                    setIsTitleEditing(false);
+                  }}
+                  className="px-2.5 py-2 bg-[#e6005c] text-white rounded-xl text-[10px] font-bold hover:bg-[#ff0066] transition-all active:scale-95 shrink-0"
+                >
+                  확인
+                </button>
+              </div>
+            ) : (
+              <div 
+                onClick={() => {
+                  setIsTitleEditing(true);
+                  setTempTitle(pageTitle);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/5 cursor-pointer group transition-colors shrink-1 min-w-0"
+              >
+                <span className={cn(
+                  "text-[11px] font-bold truncate max-w-[100px] xl:max-w-[180px]",
+                  pageTitle ? "text-white" : "text-white/20"
+                )}>
+                  {pageTitle || "제목 변경"}
+                </span>
+                <Pencil className="w-3.5 h-3.5 text-white/20 group-hover:text-white/40 transition-colors shrink-0" />
+              </div>
+            )}
             <button 
               onClick={() => {
                 const filename = `${pageTitle || 'log'}_style`;
@@ -2323,7 +2408,7 @@ export default function App() {
                         "text-[10px] font-bold mb-1",
                         theme === 'dark' ? "text-white/40" : "text-stone-400"
                       )}>
-                        기본 섹션
+                        {`1 - ${splitPointsArray.length > 0 ? splitPointsArray[0] + 1 : mergedLogs.length}번 블록`}
                       </div>
                     </div>
                     <div className="h-px bg-[#e6005c] w-full" />
@@ -2478,7 +2563,7 @@ export default function App() {
                             onEditLog={onEditLog}
                             onDeleteLog={onDeleteLog}
                             mergedLogsCount={mergedLogs.length}
-                            splitPointsArray={Array.from(splitPoints).sort((a: number, b: number) => a - b)}
+                            splitPointsArray={splitPointsArray}
                             isPrevSameTab={isPrevSameTab}
                             isNextSameTab={isNextSameTab}
                             isPrevSplit={idx > 0 && splitPoints.has(prevGlobalIdx)}
@@ -2587,6 +2672,34 @@ export default function App() {
 }
 
 // Helper Components
+const CharacterNameWithTooltip = ({ name }: { name: string }) => {
+  const [isTruncated, setIsTruncated] = useState(false);
+  const spanRef = useRef<HTMLSpanElement>(null);
+
+  const checkTruncation = () => {
+    if (spanRef.current) {
+      setIsTruncated(spanRef.current.scrollWidth > spanRef.current.clientWidth);
+    }
+  };
+
+  return (
+    <div className="flex-1 min-w-0 relative group/tooltip">
+      <span 
+        ref={spanRef}
+        onMouseEnter={checkTruncation}
+        className="text-[10px] font-bold truncate block text-white cursor-default"
+      >
+        {name}
+      </span>
+      {isTruncated && (
+        <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 group-hover/tooltip:opacity-100 transition-all duration-200 pointer-events-none z-[100] shadow-xl border border-white/10">
+          {name}
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface ColorPickerPopupProps {
   color: string;
   extractedColors: string[];
