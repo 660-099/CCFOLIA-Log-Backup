@@ -232,6 +232,7 @@ const LogAvatar = React.memo(({ img, theme, avatarSize, hideEmptyAvatars }: any)
 const LogItem = React.memo(({ 
   log, 
   idx, 
+  stableId,
   tabSet, 
   char, 
   theme, 
@@ -288,8 +289,8 @@ const LogItem = React.memo(({
   const shouldMergeStyle = mergeTabStyles.has(format) && (isPrevSameTab || isNextSameTab);
   
   // 미리보기에서 섹션으로 나뉘는 곳의 모서리가 둥글어지도록 처리
-  const isSectionStart = idx === 0 || isPrevSplit || !!insertedImages[idx - 1];
-  const isSectionEnd = idx === mergedLogsCount - 1 || isSplit || !!insertedImages[idx];
+  const isSectionStart = idx === 0 || isPrevSplit || !!insertedImages[stableId];
+  const isSectionEnd = idx === mergedLogsCount - 1 || isSplit || !!insertedImages[stableId];
 
   // 인덱스 표시 조건: 탭이 바뀌었을 때만 (다른 탭이 사이에 끼어들었을 때) 혹은 섹션이 나뉘었을 때
   const shouldShowIndex = showTabNames.has(format) && (!isPrevSameTab || isPrevSplit);
@@ -346,7 +347,7 @@ const LogItem = React.memo(({
       )}
       
       <div className="log-item" style={{ 
-        marginBottom: shouldMergeStyle ? (isNextSameTab && !insertedImages[idx] ? '0' : '2px') : (log.isContinuation ? '0' : '2px'),
+        marginBottom: shouldMergeStyle ? (isNextSameTab && !insertedImages[stableId] ? '0' : '2px') : (log.isContinuation ? '0' : '2px'),
         marginTop: '0'
       }}>
         {isEditing ? (
@@ -446,15 +447,15 @@ const LogItem = React.memo(({
         )}
       </div>
 
-      {insertedImages[idx] && insertedImages[idx].map((imgData: any, i: number) => (
+      {insertedImages[stableId] && insertedImages[stableId].map((imgData: any, i: number) => (
         <LogImage 
           key={i} 
           url={typeof imgData === 'string' ? imgData : imgData.url} 
           width={typeof imgData === 'string' ? undefined : imgData.width}
           align={typeof imgData === 'string' ? 'center' : imgData.align}
-          onDelete={() => onDeleteImage(idx, i)} 
-          onUpdateWidth={(w: string) => onUpdateImageWidth(idx, i, w)}
-          onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateImageAlign(idx, i, a)}
+          onDelete={() => onDeleteImage(stableId, i)} 
+          onUpdateWidth={(w: string) => onUpdateImageWidth(stableId, i, w)}
+          onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateImageAlign(stableId, i, a)}
           paddingSize={paddingSize} 
         />
       ))}
@@ -478,7 +479,7 @@ const LogItem = React.memo(({
               )}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  onAddImageUrl(idx, e.currentTarget.value);
+                  onAddImageUrl(stableId, e.currentTarget.value);
                   e.currentTarget.value = '';
                 }
               }}
@@ -486,7 +487,7 @@ const LogItem = React.memo(({
             <button 
               onClick={(e) => {
                 const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-                onAddImageUrl(idx, input.value);
+                onAddImageUrl(stableId, input.value);
                 input.value = '';
               }}
               className="px-4 py-2 bg-[#e6005c] text-white rounded-lg text-[11px] font-bold hover:bg-[#ff0066] transition-colors"
@@ -590,7 +591,7 @@ export default function App() {
   const [mobileTab, setMobileTab] = useState<'settings' | 'preview'>('settings');
   const [charSortMode, setCharSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
   const [splitPoints, setSplitPoints] = useState<Set<number>>(new Set());
-  const [insertedImages, setInsertedImages] = useState<Record<number, { url: string; width?: string; align?: 'left' | 'center' | 'right' }[]>>({});
+  const [insertedImages, setInsertedImages] = useState<Record<string, { url: string; width?: string; align?: 'left' | 'center' | 'right' }[]>>({});
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [showCopyMenu, setShowCopyMenu] = useState(false);
   const [initialState, setInitialState] = useState<any>(null);
@@ -723,25 +724,34 @@ export default function App() {
   const resetSettings = () => {
     if (confirm('설정을 초기화하시겠습니까?')) {
       if (initialState) {
-        applyState(initialState);
-        saveToHistory(initialState);
+        const state = JSON.parse(JSON.stringify(initialState));
+        setCharSettings(state.charSettings);
+        setTabSettings(state.tabSettings);
+        setTabOrder(state.tabOrder);
+        setCssFormat(state.cssFormat);
+        setFontSize(state.fontSize);
+        setFontFamily(state.fontFamily);
+        setTheme(state.theme);
+        setDisableOtherColor(state.disableOtherColor);
+        setLogs(state.logs);
+        setInsertedImages(state.insertedImages || {});
+        setSplitPoints(new Set(state.splitPoints || []));
+        setSectionNames(state.sectionNames || {});
+        setMergeTabs(new Set(state.mergeTabs || ['main', 'secret']));
+        setShowTabNames(new Set(state.showTabNames || ['main', 'secret']));
+        setMergeTabStyles(new Set(state.mergeTabStyles || ['secret']));
+        setHideEmptyAvatars(state.hideEmptyAvatars || false);
+        saveToHistory(state);
       } else {
-        const defaultState = {
-          charSettings: Object.fromEntries(Object.entries(charSettings).map(([k, v]) => [k, { ...(v as object), color: '#000000', imageUrl: '', visible: true }])),
-          tabSettings: Object.fromEntries(Object.entries(tabSettings).map(([k, v]) => {
-            const setting = v as TabSetting;
-            return [k, { ...setting, format: 'main', visible: true, color: setting.format === 'secret' ? '#ffd400' : '#e6005c' }];
-          })),
-          tabOrder,
-          cssFormat: 'internal' as const,
-          fontSize: 14,
-          fontFamily: 'Noto Sans KR',
-          theme: 'dark' as const,
-          disableOtherColor: false,
-          hideEmptyAvatars: false
-        };
-        applyState(defaultState);
-        saveToHistory(defaultState);
+        setCssFormat('internal');
+        setFontSize(14);
+        setFontFamily('Noto Sans KR');
+        setTheme('dark');
+        setDisableOtherColor(false);
+        setMergeTabs(new Set(['main', 'secret']));
+        setShowTabNames(new Set(['main', 'secret']));
+        setMergeTabStyles(new Set(['secret']));
+        setHideEmptyAvatars(false);
       }
     }
   };
@@ -849,7 +859,7 @@ export default function App() {
 
     pTags.forEach((p, index) => {
       const spans = Array.from(p.querySelectorAll('span'));
-      if (spans.length < 3) return;
+      if (spans.length < 2) return;
 
       const styleAttr = p.getAttribute('style') || '';
       const colorMatch = styleAttr.match(/color\s*:\s*([^;]+)/i);
@@ -861,8 +871,16 @@ export default function App() {
       const tabMatch = tabRaw.match(/\[(.*?)\]/);
       const tab = tabMatch ? tabMatch[1].trim() : '';
       
-      const name = spans[1].textContent?.trim() || 'Unknown';
-      const content = spans[2].innerHTML.trim();
+      let name = 'Unknown';
+      let content = '';
+
+      if (spans.length >= 3) {
+        name = spans[1].textContent?.trim() || 'Unknown';
+        content = spans[2].innerHTML.trim();
+      } else {
+        // Handle cases where name might be missing or structure is different
+        content = spans[1].innerHTML.trim();
+      }
 
       const isCommand = content.includes('|') || content.includes('＞') || content.includes('→') || content.includes('choice[');
 
@@ -1017,7 +1035,12 @@ export default function App() {
 
   const sortedCharOrder = useMemo(() => {
     if (charSortMode === 'appearance') return charOrder;
-    return [...charOrder].sort((a, b) => a.localeCompare(b, 'ko'));
+    return [...charOrder].sort((a, b) => {
+      // Handle "Unknown" or empty names by putting them at the end
+      if (a === 'Unknown' && b !== 'Unknown') return 1;
+      if (a !== 'Unknown' && b === 'Unknown') return -1;
+      return a.localeCompare(b, 'ko', { sensitivity: 'base', numeric: true });
+    });
   }, [charOrder, charSortMode]);
 
   const onEditLog = (id: string, content: string) => {
@@ -1052,25 +1075,15 @@ export default function App() {
     }
 
     if (idx !== -1) {
-      // Shift insertedImages
-      const updatedImages: any = {};
-      Object.keys(insertedImages).forEach(key => {
-        const i = parseInt(key);
-        if (i < idx) {
-          updatedImages[i] = insertedImages[i];
-        } else if (i > idx) {
-          updatedImages[i - 1] = insertedImages[i];
-        } else {
-          // i === idx. Image was after the deleted log.
-          // Move it to idx - 1 if possible
-          if (idx > 0) {
-            updatedImages[idx - 1] = [...(updatedImages[idx - 1] || []), ...insertedImages[i]];
-          }
-        }
-      });
-      setInsertedImages(updatedImages);
+      // Remove associated images for the deleted log (ID-based)
+      const nextImages = { ...insertedImages };
+      const stableId = id.startsWith('merged:') ? id.split(',').pop()! : id;
+      if (nextImages[stableId]) {
+        delete nextImages[stableId];
+      }
+      setInsertedImages(nextImages);
       
-      // Shift splitPoints
+      // Shift splitPoints (these are still index-based)
       const nextSplits = new Set<number>();
       splitPoints.forEach(i => {
         if (i < idx) nextSplits.add(i);
@@ -1078,7 +1091,7 @@ export default function App() {
       });
       setSplitPoints(nextSplits);
 
-      // Shift sectionNames
+      // Shift sectionNames (these are still index-based)
       const nextNames: any = {};
       Object.keys(sectionNames).forEach(key => {
         const i = parseInt(key);
@@ -1088,7 +1101,7 @@ export default function App() {
       setSectionNames(nextNames);
       
       saveToHistory({ 
-        insertedImages: updatedImages, 
+        insertedImages: nextImages, 
         splitPoints: Array.from(nextSplits), 
         sectionNames: nextNames 
       });
@@ -1231,11 +1244,13 @@ export default function App() {
       };
 
       // Calculate isPrevSameTab and isNextSameTab for Tab Integration
-      const currentImages = (insertedImages[globalIdx] || []).filter(imgData => {
+      const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
+      const currentImages = (insertedImages[stableId] || []).filter(imgData => {
         const url = typeof imgData === 'string' ? imgData : imgData.url;
         return isValidUrl(url);
       });
-      const prevImages = idx > 0 ? (insertedImages[mergedLogs.findIndex(l => l.id === filteredLogs[idx-1].id)] || []).filter(imgData => {
+      const prevStableId = idx > 0 ? (filteredLogs[idx-1].id.startsWith('merged:') ? filteredLogs[idx-1].id.split(',').pop()! : filteredLogs[idx-1].id) : '';
+      const prevImages = idx > 0 ? (insertedImages[prevStableId] || []).filter(imgData => {
         const url = typeof imgData === 'string' ? imgData : imgData.url;
         return isValidUrl(url);
       }) : [];
@@ -1413,8 +1428,9 @@ export default function App() {
       }
 
       // Insert images if any
-      if (insertedImages[globalIdx]) {
-        insertedImages[globalIdx].forEach(imgData => {
+      const currentStableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
+      if (insertedImages[currentStableId]) {
+        insertedImages[currentStableId].forEach(imgData => {
           const url = typeof imgData === 'string' ? imgData : imgData.url;
           if (!isValidUrl(url)) return;
           
@@ -2499,11 +2515,13 @@ export default function App() {
                         const prevGlobalIdx = idx > 0 ? filteredLogsWithGlobalIdx[idx - 1].globalIdx : -1;
                         const isPrevSameTab = idx > 0 && filteredLogsWithGlobalIdx[idx - 1].log.tab === log.tab;
                         const isNextSameTab = idx < filteredLogsWithGlobalIdx.length - 1 && filteredLogsWithGlobalIdx[idx + 1].log.tab === log.tab;
+                        const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
                         
                         return (
                           <LogItem 
                             key={log.id}
                             idx={globalIdx}
+                            stableId={stableId}
                             log={log}
                             tabSet={tabSettings[log.tab]}
                             char={charSettings[log.name] || { name: log.name, color: log.color, visible: true }}
@@ -2529,33 +2547,33 @@ export default function App() {
                             onInsertImage={(i: number) => {
                               setImageInputIdx(i === imageInputIdx ? null : i);
                             }}
-                            onAddImageUrl={(i: number, url: string) => {
+                            onAddImageUrl={(id: string, url: string) => {
                               const next = { ...insertedImages };
-                              if (!next[i]) next[i] = [];
-                              next[i].push({ url, width: '400', align: 'center' });
+                              if (!next[id]) next[id] = [];
+                              next[id].push({ url, width: '400', align: 'center' });
                               setInsertedImages(next);
                               saveToHistory({ insertedImages: next });
                               setImageInputIdx(null);
                             }}
-                            onDeleteImage={(i: number, imgIdx: number) => {
+                            onDeleteImage={(id: string, imgIdx: number) => {
                               const next = { ...insertedImages };
-                              next[i] = next[i].filter((_: any, j: number) => j !== imgIdx);
-                              if (next[i].length === 0) delete next[i];
+                              next[id] = next[id].filter((_: any, j: number) => j !== imgIdx);
+                              if (next[id].length === 0) delete next[id];
                               setInsertedImages(next);
                               saveToHistory({ insertedImages: next });
                             }}
-                            onUpdateImageWidth={(i: number, imgIdx: number, width: string) => {
+                            onUpdateImageWidth={(id: string, imgIdx: number, width: string) => {
                               const next = { ...insertedImages };
-                              if (next[i] && next[i][imgIdx]) {
-                                next[i][imgIdx] = { ...next[i][imgIdx], width };
+                              if (next[id] && next[id][imgIdx]) {
+                                next[id][imgIdx] = { ...next[id][imgIdx], width };
                                 setInsertedImages(next);
                                 saveToHistory({ insertedImages: next });
                               }
                             }}
-                            onUpdateImageAlign={(i: number, imgIdx: number, align: 'left' | 'center' | 'right') => {
+                            onUpdateImageAlign={(id: string, imgIdx: number, align: 'left' | 'center' | 'right') => {
                               const next = { ...insertedImages };
-                              if (next[i] && next[i][imgIdx]) {
-                                next[i][imgIdx] = { ...next[i][imgIdx], align };
+                              if (next[id] && next[id][imgIdx]) {
+                                next[id][imgIdx] = { ...next[id][imgIdx], align };
                                 setInsertedImages(next);
                                 saveToHistory({ insertedImages: next });
                               }
