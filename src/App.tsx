@@ -648,11 +648,11 @@ export default function App() {
     const svg = `
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
         <circle cx="50" cy="50" r="50" fill="#e6005c" />
-        <path d="M33 28h26l10 10v34c0 3.3-2.7 6-6 6H33c-3.3 0-6-2.7-6-6V34c0-3.3 2.7-6 6-6z" fill="white" />
-        <path d="M59 28v10h10" fill="none" stroke="#e6005c" stroke-width="2" />
-        <rect x="35" y="46" width="20" height="4" rx="1" fill="#e6005c" />
-        <rect x="35" y="56" width="32" height="4" rx="1" fill="#e6005c" />
-        <rect x="35" y="66" width="32" height="4" rx="1" fill="#e6005c" />
+        <path d="M36 25h24l10 10v34c0 3.3-2.7 6-6 6H36c-3.3 0-6-2.7-6-6V31c0-3.3 2.7-6 6-6z" fill="white" />
+        <path d="M60 25v10h10" fill="none" stroke="#e6005c" stroke-width="2" />
+        <rect x="35" y="43" width="20" height="4" rx="1" fill="#e6005c" />
+        <rect x="35" y="53" width="30" height="4" rx="1" fill="#e6005c" />
+        <rect x="35" y="63" width="30" height="4" rx="1" fill="#e6005c" />
       </svg>
     `.trim();
     (favicon as HTMLLinkElement).href = `data:image/svg+xml;base64,${btoa(svg)}`;
@@ -1158,7 +1158,7 @@ export default function App() {
         background: ${bgColor}; 
         color: ${textColor}; 
         line-height: 1.6; 
-        padding: 40px 0; 
+        padding: 20px 0; 
         font-size: ${fontSize}px;
         overflow-x: hidden;
       }
