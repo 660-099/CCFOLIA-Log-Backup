@@ -648,11 +648,11 @@ export default function App() {
     const svg = `
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
         <circle cx="50" cy="50" r="50" fill="#e6005c" />
-        <path d="M35 28h26l10 10v34c0 3.3-2.7 6-6 6H35c-3.3 0-6-2.7-6-6V34c0-3.3 2.7-6 6-6z" fill="white" />
-        <path d="M61 28v10h10" fill="none" stroke="#e6005c" stroke-width="2" />
-        <rect x="37" y="46" width="20" height="4" rx="1" fill="#e6005c" />
-        <rect x="37" y="56" width="32" height="4" rx="1" fill="#e6005c" />
-        <rect x="37" y="66" width="32" height="4" rx="1" fill="#e6005c" />
+        <path d="M33 28h26l10 10v34c0 3.3-2.7 6-6 6H33c-3.3 0-6-2.7-6-6V34c0-3.3 2.7-6 6-6z" fill="white" />
+        <path d="M59 28v10h10" fill="none" stroke="#e6005c" stroke-width="2" />
+        <rect x="35" y="46" width="20" height="4" rx="1" fill="#e6005c" />
+        <rect x="35" y="56" width="32" height="4" rx="1" fill="#e6005c" />
+        <rect x="35" y="66" width="32" height="4" rx="1" fill="#e6005c" />
       </svg>
     `.trim();
     (favicon as HTMLLinkElement).href = `data:image/svg+xml;base64,${btoa(svg)}`;
@@ -1149,7 +1149,7 @@ export default function App() {
 
     const css = `
       ${fontImport}
-      * { box-sizing: border-box; min-width: 0; }
+      .log-container * { box-sizing: border-box; min-width: 0; }
       .log-container { 
         width: 100%; 
         max-width: 800px; 
@@ -1454,7 +1454,7 @@ export default function App() {
         <title>${pageTitle}</title>
         ${isInline ? '' : `<style>${css}</style>`}
       </head>
-      <body style="margin: 0; background: ${bgColor};">
+      <body style="margin: 0;">
         <div class="log-container">
           ${html}
         </div>
@@ -1906,6 +1906,10 @@ export default function App() {
                                 type="text" 
                                 value={newNameInput}
                                 onChange={(e) => setNewNameInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') renameCharacter(char.name, newNameInput);
+                                  if (e.key === 'Escape') setRenamingChar(null);
+                                }}
                                 className="w-full text-[10px] font-bold px-1 py-0.5 border border-[#e6005c] rounded outline-none bg-black/20 text-white"
                                 autoFocus
                               />
@@ -2653,7 +2657,7 @@ export default function App() {
                   onClick={() => fileInputRef.current?.click()}
                   className="px-8 py-3 bg-[#e6005c] text-white rounded-2xl text-sm font-bold hover:bg-[#ff0066] transition-all shadow-xl shadow-pink-500/20 active:scale-95"
                 >
-                  지금 업로드하기
+                  업로드하기
                 </button>
               </div>
             )}
