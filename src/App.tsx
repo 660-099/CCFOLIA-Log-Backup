@@ -37,7 +37,8 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
-  Copy
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorPicker, RgbColorPicker } from 'react-colorful';
@@ -105,7 +106,11 @@ const rgbToHex = (colorStr: string) => {
 
 const linkify = (text: string) => {
   const urlPattern = /(https?:\/\/[^\s<]+)/g;
-  return text.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">$1</a>');
+  const processed = text.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">$1</a>');
+  // 캐릭터별 통합 시 대사들 사이 간격 조정을 위해 div와 margin-bottom 사용
+  return processed.split('\n').map((line, i, arr) => 
+    `<div style="margin-bottom: ${i === arr.length - 1 ? '0' : '0.8em'};">${line || '&nbsp;'}</div>`
+  ).join('');
 };
 
 const LogImage = React.memo(({ url, width, align = 'center', onDelete, onUpdateWidth, onUpdateAlign, paddingSize }: any) => {
@@ -126,7 +131,7 @@ const LogImage = React.memo(({ url, width, align = 'center', onDelete, onUpdateW
       {hasError ? (
         <div className="flex flex-col items-center justify-center p-8 bg-red-500/10 border border-red-500/20 rounded-xl gap-2 w-full">
           <div className="text-red-400/40">
-            <ImageOff className="w-8 h-8" />
+            <ImageIcon className="w-8 h-8" />
           </div>
           <div className="text-[11px] font-bold text-red-400">잘못된 URL입니다</div>
           <div className="text-[9px] text-red-400/60 break-all px-4 text-center">{url}</div>
@@ -184,19 +189,29 @@ const LogImage = React.memo(({ url, width, align = 'center', onDelete, onUpdateW
         </div>
         <button 
           onClick={onDelete}
-          className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors shadow-xl"
+          className="w-7 h-7 flex items-center justify-center bg-red-500 text-white rounded hover:bg-red-600 transition-colors shadow-xl"
         >
-          <Trash2 className="w-3 h-3" />
+          <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>
   );
 });
 
-const LogAvatar = React.memo(({ img, theme, avatarSize }: any) => {
+const LogAvatar = React.memo(({ img, theme, avatarSize, hideEmptyAvatars }: any) => {
   const [hasError, setHasError] = useState(false);
   return (
-    <div style={{ width: `${avatarSize}px`, height: `${avatarSize}px`, flexShrink: 0, backgroundColor: theme === 'dark' ? '#1e1e1e' : '#f0f0f0', borderRadius: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ 
+      width: `${avatarSize}px`, 
+      height: `${avatarSize}px`, 
+      flexShrink: 0, 
+      backgroundColor: hideEmptyAvatars ? 'transparent' : (theme === 'dark' ? '#1e1e1e' : '#f0f0f0'), 
+      borderRadius: '4px', 
+      overflow: 'hidden', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center' 
+    }}>
       {img && !hasError ? (
         <img 
           src={img} 
@@ -207,7 +222,7 @@ const LogAvatar = React.memo(({ img, theme, avatarSize }: any) => {
         />
       ) : img && hasError ? (
         <div className="text-red-500/40">
-          <ImageOff className="w-4 h-4" />
+          <ImageIcon className="w-4 h-4" />
         </div>
       ) : null}
     </div>
@@ -235,10 +250,17 @@ const LogItem = React.memo(({
   onUpdateImageAlign,
   onEditLog,
   onDeleteLog,
-  splitPointsArray
+  splitPointsArray,
+  isPrevSameTab,
+  isNextSameTab,
+  isPrevSplit,
+  mergeTabStyles,
+  showTabNames,
+  hideEmptyAvatars,
+  mergedLogsCount
 }: any) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(log.content);
+  const [editContent, setEditContent] = useState(log.content.replace(/<br\s*\/?>/gi, '\n'));
 
   if (!tabSet?.visible || !char?.visible) return null;
 
@@ -247,7 +269,7 @@ const LogItem = React.memo(({
   const otherNameColor = disableOtherColor ? (theme === 'dark' ? '#AAAAAA' : '#444444') : color;
   const img = char.imageUrl;
   const isSecret = format === 'secret';
-  const secretColor = tabSet.color || '#ffd400';
+  const tabColor = tabSet.color || (isSecret ? '#ffd400' : '#e6005c');
   
   const getSecretBg = (hex: string) => {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -257,12 +279,20 @@ const LogItem = React.memo(({
   };
 
   const scale = fontSize / 14;
-  const avatarSize = 46 * scale;
-  const gapSize = 12 * scale;
-  const paddingSize = 12 * scale;
-  const nameSize = 13 * scale;
+  const avatarSize = Math.round(46 * scale);
+  const gapSize = Math.round(12 * scale);
+  const paddingSize = Math.round(12 * scale);
+  const nameSize = Math.round(13 * scale);
 
   const isSplit = splitPoints.has(idx);
+  const shouldMergeStyle = mergeTabStyles.has(format) && (isPrevSameTab || isNextSameTab);
+  
+  // 미리보기에서 섹션으로 나뉘는 곳의 모서리가 둥글어지도록 처리
+  const isSectionStart = idx === 0 || isPrevSplit || !!insertedImages[idx - 1];
+  const isSectionEnd = idx === mergedLogsCount - 1 || isSplit || !!insertedImages[idx];
+
+  // 인덱스 표시 조건: 탭이 바뀌었을 때만 (다른 탭이 사이에 끼어들었을 때) 혹은 섹션이 나뉘었을 때
+  const shouldShowIndex = showTabNames.has(format) && (!isPrevSameTab || isPrevSplit);
   
   const getSectionRange = () => {
     const sorted = splitPointsArray;
@@ -277,9 +307,9 @@ const LogItem = React.memo(({
       "log-item-wrapper group/item relative",
       log.isContinuation && "mt-[-4px]"
     )}>
-      <div className="absolute top-0 right-4 flex gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity z-20">
+      <div className="absolute top-2 right-4 flex gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity z-20">
         <button 
-          onClick={() => { setIsEditing(true); setEditContent(log.content); }} 
+          onClick={() => { setIsEditing(true); setEditContent(log.content.replace(/<br\s*\/?>/gi, '\n')); }} 
           className="p-1 bg-stone-800/80 text-white/60 hover:text-white rounded border border-white/10 shadow-lg backdrop-blur-sm"
           title="수정"
         >
@@ -297,8 +327,27 @@ const LogItem = React.memo(({
       {!log.isContinuation && (
         <div className="block-number font-sans">{idx + 1}</div>
       )}
+
+      {shouldShowIndex && (
+        <div style={{ margin: `12px ${paddingSize * 1.3}px 4px ${paddingSize * 1.3}px`, display: 'flex' }}>
+          <div style={{ 
+            background: getSecretBg(tabColor), 
+            color: tabColor,
+            padding: '2px 10px',
+            borderRadius: '4px',
+            fontSize: `${nameSize * 0.8}px`,
+            fontWeight: 'bold',
+            border: `1px solid ${tabColor}44`
+          }}>
+            {log.tab}
+          </div>
+        </div>
+      )}
       
-      <div className="log-item" style={{ marginBottom: log.isContinuation ? '0' : '2px' }}>
+      <div className="log-item" style={{ 
+        marginBottom: shouldMergeStyle ? (isNextSameTab && !insertedImages[idx] ? '0' : '2px') : (log.isContinuation ? '0' : '2px'),
+        marginTop: '0'
+      }}>
         {isEditing ? (
           <div className="mx-4 my-2 p-3 bg-black/20 rounded-xl border border-white/10 flex flex-col gap-2">
             <textarea 
@@ -324,53 +373,77 @@ const LogItem = React.memo(({
           </div>
         ) : log.isCommand ? (
           <div style={{ 
-            background: isSecret ? getSecretBg(secretColor) : 'rgba(0,0,0,0.1)',
+            background: isSecret ? getSecretBg(tabColor) : 'rgba(0,0,0,0.1)',
             border: `1px solid ${theme === 'dark' ? '#444' : '#DDD'}`,
             padding: `${paddingSize}px ${paddingSize * 1.3}px`,
             borderRadius: '8px',
             margin: `8px ${paddingSize * 1.3}px`
           }}>
             <span style={{ color, fontWeight: 'bold', fontFamily: 'monospace' }}>[ {log.name} ]</span>
-            <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#333333', fontWeight: 'bold', fontFamily: 'monospace', marginLeft: '8px' }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
+            <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#333333', fontWeight: 'bold', fontFamily: 'monospace', marginLeft: '8px', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
           </div>
         ) : format === 'other' ? (
           <div style={{ padding: `${paddingSize / 3}px ${paddingSize * 1.3}px`, display: 'flex', gap: `${gapSize / 1.5}px`, alignItems: 'baseline' }}>
             {!log.isContinuation && (
-              <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px`, flexShrink: 0 }}>{log.name}</span>
+              <div className="relative inline-block flex-shrink-0">
+                <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px` }} className="peer cursor-default">{log.name}</span>
+                <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 peer-hover:opacity-100 transition-all duration-200 pointer-events-none z-[100] shadow-2xl border border-white/10">
+                  {log.name}
+                </div>
+              </div>
             )}
-            <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', marginLeft: log.isContinuation ? `${nameSize * 4}px` : '0' }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
+            <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', marginLeft: log.isContinuation ? `${nameSize * 4}px` : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
           </div>
         ) : format === 'info' ? (
-          <div style={{ padding: `${paddingSize * 1.3}px ${paddingSize * 1.6}px`, background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', borderLeft: `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`, margin: `8px ${paddingSize * 1.3}px`, borderRadius: '4px' }}>
+          <div style={{ 
+            padding: `${paddingSize * 1.3}px ${paddingSize * 1.6}px`, 
+            background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', 
+            borderLeft: `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`, 
+            margin: shouldMergeStyle ? `0 ${paddingSize * 1.3}px` : `8px ${paddingSize * 1.3}px`, 
+            borderRadius: shouldMergeStyle 
+              ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+              : '4px',
+            borderTop: (shouldMergeStyle && isPrevSameTab && !isSectionStart) ? 'none' : undefined,
+            borderBottom: (shouldMergeStyle && isNextSameTab && !isSectionEnd) ? 'none' : undefined
+          }}>
             {!log.isContinuation && (
-              <span style={{ fontWeight: 'bold', color, display: 'block', marginBottom: '4px' }}>{log.name}</span>
+              <div className="relative inline-block mb-1">
+                <span style={{ fontWeight: 'bold', color, display: 'block' }} className="peer cursor-default">{log.name}</span>
+                <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 peer-hover:opacity-100 transition-all duration-200 pointer-events-none z-[100] shadow-2xl border border-white/10">
+                  {log.name}
+                </div>
+              </div>
             )}
-            <div dangerouslySetInnerHTML={{ __html: linkify(log.content) }} style={{ color: theme === 'dark' ? 'inherit' : '#333333' }} />
+            <div dangerouslySetInnerHTML={{ __html: linkify(log.content) }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', lineHeight: 1.6 }} />
           </div>
         ) : (
           <div style={{ 
             display: 'flex', 
             gap: `${gapSize}px`, 
-            padding: log.isContinuation ? `2px ${paddingSize * 1.3}px ${paddingSize}px ${paddingSize * 1.3}px` : `${paddingSize}px ${paddingSize * 1.3}px`, 
+            padding: log.isContinuation ? `6px ${paddingSize * 1.3}px ${paddingSize}px ${paddingSize * 1.3}px` : `${paddingSize}px ${paddingSize * 1.3}px`, 
             alignItems: 'flex-start',
-            background: isSecret ? getSecretBg(secretColor) : 'transparent',
-            borderLeft: isSecret ? `4px solid ${secretColor}` : 'none',
-            margin: isSecret ? `4px ${paddingSize * 1.3}px` : '0',
-            borderRadius: isSecret ? '4px' : '0'
+            background: isSecret ? getSecretBg(tabColor) : 'transparent',
+            borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
+            margin: shouldMergeStyle ? (isSecret ? `0 ${paddingSize * 1.3}px` : '0') : (isSecret ? `4px ${paddingSize * 1.3}px` : '0'),
+            borderRadius: shouldMergeStyle && isSecret
+              ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+              : (isSecret ? '4px' : '0'),
+            borderTop: shouldMergeStyle && isPrevSameTab && isSecret && !isSectionStart ? 'none' : undefined,
+            borderBottom: shouldMergeStyle && isNextSameTab && isSecret && !isSectionEnd ? 'none' : undefined
           }}>
             {log.isContinuation ? (
               <div style={{ width: `${avatarSize}px`, flexShrink: 0 }} />
             ) : (
-              <LogAvatar img={img} theme={theme} avatarSize={avatarSize} />
+              <LogAvatar img={img} theme={theme} avatarSize={avatarSize} hideEmptyAvatars={hideEmptyAvatars} />
             )}
-            <div style={{ flexGrow: 1, lineHeight: 1.5 }}>
+            <div style={{ flexGrow: 1, lineHeight: 1.6 }}>
               {!log.isContinuation && (
                 <div 
-                  className="group/name relative inline-block"
+                  className="relative inline-block"
                   style={{ fontWeight: 'bold', color, fontSize: `${nameSize}px`, marginBottom: '2px' }}
                 >
-                  <span className="cursor-default">{log.name}</span>
-                  <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 group-hover/name:opacity-100 transition-opacity duration-0 pointer-events-none z-50 shadow-xl border border-white/10">
+                  <span className="peer cursor-default">{log.name}</span>
+                  <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 peer-hover:opacity-100 transition-all duration-200 pointer-events-none z-[100] shadow-2xl border border-white/10">
                     {log.name}
                   </div>
                 </div>
@@ -432,7 +505,7 @@ const LogItem = React.memo(({
         </div>
       )}
 
-      <div className="split-trigger font-sans">
+      <div className="split-trigger font-sans mt-4">
         <button 
           onClick={() => onToggleSplit(idx)}
           className={cn(
@@ -499,6 +572,7 @@ export default function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [charSettings, setCharSettings] = useState<Record<string, CharSetting>>({});
   const [charOrder, setCharOrder] = useState<string[]>([]);
+  const [tabOrder, setTabOrder] = useState<string[]>([]);
   const [extractedColors, setExtractedColors] = useState<string[]>([]);
   const [tabSettings, setTabSettings] = useState<Record<string, TabSetting>>({});
   const [cssFormat, setCssFormat] = useState<'inline' | 'internal'>('internal');
@@ -508,7 +582,9 @@ export default function App() {
   const [disableOtherColor, setDisableOtherColor] = useState(false);
   const [isEditingFontSize, setIsEditingFontSize] = useState(false);
   const [renamingChar, setRenamingChar] = useState<string | null>(null);
+  const [renamingTab, setRenamingTab] = useState<string | null>(null);
   const [newNameInput, setNewNameInput] = useState('');
+  const [newTabNameInput, setNewTabNameInput] = useState('');
   const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
   const [colorPickerRect, setColorPickerRect] = useState<DOMRect | null>(null);
   const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'settings'>('files');
@@ -521,7 +597,10 @@ export default function App() {
   const [initialState, setInitialState] = useState<any>(null);
   const [visibleCount, setVisibleCount] = useState(50);
   const [sectionNames, setSectionNames] = useState<Record<number, string>>({});
-  const [mergeTabs, setMergeTabs] = useState<Set<TabFormat>>(new Set());
+  const [mergeTabs, setMergeTabs] = useState<Set<TabFormat>>(new Set(['main', 'other', 'secret']));
+  const [showTabNames, setShowTabNames] = useState<Set<TabFormat>>(new Set(['main', 'secret']));
+  const [mergeTabStyles, setMergeTabStyles] = useState<Set<TabFormat>>(new Set(['secret']));
+  const [hideEmptyAvatars, setHideEmptyAvatars] = useState(false);
   const [imageInputIdx, setImageInputIdx] = useState<number | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
@@ -561,10 +640,30 @@ export default function App() {
     styleEl.innerHTML = fontImports;
   }, []);
 
+  // Favicon
+  useEffect(() => {
+    const favicon = document.querySelector("link[rel*='icon']") || document.createElement('link');
+    (favicon as HTMLLinkElement).rel = 'shortcut icon';
+    (favicon as HTMLLinkElement).type = 'image/svg+xml';
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="50" fill="#e6005c" />
+        <path d="M32 28h26l10 10v34c0 3.3-2.7 6-6 6H32c-3.3 0-6-2.7-6-6V34c0-3.3 2.7-6 6-6z" fill="white" />
+        <path d="M58 28v10h10" fill="none" stroke="#e6005c" stroke-width="2" />
+        <rect x="34" y="46" width="20" height="4" rx="1" fill="#e6005c" />
+        <rect x="34" y="56" width="32" height="4" rx="1" fill="#e6005c" />
+        <rect x="34" y="66" width="32" height="4" rx="1" fill="#e6005c" />
+      </svg>
+    `.trim();
+    (favicon as HTMLLinkElement).href = `data:image/svg+xml;base64,${btoa(svg)}`;
+    document.getElementsByTagName('head')[0].appendChild(favicon);
+  }, []);
+
   const saveToHistory = (state: any) => {
     const fullState = {
       charSettings,
       tabSettings,
+      tabOrder,
       cssFormat,
       fontSize,
       fontFamily,
@@ -574,6 +673,10 @@ export default function App() {
       insertedImages,
       splitPoints: Array.from(splitPoints),
       sectionNames,
+      mergeTabs: Array.from(mergeTabs),
+      showTabNames: Array.from(showTabNames),
+      mergeTabStyles: Array.from(mergeTabStyles),
+      hideEmptyAvatars,
       ...state
     };
     const newHistory = history.slice(0, historyIndex + 1);
@@ -602,6 +705,7 @@ export default function App() {
   const applyState = (state: any) => {
     setCharSettings(state.charSettings);
     setTabSettings(state.tabSettings);
+    if (state.tabOrder) setTabOrder(state.tabOrder);
     setCssFormat(state.cssFormat);
     setFontSize(state.fontSize);
     setFontFamily(state.fontFamily);
@@ -611,6 +715,10 @@ export default function App() {
     if (state.insertedImages) setInsertedImages(state.insertedImages);
     if (state.splitPoints) setSplitPoints(new Set(state.splitPoints));
     if (state.sectionNames) setSectionNames(state.sectionNames);
+    if (state.mergeTabs) setMergeTabs(new Set(state.mergeTabs));
+    if (state.showTabNames) setShowTabNames(new Set(state.showTabNames));
+    if (state.mergeTabStyles) setMergeTabStyles(new Set(state.mergeTabStyles));
+    if (state.hideEmptyAvatars !== undefined) setHideEmptyAvatars(state.hideEmptyAvatars);
   };
 
   const resetSettings = () => {
@@ -621,12 +729,17 @@ export default function App() {
       } else {
         const defaultState = {
           charSettings: Object.fromEntries(Object.entries(charSettings).map(([k, v]) => [k, { ...(v as object), color: '#000000', imageUrl: '', visible: true }])),
-          tabSettings: Object.fromEntries(Object.entries(tabSettings).map(([k, v]) => [k, { ...(v as object), format: 'main', visible: true, color: '#ffd400' }])),
+          tabSettings: Object.fromEntries(Object.entries(tabSettings).map(([k, v]) => {
+            const setting = v as TabSetting;
+            return [k, { ...setting, format: 'main', visible: true, color: setting.format === 'secret' ? '#ffd400' : '#e6005c' }];
+          })),
+          tabOrder,
           cssFormat: 'internal' as const,
           fontSize: 14,
           fontFamily: 'Noto Sans KR',
           theme: 'dark' as const,
-          disableOtherColor: false
+          disableOtherColor: false,
+          hideEmptyAvatars: false
         };
         applyState(defaultState);
         saveToHistory(defaultState);
@@ -688,6 +801,28 @@ export default function App() {
     });
     setRenamingChar(null);
   };
+
+  const renameTab = (oldName: string, newName: string) => {
+    if (!newName || oldName === newName) {
+      setRenamingTab(null);
+      return;
+    }
+    if (tabSettings[newName]) {
+      alert('이미 존재하는 탭 이름입니다.');
+      return;
+    }
+
+    setLogs(prev => prev.map(log => log.tab === oldName ? { ...log, tab: newName } : log));
+    setTabOrder(prev => prev.map(n => n === oldName ? newName : n));
+    setTabSettings(prev => {
+      const next = { ...prev };
+      const setting = next[oldName];
+      delete next[oldName];
+      next[newName] = { ...setting, name: newName };
+      return next;
+    });
+    setRenamingTab(null);
+  };
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const styleInputRef = useRef<HTMLInputElement>(null);
@@ -710,6 +845,7 @@ export default function App() {
     const newChars: Record<string, CharSetting> = {};
     const newCharOrder: string[] = [];
     const newTabs: Record<string, TabSetting> = {};
+    const newTabOrder: string[] = [];
     const colorsFound = new Set<string>();
 
     pTags.forEach((p, index) => {
@@ -753,14 +889,18 @@ export default function App() {
         if (lowerTab.includes('other') || lowerTab.includes('잡담')) format = 'other';
         if (lowerTab.includes('info') || lowerTab.includes('정보')) format = 'info';
         if (lowerTab.includes('secret') || lowerTab.includes('비밀')) format = 'secret';
-        newTabs[tab] = { name: tab, format, visible: true, color: '#ffd400' };
+        newTabs[tab] = { name: tab, format, visible: true, color: format === 'secret' ? '#ffd400' : '#e6005c' };
+        newTabOrder.push(tab);
       }
     });
 
-    setLogs(newLogs);
-    
     // Filter out leading empty logs
-    let firstNonEmptyIndex = newLogs.findIndex(log => log.content.trim() !== '' && log.content.trim() !== '&nbsp;');
+    const isLogEmpty = (content: string) => {
+      const stripped = content.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+      return stripped === '';
+    };
+    
+    let firstNonEmptyIndex = newLogs.findIndex(log => !isLogEmpty(log.content));
     if (firstNonEmptyIndex === -1) firstNonEmptyIndex = 0;
     const trimmedLogs = newLogs.slice(firstNonEmptyIndex);
 
@@ -769,18 +909,42 @@ export default function App() {
     setCharOrder(newCharOrder);
     setExtractedColors(Array.from(colorsFound));
     setTabSettings(newTabs);
+    setTabOrder(newTabOrder);
+    setInsertedImages({});
+    setSplitPoints(new Set());
+    setSectionNames({});
+    setMergeTabs(new Set(['main', 'other', 'secret']));
+    setMergeTabStyles(new Set(['secret']));
+    setShowTabNames(new Set(['main', 'secret']));
+    setHideEmptyAvatars(false);
+    setCssFormat('internal');
+    setFontSize(14);
+    setDisableOtherColor(false);
+    setPageTitle('');
     setActiveTab('tabs');
 
     // Save initial state for reset
-    setInitialState({
+    const initial = {
       charSettings: newChars,
       tabSettings: newTabs,
-      cssFormat: 'internal',
+      tabOrder: newTabOrder,
+      cssFormat: 'internal' as const,
       fontSize: 14,
       fontFamily: 'Noto Sans KR',
-      theme: 'dark',
-      disableOtherColor: false
-    });
+      theme: 'dark' as const,
+      disableOtherColor: false,
+      logs: trimmedLogs,
+      insertedImages: {},
+      splitPoints: [] as number[],
+      sectionNames: {} as Record<number, string>,
+      mergeTabs: [] as string[],
+      showTabNames: [] as string[],
+      mergeTabStyles: [] as string[],
+      hideEmptyAvatars: false
+    };
+    setInitialState(initial);
+    setHistory([initial]);
+    setHistoryIndex(0);
   };
 
   // Handle Style Upload
@@ -813,22 +977,39 @@ export default function App() {
 
   const mergedLogs = useMemo(() => {
     if (logs.length === 0) return [];
-    if (mergeTabs.size === 0) return logs.map(l => ({ ...l, isContinuation: false }));
-
+    
     const result: LogEntry[] = [];
-    let lastLog: LogEntry | null = null;
+    let currentMerged: LogEntry | null = null;
+    let mergedIds: string[] = [];
 
     logs.forEach((log) => {
       const tabSet = tabSettings[log.tab];
       const format = tabSet?.format || 'main';
       
-      if (mergeTabs.has(format) && lastLog && lastLog.name === log.name && lastLog.color === log.color && lastLog.tab === log.tab && !log.isCommand && !lastLog.isCommand) {
-        result.push({ ...log, isContinuation: true });
+      const shouldMerge = mergeTabs.has(format) && 
+                          currentMerged && 
+                          currentMerged.name === log.name && 
+                          currentMerged.color === log.color && 
+                          currentMerged.tab === log.tab && 
+                          !log.isCommand && 
+                          !currentMerged.isCommand;
+
+      if (shouldMerge && currentMerged) {
+        currentMerged.content += `\n${log.content}`;
+        mergedIds.push(log.id);
+        currentMerged.id = `merged:${mergedIds.join(',')}`;
       } else {
-        result.push({ ...log, isContinuation: false });
+        if (currentMerged) {
+          result.push(currentMerged);
+        }
+        currentMerged = { ...log, isContinuation: false };
+        mergedIds = [log.id];
       }
-      lastLog = log;
     });
+
+    if (currentMerged) {
+      result.push(currentMerged);
+    }
 
     return result;
   }, [logs, mergeTabs, tabSettings]);
@@ -839,15 +1020,32 @@ export default function App() {
   }, [charOrder, charSortMode]);
 
   const onEditLog = (id: string, content: string) => {
-    const next = logs.map(l => l.id === id ? { ...l, content } : l);
-    setLogs(next);
-    saveToHistory({ logs: next });
+    if (id.startsWith('merged:')) {
+      const ids = id.replace('merged:', '').split(',');
+      const firstId = ids[0];
+      const otherIds = ids.slice(1);
+      
+      const next = logs.filter(l => !otherIds.includes(l.id)).map(l => l.id === firstId ? { ...l, content } : l);
+      setLogs(next);
+      saveToHistory({ logs: next });
+    } else {
+      const next = logs.map(l => l.id === id ? { ...l, content } : l);
+      setLogs(next);
+      saveToHistory({ logs: next });
+    }
   };
 
   const onDeleteLog = (id: string) => {
-    const next = logs.filter(l => l.id !== id);
-    setLogs(next);
-    saveToHistory({ logs: next });
+    if (id.startsWith('merged:')) {
+      const ids = id.replace('merged:', '').split(',');
+      const next = logs.filter(l => !ids.includes(l.id));
+      setLogs(next);
+      saveToHistory({ logs: next });
+    } else {
+      const next = logs.filter(l => l.id !== id);
+      setLogs(next);
+      saveToHistory({ logs: next });
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -884,10 +1082,10 @@ export default function App() {
     };
 
     const scale = fontSize / 14;
-    const avatarSize = 46 * scale;
-    const gapSize = 12 * scale;
-    const paddingSize = 12 * scale;
-    const nameSize = 13 * scale;
+    const avatarSize = Math.round(46 * scale);
+    const gapSize = Math.round(12 * scale);
+    const paddingSize = Math.round(12 * scale);
+    const nameSize = Math.round(13 * scale);
 
     const css = `
       ${fontImport}
@@ -905,6 +1103,8 @@ export default function App() {
         overflow-x: hidden;
       }
       .log-item { position: relative; margin-bottom: 2px; }
+      .tab-name-block { margin: 12px ${paddingSize * 1.3}px 4px ${paddingSize * 1.3}px; display: flex; }
+      .tab-name-badge { padding: 2px 10px; border-radius: 4px; font-size: 0.8em; font-weight: bold; }
       
       /* Main Format */
       .main-row { 
@@ -976,23 +1176,75 @@ export default function App() {
       const otherNameColor = disableOtherColor ? otherTextColor : color;
       const img = char?.imageUrl;
       const isCont = log.isContinuation;
+      const hideAvatar = hideEmptyAvatars;
+
+      const isValidUrl = (url: string) => {
+        if (!url) return false;
+        return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image/');
+      };
+
+      // Calculate isPrevSameTab and isNextSameTab for Tab Integration
+      const currentImages = (insertedImages[globalIdx] || []).filter(imgData => {
+        const url = typeof imgData === 'string' ? imgData : imgData.url;
+        return isValidUrl(url);
+      });
+      const prevImages = idx > 0 ? (insertedImages[mergedLogs.findIndex(l => l.id === filteredLogs[idx-1].id)] || []).filter(imgData => {
+        const url = typeof imgData === 'string' ? imgData : imgData.url;
+        return isValidUrl(url);
+      }) : [];
+
+      const isPrevSameTab = idx > 0 && filteredLogs[idx - 1].tab === log.tab;
+      const isNextSameTab = idx < filteredLogs.length - 1 && filteredLogs[idx + 1].tab === log.tab;
+      const shouldMergeStyle = mergeTabStyles.has(format) && (isPrevSameTab || isNextSameTab);
+      const hasImageAfter = currentImages.length > 0;
+      const hasImageBefore = prevImages.length > 0;
+
+      // Insert Tab Name if needed
+      if (showTabNames.has(format) && !isPrevSameTab) {
+        const tabName = log.tab;
+        const isSecret = format === 'secret';
+        const tabColor = tabSet?.color || (isSecret ? '#ffd400' : '#e6005c');
+        const tabBg = getSecretBg(tabColor);
+        
+        if (isInline) {
+          html += `<div style="margin: 12px ${paddingSize * 1.3}px 4px ${paddingSize * 1.3}px; display: flex;">
+            <div style="background: ${tabBg}; color: ${tabColor}; padding: 2px 10px; border-radius: 4px; font-size: ${nameSize * 0.8}px; font-weight: bold; border: 1px solid ${tabColor}44;">
+              ${tabName}
+            </div>
+          </div>`;
+        } else {
+          html += `<div class="tab-name-block">
+            <div class="tab-name-badge" style="background: ${tabBg}; color: ${tabColor}; border: 1px solid ${tabColor}44;">
+              ${tabName}
+            </div>
+          </div>`;
+        }
+      }
 
       if (isInline) {
-        const avatarStyle = `width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; background-color: ${avatarPlaceholder}; border-radius: 4px; object-fit: contain;`;
-        const bodyStyle = `flex-grow: 1; line-height: 1.5;`;
+        const avatarStyle = `width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; background-color: ${hideAvatar ? 'transparent' : avatarPlaceholder}; border-radius: 4px; object-fit: contain;`;
+        const bodyStyle = `flex-grow: 1; line-height: 1.6;`;
         const nameStyle = `font-weight: bold; color: ${color}; font-size: ${nameSize}px; margin-bottom: 2px; display: block;`;
-        const contentStyle = `font-size: 1em; color: ${textColor}; white-space: pre-wrap; word-break: break-all;`;
-        const otherContentStyle = `font-size: 1em; color: ${otherTextColor}; white-space: pre-wrap; word-break: break-all;`;
+        const contentStyle = `font-size: 1em; color: ${textColor}; word-break: break-all;`;
+        const otherContentStyle = `font-size: 1em; color: ${otherTextColor}; word-break: break-all;`;
         
-        html += `<div style="margin-bottom: 2px;">`;
+        // Tab Integration margin/border logic
+        const itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? '0' : '2px') : (isCont ? '0' : '2px');
+        const itemMarginTop = '0';
+        
+        // Rounding logic for tab integration
+        const isSectionStart = idx === 0 || hasImageBefore;
+        const isSectionEnd = isNextSameTab === false || hasImageAfter;
+
+        html += `<div style="margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
         
         if (log.isCommand) {
           if (format === 'secret') {
-            const secretColor = tabSet?.color || '#ffd400';
-            const secretBg = getSecretBg(secretColor);
-            html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingSize}px ${paddingSize * 1.3}px; border-radius: 8px; margin: 8px ${paddingSize * 1.3}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${textColor}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em;">${linkify(log.content)}</span></div>`;
+            const tabColor = tabSet?.color || '#ffd400';
+            const secretBg = getSecretBg(tabColor);
+            html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingSize}px ${paddingSize * 1.3}px; border-radius: 8px; margin: 8px ${paddingSize * 1.3}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${textColor}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em; margin-left: 8px;">${linkify(log.content)}</span></div>`;
           } else {
-            html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${paddingSize * 1.3}px; border-radius: 8px; margin: 8px ${paddingSize * 1.3}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${otherTextColor}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">${linkify(log.content)}</span></div>`;
+            html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${paddingSize * 1.3}px; border-radius: 8px; margin: 8px ${paddingSize * 1.3}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${otherTextColor}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em; margin-left: 8px;">${linkify(log.content)}</span></div>`;
           }
         } else if (format === 'other') {
           html += `<div style="padding: ${paddingSize / 3}px ${paddingSize * 1.3}px; display: flex; gap: ${gapSize / 1.5}px; align-items: baseline;">
@@ -1000,16 +1252,30 @@ export default function App() {
             <span style="${otherContentStyle}">${linkify(log.content)}</span>
           </div>`;
         } else if (format === 'info') {
-          html += `<div style="padding: ${paddingSize * 1.3}px ${paddingSize * 1.6}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: 8px ${paddingSize * 1.3}px; border-radius: 4px;">
+          const infoMargin = shouldMergeStyle ? `0 ${paddingSize * 1.3}px` : `8px ${paddingSize * 1.3}px`;
+          const infoRadius = shouldMergeStyle 
+            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+            : '4px';
+          const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : `4px solid ${borderColor}`;
+          const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : 'none';
+
+          html += `<div style="padding: ${paddingSize * 1.3}px ${paddingSize * 1.6}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: ${infoMargin}; border-radius: ${infoRadius}; border-top: ${infoBorderTop}; border-bottom: ${infoBorderBottom};">
             ${!isCont ? `<span style="${nameStyle}">${log.name}</span>` : ''}
             <div style="${contentStyle}">${linkify(log.content)}</div>
           </div>`;
         } else if (format === 'secret') {
-          const secretColor = tabSet?.color || '#ffd400';
-          const secretBg = getSecretBg(secretColor);
+          const tabColor = tabSet?.color || '#ffd400';
+          const secretBg = getSecretBg(tabColor);
           const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
+          const secretMargin = shouldMergeStyle ? `0 ${paddingSize * 1.3}px` : `4px ${paddingSize * 1.3}px`;
+          const secretRadius = shouldMergeStyle 
+            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+            : '4px';
+          const secretBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : 'none';
+          const secretBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : 'none';
+
           html += `
-            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${paddingSize * 1.3}px; align-items: flex-start; background: ${secretBg}; border-left: 4px solid ${secretColor}; margin: 4px ${paddingSize * 1.3}px; border-radius: 4px;">
+            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${paddingSize * 1.3}px; align-items: flex-start; background: ${secretBg}; border-left: 4px solid ${tabColor}; margin: ${secretMargin}; border-radius: ${secretRadius}; border-top: ${secretBorderTop}; border-bottom: ${secretBorderBottom};">
               ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
               <div style="${bodyStyle}">
                 ${!isCont ? `<div style="${nameStyle}">${log.name}</div>` : ''}
@@ -1017,10 +1283,15 @@ export default function App() {
               </div>
             </div>`;
         } else {
-          const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
+          const avatarHtml = img 
+            ? `<img src="${img}" style="${avatarStyle}" />` 
+            : `<div style="${avatarStyle}"></div>`;
+          
+          const contAvatarHtml = `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`;
+
           html += `
             <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${paddingSize * 1.3}px; align-items: flex-start; ${isCont ? 'padding-top: 2px;' : ''}">
-              ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
+              ${!isCont ? avatarHtml : contAvatarHtml}
               <div style="${bodyStyle}">
                 ${!isCont ? `<div style="${nameStyle}">${log.name}</div>` : ''}
                 <div style="${contentStyle}">${linkify(log.content)}</div>
@@ -1029,15 +1300,22 @@ export default function App() {
         }
         html += `</div>`;
       } else {
-        html += `<div class="log-item">`;
+        // Rounding logic for tab integration
+        const isSectionStart = idx === 0 || hasImageBefore;
+        const isSectionEnd = isNextSameTab === false || hasImageAfter;
+
+        const itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? '0' : '2px') : (isCont ? '0' : '2px');
+        const itemMarginTop = '0';
+
+        html += `<div class="log-item" style="margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
 
         if (log.isCommand) {
           if (format === 'secret') {
-            const secretColor = tabSet?.color || '#ffd400';
-            const secretBg = getSecretBg(secretColor);
-            html += `<div class="command-box" style="background: ${secretBg}; border-color: rgba(0,0,0,0.1);"><span class="command-text" style="color: ${color}; font-weight: bold;">[ ${log.name} ]</span> <span class="command-text" style="color: ${textColor}; font-weight: bold;">${linkify(log.content)}</span></div>`;
+            const tabColor = tabSet?.color || '#ffd400';
+            const secretBg = getSecretBg(tabColor);
+            html += `<div class="command-box" style="background: ${secretBg}; border-color: rgba(0,0,0,0.1);"><span class="command-text" style="color: ${color}; font-weight: bold;">[ ${log.name} ]</span> <span class="command-text" style="color: ${textColor}; font-weight: bold; margin-left: 8px;">${linkify(log.content)}</span></div>`;
           } else {
-            html += `<div class="command-box"><span class="command-text" style="color: ${color}">[ ${log.name} ]</span> <span class="command-text">${linkify(log.content)}</span></div>`;
+            html += `<div class="command-box"><span class="command-text" style="color: ${color}">[ ${log.name} ]</span> <span class="command-text" style="margin-left: 8px;">${linkify(log.content)}</span></div>`;
           }
         } else if (format === 'other') {
           html += `<div class="other-row">
@@ -1045,27 +1323,39 @@ export default function App() {
             <span class="other-content">${linkify(log.content)}</span>
           </div>`;
         } else if (format === 'info') {
-          html += `<div class="info-row">
+          const infoMargin = shouldMergeStyle ? `0 ${paddingSize * 1.3}px` : `8px ${paddingSize * 1.3}px`;
+          const infoRadius = shouldMergeStyle 
+            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+            : '4px';
+          const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : undefined;
+
+          html += `<div class="info-row" style="margin: ${infoMargin}; border-radius: ${infoRadius}; border-top: ${infoBorderTop};">
             ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
             <div class="main-content">${linkify(log.content)}</div>
           </div>`;
         } else if (format === 'secret') {
-          const secretColor = tabSet?.color || '#ffd400';
-          const secretBg = getSecretBg(secretColor);
-          const imgTag = img ? `<img src="${img}" class="main-avatar" />` : `<div class="main-avatar"></div>`;
+          const tabColor = tabSet?.color || '#ffd400';
+          const secretBg = getSecretBg(tabColor);
+          const avatarHtml = img ? `<img src="${img}" class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}" />` : `<div class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}"></div>`;
+          const secretMargin = shouldMergeStyle ? `0 ${paddingSize * 1.3}px` : `4px ${paddingSize * 1.3}px`;
+          const secretRadius = shouldMergeStyle 
+            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+            : '4px';
+          const secretBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : undefined;
+
           html += `
-            <div class="secret-row" style="background: ${secretBg}; border-left: 4px solid ${secretColor};">
-              ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
+            <div class="secret-row" style="background: ${secretBg}; border-left: 4px solid ${tabColor}; margin: ${secretMargin}; border-radius: ${secretRadius}; border-top: ${secretBorderTop};">
+              ${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
               <div class="main-body">
                 ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
                 <div class="main-content">${linkify(log.content)}</div>
               </div>
             </div>`;
         } else {
-          const imgTag = img ? `<img src="${img}" class="main-avatar" />` : `<div class="main-avatar"></div>`;
+          const avatarHtml = img ? `<img src="${img}" class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}" />` : `<div class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}"></div>`;
           html += `
             <div class="main-row ${isCont ? 'continuation' : ''}">
-              ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
+              ${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
               <div class="main-body">
                 ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
                 <div class="main-content">${linkify(log.content)}</div>
@@ -1078,11 +1368,15 @@ export default function App() {
       // Insert images if any
       if (insertedImages[globalIdx]) {
         insertedImages[globalIdx].forEach(imgData => {
-          const align = imgData.align || 'center';
+          const url = typeof imgData === 'string' ? imgData : imgData.url;
+          if (!isValidUrl(url)) return;
+          
+          const align = (typeof imgData === 'string' ? 'center' : imgData.align) || 'center';
           const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
-          const widthStyle = imgData.width ? `width: ${imgData.width}px;` : 'max-width: 100%;';
+          const width = typeof imgData === 'string' ? undefined : imgData.width;
+          const widthStyle = width ? `width: ${width}px;` : 'max-width: 100%;';
           html += `<div style="display: flex; justify-content: ${justify}; margin: 10px ${paddingSize * 1.3}px;">
-            <img src="${imgData.url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" />
+            <img src="${url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
           </div>`;
         });
       }
@@ -1156,7 +1450,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-[#121212] font-sans text-stone-200 overflow-hidden">
+    <div className="flex flex-col md:flex-row h-[100dvh] bg-[#121212] font-sans text-stone-200 overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
         <aside className={cn(
@@ -1164,14 +1458,39 @@ export default function App() {
           mobileTab === 'settings' ? 'flex' : 'hidden md:flex'
         )}>
         {/* Sidebar Header */}
-        <div className="p-6 border-b border-white/5 bg-[#1a1a1a] shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-[#e6005c] rounded-2xl shadow-lg shadow-pink-500/20 shrink-0">
-              <FileText className="w-6 h-6 text-white" />
+        <div className="p-5 border-b border-white/5 bg-[#1a1a1a] shrink-0">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2.5 bg-[#e6005c] rounded-xl shadow-lg shadow-pink-500/20 shrink-0">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+              <div className="min-w-0 flex flex-col justify-center">
+                <p className="text-[9px] font-bold text-white/30 uppercase tracking-[0.15em]">CCFOLIA LOG FORMATTER</p>
+                <h1 className="text-base font-bold text-white whitespace-nowrap leading-tight">코코포리아 로그 편집</h1>
+              </div>
             </div>
-            <div className="flex-1 min-w-0 flex flex-col justify-center">
-              <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.15em] mb-1">CCFOLIA LOG FORMATTER</p>
-              <h1 className="text-lg font-bold text-white whitespace-nowrap">코코포리아 로그 백업</h1>
+
+            <div className="flex flex-col items-end text-right shrink-0 gap-1">
+              <p className="text-[9px] font-medium text-white/20">
+                제작: <span className="text-white/40 font-bold">한냥</span>
+                <a 
+                  href="https://posty.pe/7oldqj" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="ml-1 text-white/30 hover:text-[#e6005c] transition-colors underline underline-offset-2 decoration-white/5"
+                >
+                  (후원하기)
+                </a>
+              </p>
+              <a 
+                href="https://posty.pe/7oldqj" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-[9px] font-bold text-white/40 hover:text-white transition-colors flex items-center gap-1"
+              >
+                도움말 보기
+                <ExternalLink className="w-2.5 h-2.5 opacity-30" />
+              </a>
             </div>
           </div>
         </div>
@@ -1261,9 +1580,6 @@ export default function App() {
                 className="space-y-6"
               >
                 <div className="space-y-3">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
-                    <Palette className="w-3.5 h-3.5" /> 기본 설정
-                  </h2>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm">
                       <span className="text-[11px] font-bold text-white/70">잡담 색상을 회색으로 통일</span>
@@ -1272,12 +1588,12 @@ export default function App() {
                     
                     <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-white/70">캐릭터별 통합</span>
-                        <div className="text-[9px] text-white/30 font-medium">
-                          연속된 동일 캐릭터의 대사를 하나로 합칩니다.
+                        <span className="text-[11px] font-bold text-white/70">발언자별 통합</span>
+                        <div className="text-[9px] text-white/30 font-medium text-right">
+                          연속되는 대사를 하나의 블록으로 합칩니다.
                         </div>
                       </div>
-                      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-1.5">
+                      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-0.75">
                         {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
                           <button
                             key={f}
@@ -1298,6 +1614,68 @@ export default function App() {
                         ))}
                       </div>
                     </div>
+
+                    <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-white/70">탭별 통합</span>
+                        <div className="text-[9px] text-white/30 font-medium text-right">
+                          동일한 탭의 블록을 연결합니다.
+                        </div>
+                      </div>
+                      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-0.75">
+                        {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => {
+                          const isDisabled = f === 'main' || f === 'other';
+                          return (
+                            <button
+                              key={f}
+                              disabled={isDisabled}
+                              onClick={() => {
+                                const next = new Set(mergeTabStyles);
+                                if (next.has(f)) next.delete(f);
+                                else next.add(f);
+                                setMergeTabStyles(next);
+                              }}
+                              className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
+                                isDisabled 
+                                  ? 'bg-transparent text-white/10 cursor-not-allowed'
+                                  : mergeTabStyles.has(f) 
+                                    ? 'bg-[#e6005c] text-white shadow-sm' 
+                                    : 'text-white/30 hover:text-white/60'
+                              }`}
+                            >
+                              {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-white/70">탭 이름 표시</span>
+                      </div>
+                      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-0.75">
+                        {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
+                          <button
+                            key={f}
+                            onClick={() => {
+                              const next = new Set(showTabNames);
+                              if (next.has(f)) next.delete(f);
+                              else next.add(f);
+                              setShowTabNames(next);
+                              saveToHistory({ showTabNames: Array.from(next) });
+                            }}
+                            className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
+                              showTabNames.has(f) 
+                                ? 'bg-[#e6005c] text-white shadow-sm' 
+                                : 'text-white/30 hover:text-white/60'
+                            }`}
+                          >
+                            {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1305,9 +1683,12 @@ export default function App() {
                   <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                     <Settings className="w-3.5 h-3.5" /> 탭별 출력 설정
                   </h2>
-                  {Object.keys(tabSettings).length > 0 ? (
-                    (Object.values(tabSettings) as TabSetting[]).map(tab => (
-                      <div key={tab.name} className="p-2 bg-white/5 rounded-xl border border-white/5 shadow-sm flex flex-col gap-2">
+                  {tabOrder.length > 0 ? (
+                    tabOrder.map(tabName => {
+                      const tab = tabSettings[tabName];
+                      if (!tab) return null;
+                      return (
+                        <div key={tab.name} className="p-3 bg-white/5 rounded-xl border border-white/5 shadow-sm flex flex-col gap-3">
                         <div className="flex items-center gap-2">
                           <Toggle 
                             enabled={tab.visible} 
@@ -1317,10 +1698,45 @@ export default function App() {
                               saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                             }} 
                           />
-                          <span className="text-[11px] font-bold truncate flex-1 text-white/80">{tab.name}</span>
+                          {renamingTab === tab.name ? (
+                            <div className="flex gap-1 flex-1">
+                              <input 
+                                type="text"
+                                value={newTabNameInput}
+                                autoFocus
+                                onChange={(e) => setNewTabNameInput(e.target.value)}
+                                onBlur={() => renameTab(tab.name, newTabNameInput)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') renameTab(tab.name, newTabNameInput);
+                                  if (e.key === 'Escape') setRenamingTab(null);
+                                }}
+                                className="bg-black/40 text-[11px] font-bold text-white px-2 py-1 rounded border border-[#e6005c] outline-none flex-1"
+                              />
+                              <button 
+                                onClick={() => renameTab(tab.name, newTabNameInput)}
+                                className="p-1 bg-[#e6005c] text-white rounded"
+                              >
+                                <CheckSquare className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 flex-1 overflow-hidden">
+                              <span 
+                                className="text-[11px] font-bold truncate text-white/80"
+                              >
+                                {tab.name}
+                              </span>
+                              <button 
+                                onClick={() => { setRenamingTab(tab.name); setNewTabNameInput(tab.name); }}
+                                className="p-1 text-white/20 hover:text-[#e6005c] transition-colors"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 flex-1">
+                        <div className="flex items-center gap-3">
+                          <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-3 flex-1">
                             {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
                               <button
                                 key={f}
@@ -1342,7 +1758,6 @@ export default function App() {
                           
                           <div className="relative">
                             <button
-                              disabled={tab.format !== 'secret'}
                               onClick={(e) => {
                                 if (activeColorPicker === `tab-${tab.name}`) {
                                   setActiveColorPicker(null);
@@ -1352,16 +1767,15 @@ export default function App() {
                                   setColorPickerRect(e.currentTarget.getBoundingClientRect());
                                 }
                               }}
-                              className={`w-6 h-6 rounded-md border border-white/10 shadow-sm transition-all ${
-                                tab.format === 'secret' ? 'opacity-100 hover:scale-105' : 'opacity-20 cursor-not-allowed'
-                              }`}
-                              style={{ backgroundColor: tab.color || '#ffd400' }}
+                              className="w-6 h-6 rounded-md border border-white/10 shadow-sm transition-all hover:scale-105"
+                              style={{ backgroundColor: tab.color || (tab.format === 'secret' ? '#ffd400' : '#e6005c') }}
                             />
                           </div>
                         </div>
                       </div>
-                    ))
-                  ) : (
+                    );
+                  })
+                ) : (
                     <div className="text-center py-20 text-white/10">
                       <Settings className="w-12 h-12 mx-auto mb-3 opacity-20" />
                       <p className="text-sm font-medium">로그를 먼저 업로드하세요</p>
@@ -1379,6 +1793,17 @@ export default function App() {
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-4"
               >
+                <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm">
+                  <span className="text-[11px] font-bold text-white/70">이미지 배경 상자 숨김</span>
+                  <Toggle 
+                    enabled={hideEmptyAvatars} 
+                    onChange={(val) => {
+                      setHideEmptyAvatars(val);
+                      saveToHistory({ hideEmptyAvatars: val });
+                    }} 
+                  />
+                </div>
+
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
                     <Users className="w-3.5 h-3.5" /> 캐릭터 설정
@@ -1426,13 +1851,13 @@ export default function App() {
                               </button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1 w-24 shrink-0 overflow-hidden group/charname relative">
+                            <div className="flex items-center gap-1 w-24 shrink-0 overflow-hidden relative">
                               <span 
-                                className="text-[10px] font-bold truncate flex-1 text-white cursor-default"
+                                className="peer text-[10px] font-bold truncate flex-1 text-white cursor-default"
                               >
                                 {char.name}
                               </span>
-                              <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 group-hover/charname:opacity-100 transition-opacity duration-0 pointer-events-none z-50 shadow-xl border border-white/10">
+                              <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 peer-hover:opacity-100 transition-all duration-200 pointer-events-none z-50 shadow-xl border border-white/10">
                                 {char.name}
                               </div>
                               <button 
@@ -1510,7 +1935,7 @@ export default function App() {
                 className="space-y-8"
               >
                 <div className="space-y-4">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
+                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
                     <Layout className="w-3.5 h-3.5" /> 테마 설정
                   </h2>
                   <div className="grid grid-cols-2 gap-2">
@@ -1539,7 +1964,7 @@ export default function App() {
 
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
+                    <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
                       <Type className="w-3.5 h-3.5" /> 폰트 설정
                     </h2>
                   </div>
@@ -1555,7 +1980,7 @@ export default function App() {
                 </div>
 
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
                         <Type className="w-3.5 h-3.5" /> 전체 크기 조절
@@ -1605,7 +2030,7 @@ export default function App() {
                 </div>
 
                 <div className="space-y-4">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
+                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
                     <Palette className="w-3.5 h-3.5" /> CSS 출력 형식
                   </h2>
                   <div className="grid grid-cols-2 gap-2">
@@ -1647,12 +2072,12 @@ export default function App() {
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t border-white/5 bg-[#1a1a1a] shrink-0">
+        <div className="p-3 border-t border-white/5 bg-[#1a1a1a] shrink-0 space-y-2">
           <div className="flex items-center gap-1.5">
             <button 
               onClick={undo}
               disabled={historyIndex <= 0}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-white/5 hover:bg-white/10 rounded-xl text-white/40 hover:text-white disabled:opacity-10 transition-all text-[10px] font-bold border border-white/5"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white disabled:opacity-10 transition-all text-[10px] font-bold border border-white/5"
               title="되돌리기"
             >
               <Undo2 className="w-3.5 h-3.5" />
@@ -1661,7 +2086,7 @@ export default function App() {
             <button 
               onClick={redo}
               disabled={historyIndex >= history.length - 1}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-white/5 hover:bg-white/10 rounded-xl text-white/40 hover:text-white disabled:opacity-10 transition-all text-[10px] font-bold border border-white/5"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white disabled:opacity-10 transition-all text-[10px] font-bold border border-white/5"
               title="다시 실행"
             >
               <Redo2 className="w-3.5 h-3.5" />
@@ -1669,12 +2094,16 @@ export default function App() {
             </button>
             <button 
               onClick={resetSettings}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-white/5 hover:bg-red-500/20 rounded-xl text-white/40 hover:text-red-400 transition-all text-[10px] font-bold border border-white/5"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/5 hover:bg-red-500/20 rounded-lg text-white/40 hover:text-red-400 transition-all text-[10px] font-bold border border-white/5"
               title="초기화"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               초기화
             </button>
+          </div>
+
+          <div className="flex items-center justify-center pt-0.5 opacity-30">
+            <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.3em]">v1.0.0</span>
           </div>
         </div>
       </aside>
@@ -1758,82 +2187,6 @@ export default function App() {
 
             <div className="relative">
               <button 
-                onClick={() => setShowCopyMenu(!showCopyMenu)}
-                className={cn(
-                  "flex items-center justify-center gap-2 px-3 xl:px-4 py-2 border rounded-xl transition-all text-[11px] font-bold shrink-0",
-                  "bg-white/5 hover:bg-white/10 border-white/10 text-white/60 hover:text-white"
-                )}
-                title="HTML 복사"
-              >
-                <Copy className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden xl:inline-block truncate">HTML 복사</span>
-              </button>
-
-              <AnimatePresence>
-                {showCopyMenu && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowCopyMenu(false)} />
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
-                    >
-                      <button 
-                        onClick={() => { copyToClipboard(generateFinalHtml()); setShowCopyMenu(false); }}
-                        className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
-                      >
-                        <Copy className="w-4 h-4 text-emerald-400" />
-                        <div>
-                          <p className="text-[11px] font-bold text-white">전체 복사</p>
-                          <p className="text-[9px] text-white/30">전체 HTML 코드를 클립보드에 복사</p>
-                        </div>
-                      </button>
-                      
-                      {splitPoints.size > 0 && (
-                        <>
-                          <div className="h-px bg-white/5 my-1" />
-                          <div className="px-3 py-2">
-                            <p className="text-[9px] font-bold text-white/20 uppercase tracking-widest">분할 섹션 복사</p>
-                          </div>
-                          <div className="max-h-64 overflow-y-auto custom-scrollbar">
-                            {(() => {
-                              const sortedPoints = Array.from(splitPoints).sort((a: number, b: number) => a - b);
-                              const sections: { start: number; end: number }[] = [];
-                              let last = 0;
-                              sortedPoints.forEach((p: number) => {
-                                sections.push({ start: last, end: p });
-                                last = p + 1;
-                              });
-                              sections.push({ start: last, end: mergedLogs.length - 1 });
-                              
-                              return sections.map((s, i) => (
-                                <button 
-                                  key={i}
-                                  onClick={() => { copyToClipboard(generateFinalHtml(s)); setShowCopyMenu(false); }}
-                                  className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
-                                >
-                                  <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[9px] font-bold text-white/40">
-                                    {i + 1}
-                                  </div>
-                                  <div>
-                                    <p className="text-[11px] font-bold text-white truncate max-w-[120px]">{sectionNames[s.start] || `섹션 ${i + 1}`}</p>
-                                    <p className="text-[9px] text-white/30">{s.start + 1} ~ {s.end + 1}번 블록</p>
-                                  </div>
-                                </button>
-                              ));
-                            })()}
-                          </div>
-                        </>
-                      )}
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
-            </div>
-
-            <div className="relative">
-              <button 
                 onClick={() => setShowDownloadMenu(!showDownloadMenu)}
                 className="flex items-center justify-center gap-2 px-3 xl:px-6 py-2 bg-[#e6005c] hover:bg-[#ff0066] rounded-xl text-white shadow-lg shadow-pink-500/20 transition-all text-[11px] font-bold shrink-0"
                 title="HTML 다운로드"
@@ -1852,23 +2205,27 @@ export default function App() {
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       className="absolute right-0 mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
                     >
-                      <div className="flex items-center group">
+                      <button 
+                        onClick={() => { copyToClipboard(generateFinalHtml()); setShowDownloadMenu(false); }}
+                        className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
+                      >
+                        <Copy className="w-4 h-4 text-blue-400" />
+                        <div>
+                          <p className="text-[11px] font-bold text-white">HTML 복사</p>
+                          <p className="text-[9px] text-white/30">클립보드에 전체 HTML 복사</p>
+                        </div>
+                      </button>
+
+                      <div className="flex items-center gap-2 pr-2">
                         <button 
                           onClick={() => { downloadHtml(); setShowDownloadMenu(false); }}
-                          className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-l-xl transition-colors text-left"
+                          className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
                         >
                           <FileText className="w-4 h-4 text-emerald-400" />
                           <div>
                             <p className="text-[11px] font-bold text-white">전체 다운로드</p>
                             <p className="text-[9px] text-white/30">하나의 HTML 파일로 저장</p>
                           </div>
-                        </button>
-                        <button 
-                          onClick={() => { copyToClipboard(generateFinalHtml()); setShowDownloadMenu(false); }}
-                          className="p-3 hover:bg-white/5 rounded-r-xl text-white/20 hover:text-white transition-colors"
-                          title="전체 복사"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
                         </button>
                       </div>
                       
@@ -1890,10 +2247,10 @@ export default function App() {
                               sections.push({ start: last, end: mergedLogs.length - 1 });
                               
                               return sections.map((s, i) => (
-                                <div key={i} className="flex items-center group">
+                                <div key={i} className="flex items-center gap-2 pr-2 group">
                                   <button 
                                     onClick={() => { downloadHtml(s); setShowDownloadMenu(false); }}
-                                    className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-l-xl transition-colors text-left"
+                                    className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
                                   >
                                     <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[9px] font-bold text-white/40 group-hover:text-white/60">
                                       {i + 1}
@@ -1905,8 +2262,8 @@ export default function App() {
                                   </button>
                                   <button 
                                     onClick={() => { copyToClipboard(generateFinalHtml(s)); setShowDownloadMenu(false); }}
-                                    className="p-3 hover:bg-white/5 rounded-r-xl text-white/20 hover:text-white transition-colors"
-                                    title="복사"
+                                    className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/30 hover:text-white"
+                                    title="HTML 복사"
                                   >
                                     <Copy className="w-3.5 h-3.5" />
                                   </button>
@@ -1943,7 +2300,7 @@ export default function App() {
             theme === 'dark' ? "bg-[#242424]" : "bg-white"
           )}
         >
-          <div className="w-full min-w-0">
+          <div className="w-full min-w-0 min-h-full flex flex-col">
             {logs.length > 0 ? (
               <div className="relative group/preview">
                 <div className={cn(
@@ -1951,7 +2308,7 @@ export default function App() {
                   theme === 'dark' ? "bg-[#242424]" : "bg-white"
                 )}>
                   {/* Top Section Name Input */}
-                  <div className="max-w-[800px] mx-auto px-4 pt-4 pb-2 font-sans relative">
+                  <div className="max-w-[800px] mx-auto px-4 pt-4 pb-1 font-sans relative">
                     <div className="flex items-end justify-between max-w-full">
                       <div className="bg-[#e6005c] rounded-t-lg px-4 py-1.5 flex items-center shadow-lg max-w-sm">
                         <input 
@@ -1976,7 +2333,7 @@ export default function App() {
                   <div className="log-container" style={{ 
                     maxWidth: '800px', 
                     margin: '0 auto', 
-                    padding: '40px 0',
+                    padding: '0 0 40px 0',
                     backgroundColor: theme === 'dark' ? '#242424' : '#FFFFFF',
                     color: theme === 'dark' ? '#EEEEEE' : '#333333',
                     fontFamily: fonts.find(f => f.name === fontFamily)?.value || 'sans-serif',
@@ -2046,72 +2403,92 @@ export default function App() {
                       }
                     `}</style>
 
-                    {mergedLogs.slice(0, visibleCount).map((log, idx) => (
-                      <LogItem 
-                        key={log.id}
-                        log={log}
-                        idx={idx}
-                        tabSet={tabSettings[log.tab]}
-                        char={charSettings[log.name]}
-                        theme={theme}
-                        disableOtherColor={disableOtherColor}
-                        fontSize={fontSize}
-                        insertedImages={insertedImages}
-                        splitPoints={splitPoints}
-                        sectionNames={sectionNames}
-                        imageInputIdx={imageInputIdx}
-                        onToggleSplit={(i: number) => {
-                          const next = new Set(splitPoints);
-                          if (next.has(i)) next.delete(i);
-                          else next.add(i);
-                          setSplitPoints(next);
-                          saveToHistory({ splitPoints: Array.from(next) });
-                        }}
-                        onRenameSection={(i: number, name: string) => {
-                          const next = { ...sectionNames, [i]: name };
-                          setSectionNames(next);
-                          saveToHistory({ sectionNames: next });
-                        }}
-                        onInsertImage={(i: number) => {
-                          setImageInputIdx(i === imageInputIdx ? null : i);
-                        }}
-                        onAddImageUrl={(i: number, url: string) => {
-                          const next = { ...insertedImages };
-                          if (!next[i]) next[i] = [];
-                          next[i].push({ url, align: 'center' });
-                          setInsertedImages(next);
-                          saveToHistory({ insertedImages: next });
-                          setImageInputIdx(null);
-                        }}
-                        onDeleteImage={(i: number, imgIdx: number) => {
-                          const next = { ...insertedImages };
-                          next[i] = next[i].filter((_: any, j: number) => j !== imgIdx);
-                          if (next[i].length === 0) delete next[i];
-                          setInsertedImages(next);
-                          saveToHistory({ insertedImages: next });
-                        }}
-                        onUpdateImageWidth={(i: number, imgIdx: number, width: string) => {
-                          const next = { ...insertedImages };
-                          if (next[i] && next[i][imgIdx]) {
-                            next[i][imgIdx] = { ...next[i][imgIdx], width };
-                            setInsertedImages(next);
-                            saveToHistory({ insertedImages: next });
-                          }
-                        }}
-                        onUpdateImageAlign={(i: number, imgIdx: number, align: 'left' | 'center' | 'right') => {
-                          const next = { ...insertedImages };
-                          if (next[i] && next[i][imgIdx]) {
-                            next[i][imgIdx] = { ...next[i][imgIdx], align };
-                            setInsertedImages(next);
-                            saveToHistory({ insertedImages: next });
-                          }
-                        }}
-                        onEditLog={onEditLog}
-                        onDeleteLog={onDeleteLog}
-                        mergedLogsCount={mergedLogs.length}
-                        splitPointsArray={Array.from(splitPoints).sort((a: number, b: number) => a - b)}
-                      />
-                    ))}
+                    {(() => {
+                      const filteredLogsWithGlobalIdx = mergedLogs.map((log, globalIdx) => ({ log, globalIdx }))
+                        .filter(({ log }) => 
+                          tabSettings[log.tab]?.visible && 
+                          charSettings[log.name]?.visible
+                        );
+                      
+                      return filteredLogsWithGlobalIdx.slice(0, visibleCount).map(({ log, globalIdx }, idx) => {
+                        const prevGlobalIdx = idx > 0 ? filteredLogsWithGlobalIdx[idx - 1].globalIdx : -1;
+                        const isPrevSameTab = idx > 0 && filteredLogsWithGlobalIdx[idx - 1].log.tab === log.tab;
+                        const isNextSameTab = idx < filteredLogsWithGlobalIdx.length - 1 && filteredLogsWithGlobalIdx[idx + 1].log.tab === log.tab;
+                        
+                        return (
+                          <LogItem 
+                            key={log.id}
+                            idx={globalIdx}
+                            log={log}
+                            tabSet={tabSettings[log.tab]}
+                            char={charSettings[log.name] || { name: log.name, color: log.color, visible: true }}
+                            theme={theme}
+                            disableOtherColor={disableOtherColor}
+                            fontSize={fontSize}
+                            insertedImages={insertedImages}
+                            splitPoints={splitPoints}
+                            sectionNames={sectionNames}
+                            imageInputIdx={imageInputIdx}
+                            onToggleSplit={(i: number) => {
+                              const next = new Set(splitPoints);
+                              if (next.has(i)) next.delete(i);
+                              else next.add(i);
+                              setSplitPoints(next);
+                              saveToHistory({ splitPoints: Array.from(next) });
+                            }}
+                            onRenameSection={(i: number, name: string) => {
+                              const next = { ...sectionNames, [i]: name };
+                              setSectionNames(next);
+                              saveToHistory({ sectionNames: next });
+                            }}
+                            onInsertImage={(i: number) => {
+                              setImageInputIdx(i === imageInputIdx ? null : i);
+                            }}
+                            onAddImageUrl={(i: number, url: string) => {
+                              const next = { ...insertedImages };
+                              if (!next[i]) next[i] = [];
+                              next[i].push({ url, width: '400', align: 'center' });
+                              setInsertedImages(next);
+                              saveToHistory({ insertedImages: next });
+                              setImageInputIdx(null);
+                            }}
+                            onDeleteImage={(i: number, imgIdx: number) => {
+                              const next = { ...insertedImages };
+                              next[i] = next[i].filter((_: any, j: number) => j !== imgIdx);
+                              if (next[i].length === 0) delete next[i];
+                              setInsertedImages(next);
+                              saveToHistory({ insertedImages: next });
+                            }}
+                            onUpdateImageWidth={(i: number, imgIdx: number, width: string) => {
+                              const next = { ...insertedImages };
+                              if (next[i] && next[i][imgIdx]) {
+                                next[i][imgIdx] = { ...next[i][imgIdx], width };
+                                setInsertedImages(next);
+                                saveToHistory({ insertedImages: next });
+                              }
+                            }}
+                            onUpdateImageAlign={(i: number, imgIdx: number, align: 'left' | 'center' | 'right') => {
+                              const next = { ...insertedImages };
+                              if (next[i] && next[i][imgIdx]) {
+                                next[i][imgIdx] = { ...next[i][imgIdx], align };
+                                setInsertedImages(next);
+                                saveToHistory({ insertedImages: next });
+                              }
+                            }}
+                            onEditLog={onEditLog}
+                            onDeleteLog={onDeleteLog}
+                            mergedLogsCount={mergedLogs.length}
+                            splitPointsArray={Array.from(splitPoints).sort((a: number, b: number) => a - b)}
+                            isPrevSameTab={isPrevSameTab}
+                            isNextSameTab={isNextSameTab}
+                            isPrevSplit={idx > 0 && splitPoints.has(prevGlobalIdx)}
+                            mergeTabStyles={mergeTabStyles}
+                            showTabNames={showTabNames}
+                            hideEmptyAvatars={hideEmptyAvatars}
+                          />
+                        );
+                      });
+                    })()}
                     
                     {visibleCount < mergedLogs.length && (
                       <div className="py-10 text-center text-stone-400 text-xs font-bold">
