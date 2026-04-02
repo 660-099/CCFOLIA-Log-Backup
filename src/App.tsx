@@ -44,6 +44,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { HexColorPicker, RgbColorPicker } from 'react-colorful';
 import { twMerge } from 'tailwind-merge';
 import { clsx, type ClassValue } from 'clsx';
+import { Analytics } from '@vercel/analytics/react';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -2691,6 +2692,7 @@ export default function App() {
           <span className="text-[10px] font-bold">미리보기</span>
         </button>
       </div>
+      <Analytics />
     </div>
   );
 }
