@@ -39,7 +39,9 @@ import {
   AlignCenter,
   AlignRight,
   Copy,
-  ExternalLink
+  ExternalLink,
+  ArrowUpDown,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorPicker, RgbColorPicker } from 'react-colorful';
@@ -261,7 +263,11 @@ const LogItem = React.memo(({
   mergeTabStyles,
   showTabNames,
   hideEmptyAvatars,
-  mergedLogsCount
+  narrationCharacter,
+  mergedLogsCount,
+  isPrevNarration,
+  isNextNarration,
+  charSettings
 }: any) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(log.content.replace(/<br\s*\/?>/gi, '\n'));
@@ -273,7 +279,24 @@ const LogItem = React.memo(({
   const otherNameColor = disableOtherColor ? (theme === 'dark' ? '#AAAAAA' : '#444444') : color;
   const img = char.imageUrl;
   const isSecret = format === 'secret';
-  const tabColor = tabSet.color || (isSecret ? '#ffd400' : '#e6005c');
+  const tabColor = tabSet.color || '#ffd400';
+  const isNarration = log.name === narrationCharacter && format === 'main';
+
+  let displayContent = log.content;
+  if (log.isCommand) {
+    displayContent = displayContent.replace(/^(?:<br\s*\/?>|\s)+/gi, '');
+    displayContent = displayContent.replace(/\]\s*(?:<br\s*\/?>|\n)+\s*/gi, '] ');
+  }
+  let finalHtmlContent = linkify(displayContent);
+  if (log.name === 'system') {
+    finalHtmlContent = finalHtmlContent.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
+      const char = charSettings[p1.trim()];
+      if (char) {
+        return `<span style="color: ${char.color};">${match}</span>`;
+      }
+      return match;
+    });
+  }
   
   const getSecretBg = (hex: string) => {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -298,6 +321,14 @@ const LogItem = React.memo(({
   // 인덱스 표시 조건: 탭이 바뀌었을 때만 (다른 탭이 사이에 끼어들었을 때) 혹은 섹션이 나뉘었을 때
   const shouldShowIndex = showTabNames.has(format) && (!isPrevSameTab || isPrevSplit);
   
+  let itemMarginTop = '0';
+  let itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !insertedImages[stableId] ? '0' : '2px') : (log.isContinuation ? '0' : '2px');
+
+  if (isNarration) {
+    itemMarginTop = isPrevNarration ? '0' : '10px';
+    itemMarginBottom = isNextNarration ? '0' : '10px';
+  }
+
   const getSectionRange = () => {
     const sorted = splitPointsArray;
     const splitIdx = sorted.indexOf(idx);
@@ -350,8 +381,8 @@ const LogItem = React.memo(({
       )}
       
       <div className="log-item" style={{ 
-        marginBottom: shouldMergeStyle ? (isNextSameTab && !insertedImages[stableId] ? '0' : '2px') : (log.isContinuation ? '0' : '2px'),
-        marginTop: '0'
+        marginBottom: itemMarginBottom,
+        marginTop: itemMarginTop
       }}>
         {isEditing ? (
           <div className="mx-4 my-2 p-3 bg-black/20 rounded-xl border border-white/10 flex flex-col gap-2">
@@ -384,8 +415,19 @@ const LogItem = React.memo(({
             borderRadius: '8px',
             margin: `8px ${r(paddingSize * 1.3)}px`
           }}>
-            <span style={{ color, fontWeight: 'bold', fontFamily: 'monospace' }}>[ {log.name} ]</span>
-            <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#333333', fontWeight: 'bold', fontFamily: 'monospace', marginLeft: '8px', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
+            {log.name !== 'system' && <span style={{ color, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace" }}>[ {log.name} ]</span>}
+            <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#333333', fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: finalHtmlContent }} />
+          </div>
+        ) : isNarration ? (
+          <div style={{ 
+            padding: `${paddingSize}px ${r(paddingSize * 1.3)}px`, 
+            textAlign: 'center',
+            color: theme === 'dark' ? '#EEEEEE' : '#333333',
+            lineHeight: 1.6,
+            fontWeight: 'bold',
+            fontStyle: 'italic'
+          }}>
+            <div dangerouslySetInnerHTML={{ __html: finalHtmlContent }} />
           </div>
         ) : format === 'other' ? (
           <div style={{ padding: `${r(paddingSize / 3)}px ${r(paddingSize * 1.3)}px`, display: 'flex', gap: `${r(gapSize / 1.5)}px`, alignItems: 'baseline' }}>
@@ -394,7 +436,7 @@ const LogItem = React.memo(({
                 <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px` }} className="cursor-default">{log.name}</span>
               </div>
             )}
-            <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', marginLeft: log.isContinuation ? `${r(nameSize * 4)}px` : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: linkify(log.content) }} />
+            <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', marginLeft: log.isContinuation ? `${r(nameSize * 4)}px` : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: finalHtmlContent }} />
           </div>
         ) : format === 'info' ? (
           <div style={{ 
@@ -413,7 +455,7 @@ const LogItem = React.memo(({
                 <span style={{ fontWeight: 'bold', color, display: 'block' }} className="cursor-default">{log.name}</span>
               </div>
             )}
-            <div dangerouslySetInnerHTML={{ __html: linkify(log.content) }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', lineHeight: 1.6 }} />
+            <div dangerouslySetInnerHTML={{ __html: finalHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', lineHeight: 1.6 }} />
           </div>
         ) : (
           <div style={{ 
@@ -444,7 +486,7 @@ const LogItem = React.memo(({
                   <span className="cursor-default">{log.name}</span>
                 </div>
               )}
-              <div dangerouslySetInnerHTML={{ __html: linkify(log.content) }} style={{ color: theme === 'dark' ? 'inherit' : '#333333' }} />
+              <div dangerouslySetInnerHTML={{ __html: finalHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333' }} />
             </div>
           </div>
         )}
@@ -554,7 +596,7 @@ const LogItem = React.memo(({
 
 const fonts = [
   { name: 'Noto Sans KR', value: "'Noto Sans KR', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');" },
-  { name: '(폰트 적용X)', value: "sans-serif", import: "" },
+  { name: '(폰트 적용X)', value: "inherit", import: "" },
   { name: 'Pretendard', value: "'Pretendard', sans-serif", import: "@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');" },
   { name: '나눔고딕', value: "'Nanum Gothic', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');" },
   { name: 'Noto Serif KR', value: "'Noto Serif KR', serif", import: "@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700&display=swap');" },
@@ -582,7 +624,7 @@ export default function App() {
   const [fontSize, setFontSize] = useState<number>(14);
   const [fontFamily, setFontFamily] = useState<string>('Noto Sans KR');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [disableOtherColor, setDisableOtherColor] = useState(false);
+  const [disableOtherColor, setDisableOtherColor] = useState(true);
   const [isEditingFontSize, setIsEditingFontSize] = useState(false);
   const [renamingChar, setRenamingChar] = useState<string | null>(null);
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
@@ -593,6 +635,18 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'settings'>('files');
   const [mobileTab, setMobileTab] = useState<'settings' | 'preview'>('settings');
   const [charSortMode, setCharSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
+  const [isNarrationDropdownOpen, setIsNarrationDropdownOpen] = useState(false);
+  const narrationDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (narrationDropdownRef.current && !narrationDropdownRef.current.contains(event.target as Node)) {
+        setIsNarrationDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
   const [splitPoints, setSplitPoints] = useState<Set<number>>(new Set());
   const [insertedImages, setInsertedImages] = useState<Record<string, { url: string; width?: string; align?: 'left' | 'center' | 'right' }[]>>({});
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -601,9 +655,10 @@ export default function App() {
   const [visibleCount, setVisibleCount] = useState(50);
   const [sectionNames, setSectionNames] = useState<Record<number, string>>({});
   const [mergeTabs, setMergeTabs] = useState<Set<TabFormat>>(new Set(['main', 'secret']));
-  const [showTabNames, setShowTabNames] = useState<Set<TabFormat>>(new Set(['main', 'secret']));
+  const [showTabNames, setShowTabNames] = useState<Set<TabFormat>>(new Set(['secret']));
   const [mergeTabStyles, setMergeTabStyles] = useState<Set<TabFormat>>(new Set(['secret']));
   const [hideEmptyAvatars, setHideEmptyAvatars] = useState(false);
+  const [narrationCharacter, setNarrationCharacter] = useState<string | null>(null);
   const [imageInputIdx, setImageInputIdx] = useState<number | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
@@ -680,6 +735,7 @@ export default function App() {
       showTabNames: Array.from(showTabNames),
       mergeTabStyles: Array.from(mergeTabStyles),
       hideEmptyAvatars,
+      narrationCharacter,
       ...state
     };
     const newHistory = history.slice(0, historyIndex + 1);
@@ -722,6 +778,7 @@ export default function App() {
     if (state.showTabNames) setShowTabNames(new Set(state.showTabNames));
     if (state.mergeTabStyles) setMergeTabStyles(new Set(state.mergeTabStyles));
     if (state.hideEmptyAvatars !== undefined) setHideEmptyAvatars(state.hideEmptyAvatars);
+    if (state.narrationCharacter !== undefined) setNarrationCharacter(state.narrationCharacter);
   };
 
   const resetSettings = () => {
@@ -741,18 +798,19 @@ export default function App() {
         setSplitPoints(new Set(state.splitPoints || []));
         setSectionNames(state.sectionNames || {});
         setMergeTabs(new Set(state.mergeTabs || ['main', 'secret']));
-        setShowTabNames(new Set(state.showTabNames || ['main', 'secret']));
+        setShowTabNames(new Set(state.showTabNames || ['secret']));
         setMergeTabStyles(new Set(state.mergeTabStyles || ['secret']));
         setHideEmptyAvatars(state.hideEmptyAvatars || false);
+        setNarrationCharacter(state.narrationCharacter || null);
         saveToHistory(state);
       } else {
         setCssFormat('internal');
         setFontSize(14);
         setFontFamily('Noto Sans KR');
         setTheme('dark');
-        setDisableOtherColor(false);
+        setDisableOtherColor(true);
         setMergeTabs(new Set(['main', 'secret']));
-        setShowTabNames(new Set(['main', 'secret']));
+        setShowTabNames(new Set(['secret']));
         setMergeTabStyles(new Set(['secret']));
         setHideEmptyAvatars(false);
       }
@@ -924,6 +982,16 @@ export default function App() {
     if (firstNonEmptyIndex === -1) firstNonEmptyIndex = 0;
     const trimmedLogs = newLogs.slice(firstNonEmptyIndex);
 
+    // Check if 'system' is only used in command logs
+    if (newChars['system']) {
+      const hasNonCommandSystem = trimmedLogs.some(log => log.name === 'system' && !log.isCommand);
+      if (!hasNonCommandSystem) {
+        delete newChars['system'];
+        const idx = newCharOrder.indexOf('system');
+        if (idx !== -1) newCharOrder.splice(idx, 1);
+      }
+    }
+
     setLogs(trimmedLogs);
     setCharSettings(newChars);
     setCharOrder(newCharOrder);
@@ -933,13 +1001,13 @@ export default function App() {
     setInsertedImages({});
     setSplitPoints(new Set());
     setSectionNames({});
-    setMergeTabs(new Set(['main', 'other', 'secret']));
+    setMergeTabs(new Set(['main', 'secret']));
     setMergeTabStyles(new Set(['secret']));
-    setShowTabNames(new Set(['main', 'secret']));
+    setShowTabNames(new Set(['secret']));
     setHideEmptyAvatars(false);
     setCssFormat('internal');
     setFontSize(14);
-    setDisableOtherColor(false);
+    setDisableOtherColor(true);
     setPageTitle('');
     setActiveTab('tabs');
 
@@ -952,14 +1020,14 @@ export default function App() {
       fontSize: 14,
       fontFamily: 'Noto Sans KR',
       theme: 'dark' as const,
-      disableOtherColor: false,
+      disableOtherColor: true,
       logs: trimmedLogs,
       insertedImages: {},
       splitPoints: [] as number[],
       sectionNames: {} as Record<number, string>,
-      mergeTabs: [] as string[],
-      showTabNames: [] as string[],
-      mergeTabStyles: [] as string[],
+      mergeTabs: ['main', 'secret'],
+      showTabNames: ['secret'],
+      mergeTabStyles: ['secret'],
       hideEmptyAvatars: false
     };
     setInitialState(initial);
@@ -1042,6 +1110,13 @@ export default function App() {
       // Handle "Unknown" or empty names by putting them at the end
       if (a === 'Unknown' && b !== 'Unknown') return 1;
       if (a !== 'Unknown' && b === 'Unknown') return -1;
+      
+      const isAEnglish = /^[a-zA-Z]/.test(a);
+      const isBEnglish = /^[a-zA-Z]/.test(b);
+      
+      if (isAEnglish && !isBEnglish) return -1;
+      if (!isAEnglish && isBEnglish) return 1;
+
       return a.localeCompare(b, 'ko', { sensitivity: 'base', numeric: true });
     });
   }, [charOrder, charSortMode]);
@@ -1123,7 +1198,7 @@ export default function App() {
     const targetLogs = range ? mergedLogs.slice(range.start, range.end + 1) : mergedLogs;
     const filteredLogs = targetLogs.filter(log => 
       tabSettings[log.tab]?.visible && 
-      charSettings[log.name]?.visible
+      (charSettings[log.name]?.visible !== false)
     );
 
     const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
@@ -1152,12 +1227,13 @@ export default function App() {
 
     const css = `
       ${fontImport}
+      @import url('https://hangeul.pstatic.net/hangeul_static/css/nanum-gothic-coding.css');
       .log-container * { box-sizing: border-box; min-width: 0; }
       .log-container { 
         width: 100%; 
         max-width: 800px; 
         margin: 0 auto; 
-        font-family: ${fontValue}; 
+        ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''}
         background: ${bgColor}; 
         color: ${textColor}; 
         line-height: 1.6; 
@@ -1214,7 +1290,7 @@ export default function App() {
         border-radius: 8px; 
         margin: 8px ${r(paddingSize * 1.3)}px; 
       }
-      .command-text { font-family: 'JetBrains Mono', monospace; color: ${otherTextColor}; font-size: 0.9em; }
+      .command-text { font-family: 'NanumGothicCodingLigature', monospace; color: ${otherTextColor}; font-size: 0.9em; }
 
       /* Secret Format */
       .secret-row {
@@ -1225,10 +1301,20 @@ export default function App() {
         margin: 4px ${r(paddingSize * 1.3)}px;
         border-radius: 4px;
       }
+
+      /* Narration Format */
+      .narration-row {
+        padding: ${paddingSize}px ${r(paddingSize * 1.3)}px;
+        text-align: center;
+        color: ${textColor};
+        line-height: 1.6;
+        font-weight: bold;
+        font-style: italic;
+      }
     `;
 
     const isInline = cssFormat === 'inline';
-    let html = '';
+    let html = isInline ? `<div style="width: 100%; max-width: 800px; margin: 0 auto; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: 1.6; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden; box-sizing: border-box;">\n` : '';
 
     filteredLogs.forEach((log, idx) => {
       const globalIdx = mergedLogs.findIndex(l => l.id === log.id);
@@ -1264,11 +1350,31 @@ export default function App() {
       const hasImageAfter = currentImages.length > 0;
       const hasImageBefore = prevImages.length > 0;
 
+      const isNarration = log.name === narrationCharacter && format === 'main';
+      const isPrevNarration = idx > 0 && filteredLogs[idx - 1].name === narrationCharacter && (tabSettings[filteredLogs[idx - 1].tab]?.format || 'main') === 'main';
+      const isNextNarration = idx < filteredLogs.length - 1 && filteredLogs[idx + 1].name === narrationCharacter && (tabSettings[filteredLogs[idx + 1].tab]?.format || 'main') === 'main';
+
+      let displayContent = log.content;
+      if (log.isCommand) {
+        displayContent = displayContent.replace(/^(?:<br\s*\/?>|\s)+/gi, '');
+        displayContent = displayContent.replace(/\]\s*(?:<br\s*\/?>|\n)+\s*/gi, '] ');
+      }
+      let finalHtmlContent = linkify(displayContent);
+      if (log.name === 'system') {
+        finalHtmlContent = finalHtmlContent.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
+          const char = charSettings[p1.trim()];
+          if (char) {
+            return `<span style="color: ${char.color};">${match}</span>`;
+          }
+          return match;
+        });
+      }
+
       // Insert Tab Name if needed
       if (showTabNames.has(format) && !isPrevSameTab) {
         const tabName = log.tab;
         const isSecret = format === 'secret';
-        const tabColor = tabSet?.color || (isSecret ? '#ffd400' : '#e6005c');
+        const tabColor = tabSet?.color || '#ffd400';
         const tabBg = getSecretBg(tabColor);
         
         if (isInline) {
@@ -1294,9 +1400,14 @@ export default function App() {
         const otherContentStyle = `font-size: 1em; color: ${otherTextColor}; word-break: break-all;`;
         
         // Tab Integration margin/border logic
-        const itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? '0' : '2px') : (isCont ? '0' : '2px');
-        const itemMarginTop = '0';
+        let itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? '0' : '2px') : (isCont ? '0' : '2px');
+        let itemMarginTop = '0';
         
+        if (isNarration) {
+          itemMarginTop = isPrevNarration ? '0' : '16px';
+          itemMarginBottom = isNextNarration ? '0' : '16px';
+        }
+
         // Rounding logic for tab integration
         const isSectionStart = idx === 0 || hasImageBefore;
         const isSectionEnd = isNextSameTab === false || hasImageAfter;
@@ -1304,17 +1415,21 @@ export default function App() {
         html += `<div style="margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
         
         if (log.isCommand) {
+          const nameHtml = log.name !== 'system' ? `<span style="color: ${color}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; font-size: 0.9em;">[ ${log.name} ]</span> ` : '';
+          const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
           if (format === 'secret') {
             const tabColor = tabSet?.color || '#ffd400';
             const secretBg = getSecretBg(tabColor);
-            html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${textColor}; font-family: 'JetBrains Mono', monospace; font-weight: bold; font-size: 0.9em; margin-left: 8px;">${linkify(log.content)}</span></div>`;
+            html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; font-size: 0.9em; ${marginLeft}">${finalHtmlContent}</span></div>`;
           } else {
-            html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;"><span style="color: ${color}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em;">[ ${log.name} ]</span> <span style="color: ${otherTextColor}; font-family: 'JetBrains Mono', monospace; font-size: 0.9em; margin-left: 8px;">${linkify(log.content)}</span></div>`;
+            html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;">${nameHtml}<span style="color: ${otherTextColor}; font-family: 'NanumGothicCodingLigature', monospace; font-size: 0.9em; ${marginLeft}">${finalHtmlContent}</span></div>`;
           }
+        } else if (isNarration) {
+          html += `<div style="padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic;">${finalHtmlContent}</div>`;
         } else if (format === 'other') {
           html += `<div style="padding: ${r(paddingSize / 3)}px ${r(paddingSize * 1.3)}px; display: flex; gap: ${r(gapSize / 1.5)}px; align-items: baseline;">
             ${!isCont ? `<span style="font-weight: bold; color: ${otherNameColor}; font-size: ${nameSize}px; flex-shrink: 0;">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}
-            <span style="${otherContentStyle}">${linkify(log.content)}</span>
+            <span style="${otherContentStyle}">${finalHtmlContent}</span>
           </div>`;
         } else if (format === 'info') {
           const infoMargin = shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `8px ${r(paddingSize * 1.3)}px`;
@@ -1326,7 +1441,7 @@ export default function App() {
 
           html += `<div style="padding: ${r(paddingSize * 1.3)}px ${r(paddingSize * 1.6)}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: ${infoMargin}; border-radius: ${infoRadius}; border-top: ${infoBorderTop}; border-bottom: ${infoBorderBottom};">
             ${!isCont ? `<span style="${nameStyle}">${log.name}</span>` : ''}
-            <div style="${contentStyle}">${linkify(log.content)}</div>
+            <div style="${contentStyle}">${finalHtmlContent}</div>
           </div>`;
         } else if (format === 'secret') {
           const tabColor = tabSet?.color || '#ffd400';
@@ -1344,7 +1459,7 @@ export default function App() {
               ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
               <div style="${bodyStyle}">
                 ${!isCont ? `<div style="${nameStyle}">${log.name}</div>` : ''}
-                <div style="${contentStyle}">${linkify(log.content)}</div>
+                <div style="${contentStyle}">${finalHtmlContent}</div>
               </div>
             </div>`;
         } else {
@@ -1359,7 +1474,7 @@ export default function App() {
               ${!isCont ? avatarHtml : contAvatarHtml}
               <div style="${bodyStyle}">
                 ${!isCont ? `<div style="${nameStyle}">${log.name}</div>` : ''}
-                <div style="${contentStyle}">${linkify(log.content)}</div>
+                <div style="${contentStyle}">${finalHtmlContent}</div>
               </div>
             </div>`;
         }
@@ -1369,23 +1484,32 @@ export default function App() {
         const isSectionStart = idx === 0 || hasImageBefore;
         const isSectionEnd = isNextSameTab === false || hasImageAfter;
 
-        const itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? '0' : '2px') : (isCont ? '0' : '2px');
-        const itemMarginTop = '0';
+        let itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? '0' : '2px') : (isCont ? '0' : '2px');
+        let itemMarginTop = '0';
+
+        if (isNarration) {
+          itemMarginTop = isPrevNarration ? '0' : '16px';
+          itemMarginBottom = isNextNarration ? '0' : '16px';
+        }
 
         html += `<div class="log-item" style="margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
 
         if (log.isCommand) {
+          const nameHtml = log.name !== 'system' ? `<span class="command-text" style="color: ${color}; font-weight: bold;">[ ${log.name} ]</span> ` : '';
+          const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
           if (format === 'secret') {
             const tabColor = tabSet?.color || '#ffd400';
             const secretBg = getSecretBg(tabColor);
-            html += `<div class="command-box" style="background: ${secretBg}; border-color: rgba(0,0,0,0.1);"><span class="command-text" style="color: ${color}; font-weight: bold;">[ ${log.name} ]</span> <span class="command-text" style="color: ${textColor}; font-weight: bold; margin-left: 8px;">${linkify(log.content)}</span></div>`;
+            html += `<div class="command-box" style="background: ${secretBg}; border-color: rgba(0,0,0,0.1);">${nameHtml}<span class="command-text" style="color: ${textColor}; font-weight: bold; ${marginLeft}">${finalHtmlContent}</span></div>`;
           } else {
-            html += `<div class="command-box"><span class="command-text" style="color: ${color}">[ ${log.name} ]</span> <span class="command-text" style="margin-left: 8px;">${linkify(log.content)}</span></div>`;
+            html += `<div class="command-box">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
           }
+        } else if (isNarration) {
+          html += `<div class="narration-row">${finalHtmlContent}</div>`;
         } else if (format === 'other') {
           html += `<div class="other-row">
             ${!isCont ? `<span class="other-name" style="color: ${otherNameColor}">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}
-            <span class="other-content">${linkify(log.content)}</span>
+            <span class="other-content">${finalHtmlContent}</span>
           </div>`;
         } else if (format === 'info') {
           const infoMargin = shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `8px ${r(paddingSize * 1.3)}px`;
@@ -1396,7 +1520,7 @@ export default function App() {
 
           html += `<div class="info-row" style="margin: ${infoMargin}; border-radius: ${infoRadius}; border-top: ${infoBorderTop};">
             ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
-            <div class="main-content">${linkify(log.content)}</div>
+            <div class="main-content">${finalHtmlContent}</div>
           </div>`;
         } else if (format === 'secret') {
           const tabColor = tabSet?.color || '#ffd400';
@@ -1413,7 +1537,7 @@ export default function App() {
               ${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
               <div class="main-body">
                 ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
-                <div class="main-content">${linkify(log.content)}</div>
+                <div class="main-content">${finalHtmlContent}</div>
               </div>
             </div>`;
         } else {
@@ -1423,7 +1547,7 @@ export default function App() {
               ${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
               <div class="main-body">
                 ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
-                <div class="main-content">${linkify(log.content)}</div>
+                <div class="main-content">${finalHtmlContent}</div>
               </div>
             </div>`;
         }
@@ -1448,6 +1572,10 @@ export default function App() {
       }
     });
 
+    if (isInline) {
+      html += `</div>`;
+    }
+
     return `
       <!DOCTYPE html>
       <html lang="ko">
@@ -1458,9 +1586,7 @@ export default function App() {
         ${isInline ? '' : `<style>${css}</style>`}
       </head>
       <body style="margin: 0;">
-        <div class="log-container">
-          ${html}
-        </div>
+        ${isInline ? html : `<div class="log-container">\n${html}\n</div>`}
       </body>
       </html>
     `;
@@ -1469,7 +1595,7 @@ export default function App() {
   const previewHtml = useMemo(() => {
     if (mergedLogs.length === 0) return '';
     return generateFinalHtml();
-  }, [mergedLogs, charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor, pageTitle, originalFileName, insertedImages]);
+  }, [mergedLogs, charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor, pageTitle, originalFileName, insertedImages, narrationCharacter]);
 
   const downloadHtml = (range?: { start: number; end: number }) => {
     const html = generateFinalHtml(range);
@@ -1657,6 +1783,33 @@ export default function App() {
                     
                     <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
                       <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-white/70">탭 이름 표시</span>
+                      </div>
+                      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-0.75">
+                        {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
+                          <button
+                            key={f}
+                            onClick={() => {
+                              const next = new Set(showTabNames);
+                              if (next.has(f)) next.delete(f);
+                              else next.add(f);
+                              setShowTabNames(next);
+                              saveToHistory({ showTabNames: Array.from(next) });
+                            }}
+                            className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
+                              showTabNames.has(f) 
+                                ? 'bg-[#e6005c] text-white shadow-sm' 
+                                : 'text-white/30 hover:text-white/60'
+                            }`}
+                          >
+                            {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
+                      <div className="flex items-center justify-between">
                         <span className="text-[11px] font-bold text-white/70">발언자별 통합</span>
                         <div className="text-[9px] text-white/30 font-medium text-right">
                           연속되는 대사를 하나의 블록으로 합칩니다.
@@ -1716,33 +1869,6 @@ export default function App() {
                             </button>
                           );
                         })}
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-white/70">탭 이름 표시</span>
-                      </div>
-                      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-0.75">
-                        {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
-                          <button
-                            key={f}
-                            onClick={() => {
-                              const next = new Set(showTabNames);
-                              if (next.has(f)) next.delete(f);
-                              else next.add(f);
-                              setShowTabNames(next);
-                              saveToHistory({ showTabNames: Array.from(next) });
-                            }}
-                            className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
-                              showTabNames.has(f) 
-                                ? 'bg-[#e6005c] text-white shadow-sm' 
-                                : 'text-white/30 hover:text-white/60'
-                            }`}
-                          >
-                            {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
-                          </button>
-                        ))}
                       </div>
                     </div>
                   </div>
@@ -1873,6 +1999,55 @@ export default function App() {
                   />
                 </div>
 
+                <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm relative" ref={narrationDropdownRef}>
+                  <span className="text-[11px] font-bold text-white/70">나레이션 캐릭터</span>
+                  <div className="relative">
+                    <button
+                      onClick={() => setIsNarrationDropdownOpen(!isNarrationDropdownOpen)}
+                      className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/80 px-2 py-1 outline-none hover:border-white/20 transition-colors"
+                    >
+                      <span className="max-w-[100px] truncate">{narrationCharacter || '선택 안 함'}</span>
+                      <ChevronDown className="w-3 h-3 opacity-50" />
+                    </button>
+                    
+                    {isNarrationDropdownOpen && (
+                      <div className="absolute right-0 top-full mt-1 w-40 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                        <div className="max-h-80 overflow-y-auto custom-scrollbar p-1">
+                          <button
+                            onClick={() => {
+                              setNarrationCharacter(null);
+                              saveToHistory({ narrationCharacter: null });
+                              setIsNarrationDropdownOpen(false);
+                            }}
+                            className={cn(
+                              "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
+                              !narrationCharacter ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
+                            )}
+                          >
+                            선택 안 함
+                          </button>
+                          {Object.keys(charSettings).map(charName => (
+                            <button
+                              key={charName}
+                              onClick={() => {
+                                setNarrationCharacter(charName);
+                                saveToHistory({ narrationCharacter: charName });
+                                setIsNarrationDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
+                                narrationCharacter === charName ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
+                              )}
+                            >
+                              {charName}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
                     <Users className="w-3.5 h-3.5" /> 캐릭터 설정
@@ -1881,7 +2056,7 @@ export default function App() {
                     onClick={() => setCharSortMode(charSortMode === 'appearance' ? 'alphabetical' : 'appearance')}
                     className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
                   >
-                    <RotateCcw className="w-3 h-3" />
+                    <ArrowUpDown className="w-3 h-3" />
                     {charSortMode === 'appearance' ? '등장순' : '가나다순'}
                   </button>
                 </div>
@@ -2444,11 +2619,12 @@ export default function App() {
                     padding: '0 0 40px 0',
                     backgroundColor: theme === 'dark' ? '#242424' : '#FFFFFF',
                     color: theme === 'dark' ? '#EEEEEE' : '#333333',
-                    fontFamily: fonts.find(f => f.name === fontFamily)?.value || 'sans-serif',
+                    fontFamily: fontFamily !== '(폰트 적용X)' ? (fonts.find(f => f.name === fontFamily)?.value || 'sans-serif') : undefined,
                     fontSize: `${fontSize}px`
                   }}>
                     {/* Inject Base Styles */}
                     <style>{`
+                      @import url('https://hangeul.pstatic.net/hangeul_static/css/nanum-gothic-coding.css');
                       .log-item-wrapper { 
                         position: relative; 
                         border-bottom: 1px solid transparent;
@@ -2515,7 +2691,7 @@ export default function App() {
                       const filteredLogsWithGlobalIdx = mergedLogs.map((log, globalIdx) => ({ log, globalIdx }))
                         .filter(({ log }) => 
                           tabSettings[log.tab]?.visible && 
-                          charSettings[log.name]?.visible
+                          (charSettings[log.name]?.visible !== false)
                         );
                       
                       return filteredLogsWithGlobalIdx.slice(0, visibleCount).map(({ log, globalIdx }, idx) => {
@@ -2532,9 +2708,11 @@ export default function App() {
                             log={log}
                             tabSet={tabSettings[log.tab]}
                             char={charSettings[log.name] || { name: log.name, color: log.color, visible: true }}
+                            charSettings={charSettings}
                             theme={theme}
                             disableOtherColor={disableOtherColor}
                             fontSize={fontSize}
+                            narrationCharacter={narrationCharacter}
                             insertedImages={insertedImages}
                             splitPoints={splitPoints}
                             sectionNames={sectionNames}
@@ -2734,6 +2912,12 @@ interface ColorPickerPopupProps {
   onClose: () => void;
 }
 
+const DEFAULT_COLORS = [
+  '#212121', '#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
+  '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b',
+  '#ffc107', '#ff9800', '#ff5722', '#795548', '#607d8b', '#9e9e9e', '#e0e0e0'
+];
+
 const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose, onChange }: ColorPickerPopupProps) => {
   const [mode, setMode] = useState<'hex' | 'rgb'>('hex');
   const [isEditing, setIsEditing] = useState(false);
@@ -2783,6 +2967,8 @@ const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose, onChan
   }, [triggerRect]);
 
   const rgb = hexToRgbValues(selectedColor);
+  const normalizedDefaultColors = DEFAULT_COLORS.map(c => c.toLowerCase());
+  const usedColors = extractedColors.filter(c => !normalizedDefaultColors.includes(c.toLowerCase()));
 
   return createPortal(
     <div className="fixed inset-0 z-[100]">
@@ -2848,10 +3034,24 @@ const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose, onChan
           </button>
         </div>
 
-        {extractedColors.length > 0 && (
+        <div className="pt-3 border-t border-white/5">
+          <div className="grid grid-cols-7 gap-1">
+            {DEFAULT_COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => setSelectedColor(c)}
+                className="w-6 h-6 rounded-md border border-white/10 hover:scale-110 transition-transform"
+                style={{ backgroundColor: c }}
+                title={c}
+              />
+            ))}
+          </div>
+        </div>
+
+        {usedColors.length > 0 && (
           <div className="pt-3 border-t border-white/5">
-            <div className="grid grid-cols-6 gap-1.5 max-h-24 overflow-y-auto pr-1 custom-scrollbar">
-              {extractedColors.map(c => (
+            <div className="grid grid-cols-7 gap-1 max-h-24 overflow-y-auto pr-1 custom-scrollbar">
+              {usedColors.map(c => (
                 <button
                   key={c}
                   onClick={() => setSelectedColor(c)}
