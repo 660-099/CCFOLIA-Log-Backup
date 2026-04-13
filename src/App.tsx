@@ -284,8 +284,12 @@ const LogItem = React.memo(({
 
   let displayContent = log.content;
   if (log.isCommand) {
-    displayContent = displayContent.replace(/^(?:<br\s*\/?>|\s)+/gi, '');
-    displayContent = displayContent.replace(/\]\s*(?:<br\s*\/?>|\n)+\s*/gi, '] ');
+    displayContent = displayContent.replace(/^(?:<[^>]+>|\s)*(?:<br\s*\/?>|\n)+(?:<[^>]+>|\s)*/gi, (match: string) => {
+      return match.replace(/(?:<br\s*\/?>|\n)+/gi, '');
+    });
+    displayContent = displayContent.replace(/\](?:<[^>]+>|\s)*(?:<br\s*\/?>|\n)+(?:<[^>]+>|\s)*/gi, (match: string) => {
+      return match.replace(/(?:<br\s*\/?>|\n)+/gi, ' ');
+    });
   }
   let finalHtmlContent = linkify(displayContent);
   if (log.name === 'system') {
@@ -311,7 +315,7 @@ const LogItem = React.memo(({
   const paddingSize = Math.round(12 * scale);
   const nameSize = Math.round(13 * scale);
 
-  const isSplit = splitPoints.has(idx);
+  const isSplit = splitPoints.has(stableId);
   const shouldMergeStyle = mergeTabStyles.has(format) && (isPrevSameTab || isNextSameTab);
   
   // 미리보기에서 섹션으로 나뉘는 곳의 모서리가 둥글어지도록 처리
@@ -505,7 +509,7 @@ const LogItem = React.memo(({
         />
       ))}
 
-      {imageInputIdx === idx && (
+      {imageInputIdx === stableId && (
         <div className={cn(
           "mx-4 my-2 p-4 border border-dashed rounded-xl flex flex-col gap-3",
           theme === 'dark' ? "bg-white/5 border-white/20" : "bg-stone-50 border-stone-200 shadow-sm"
@@ -545,7 +549,7 @@ const LogItem = React.memo(({
 
       <div className="split-trigger font-sans mt-4">
         <button 
-          onClick={() => onToggleSplit(idx)}
+          onClick={() => onToggleSplit(stableId)}
           className={cn(
             "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all shadow-lg",
             isSplit 
@@ -557,10 +561,10 @@ const LogItem = React.memo(({
           {isSplit ? "분할 해제" : "여기서 분할"}
         </button>
         <button 
-          onClick={() => onInsertImage(idx)}
+          onClick={() => onInsertImage(stableId)}
           className={cn(
             "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all shadow-lg",
-            imageInputIdx === idx ? "bg-emerald-600 text-white" : (theme === 'dark' ? "bg-white/90 text-stone-900 hover:bg-white" : "bg-stone-900 text-white hover:bg-stone-800")
+            imageInputIdx === stableId ? "bg-emerald-600 text-white" : (theme === 'dark' ? "bg-white/90 text-stone-900 hover:bg-white" : "bg-stone-900 text-white hover:bg-stone-800")
           )}
         >
           <ImageIcon className="w-3 h-3" />
@@ -574,8 +578,8 @@ const LogItem = React.memo(({
             <div className="bg-[#e6005c] rounded-t-lg px-4 py-1.5 flex items-center shadow-lg max-w-sm">
               <input 
                 type="text"
-                value={sectionNames[idx + 1] || ''}
-                onChange={(e) => onRenameSection(idx + 1, e.target.value)}
+                value={sectionNames[stableId] || ''}
+                onChange={(e) => onRenameSection(stableId, e.target.value)}
                 placeholder={`섹션 ${splitPointsArray.indexOf(idx) + 2}`}
                 className="bg-transparent border-none text-xs font-bold text-white outline-none placeholder:text-white/30 w-48"
               />
@@ -647,19 +651,19 @@ export default function App() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-  const [splitPoints, setSplitPoints] = useState<Set<number>>(new Set());
+  const [splitPoints, setSplitPoints] = useState<Set<string>>(new Set());
   const [insertedImages, setInsertedImages] = useState<Record<string, { url: string; width?: string; align?: 'left' | 'center' | 'right' }[]>>({});
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [showCopyMenu, setShowCopyMenu] = useState(false);
   const [initialState, setInitialState] = useState<any>(null);
   const [visibleCount, setVisibleCount] = useState(50);
-  const [sectionNames, setSectionNames] = useState<Record<number, string>>({});
+  const [sectionNames, setSectionNames] = useState<Record<string, string>>({});
   const [mergeTabs, setMergeTabs] = useState<Set<TabFormat>>(new Set(['main', 'secret']));
   const [showTabNames, setShowTabNames] = useState<Set<TabFormat>>(new Set(['secret']));
   const [mergeTabStyles, setMergeTabStyles] = useState<Set<TabFormat>>(new Set(['secret']));
   const [hideEmptyAvatars, setHideEmptyAvatars] = useState(false);
   const [narrationCharacter, setNarrationCharacter] = useState<string | null>(null);
-  const [imageInputIdx, setImageInputIdx] = useState<number | null>(null);
+  const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
   // Virtualization: Increase visible count on scroll
@@ -1070,14 +1074,18 @@ export default function App() {
     let currentMerged: LogEntry | null = null;
     let mergedIds: string[] = [];
 
-    logs.forEach((log) => {
+    const visibleLogs = logs.filter(log => 
+      tabSettings[log.tab]?.visible && 
+      (charSettings[log.name]?.visible !== false)
+    );
+
+    visibleLogs.forEach((log) => {
       const tabSet = tabSettings[log.tab];
       const format = tabSet?.format || 'main';
       
       const shouldMerge = mergeTabs.has(format) && 
                           currentMerged && 
                           currentMerged.name === log.name && 
-                          currentMerged.color === log.color && 
                           currentMerged.tab === log.tab && 
                           !log.isCommand && 
                           !currentMerged.isCommand;
@@ -1100,9 +1108,17 @@ export default function App() {
     }
 
     return result;
-  }, [logs, mergeTabs, tabSettings]);
+  }, [logs, mergeTabs, tabSettings, charSettings]);
 
-  const splitPointsArray = useMemo(() => Array.from(splitPoints).sort((a: number, b: number) => a - b), [splitPoints]);
+  const splitPointsArray = useMemo(() => {
+    return mergedLogs
+      .map((log, idx) => ({ log, idx }))
+      .filter(({ log }) => {
+        const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
+        return splitPoints.has(stableId);
+      })
+      .map(({ idx }) => idx);
+  }, [mergedLogs, splitPoints]);
 
   const sortedCharOrder = useMemo(() => {
     if (charSortMode === 'appearance') return charOrder;
@@ -1153,29 +1169,27 @@ export default function App() {
     }
 
     if (idx !== -1) {
+      const stableId = id.startsWith('merged:') ? id.split(',').pop()! : id;
+      
       // Remove associated images for the deleted log (ID-based)
       const nextImages = { ...insertedImages };
-      const stableId = id.startsWith('merged:') ? id.split(',').pop()! : id;
       if (nextImages[stableId]) {
         delete nextImages[stableId];
       }
       setInsertedImages(nextImages);
       
-      // Shift splitPoints (these are still index-based)
-      const nextSplits = new Set<number>();
-      splitPoints.forEach(i => {
-        if (i < idx) nextSplits.add(i);
-        else if (i > idx) nextSplits.add(i - 1);
-      });
+      // Remove split point if it was on this log
+      const nextSplits = new Set(splitPoints);
+      if (nextSplits.has(stableId)) {
+        nextSplits.delete(stableId);
+      }
       setSplitPoints(nextSplits);
 
-      // Shift sectionNames (these are still index-based)
-      const nextNames: any = {};
-      Object.keys(sectionNames).forEach(key => {
-        const i = parseInt(key);
-        if (i < idx) nextNames[i] = sectionNames[i];
-        else if (i > idx) nextNames[i - 1] = sectionNames[i];
-      });
+      // Remove section name if it was on this log
+      const nextNames = { ...sectionNames };
+      if (nextNames[stableId]) {
+        delete nextNames[stableId];
+      }
       setSectionNames(nextNames);
       
       saveToHistory({ 
@@ -1356,8 +1370,12 @@ export default function App() {
 
       let displayContent = log.content;
       if (log.isCommand) {
-        displayContent = displayContent.replace(/^(?:<br\s*\/?>|\s)+/gi, '');
-        displayContent = displayContent.replace(/\]\s*(?:<br\s*\/?>|\n)+\s*/gi, '] ');
+        displayContent = displayContent.replace(/^(?:<[^>]+>|\s)*(?:<br\s*\/?>|\n)+(?:<[^>]+>|\s)*/gi, (match: string) => {
+          return match.replace(/(?:<br\s*\/?>|\n)+/gi, '');
+        });
+        displayContent = displayContent.replace(/\](?:<[^>]+>|\s)*(?:<br\s*\/?>|\n)+(?:<[^>]+>|\s)*/gi, (match: string) => {
+          return match.replace(/(?:<br\s*\/?>|\n)+/gi, ' ');
+        });
       }
       let finalHtmlContent = linkify(displayContent);
       if (log.name === 'system') {
@@ -1583,6 +1601,7 @@ export default function App() {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${pageTitle}</title>
+        <link href="https://hangeul.pstatic.net/hangeul_static/css/nanum-gothic-coding.css" rel="stylesheet">
         ${isInline ? '' : `<style>${css}</style>`}
       </head>
       <body style="margin: 0;">
@@ -1606,7 +1625,9 @@ export default function App() {
     const fileName = pageTitle || originalFileName || 'ccfolia';
     let suffix = '_log';
     if (range) {
-      const name = sectionNames[range.start];
+      const startLog = mergedLogs[range.start];
+      const stableId = startLog ? (startLog.id.startsWith('merged:') ? startLog.id.split(',').pop()! : startLog.id) : '';
+      const name = sectionNames[stableId];
       suffix = name ? `_${name}` : `_part${range.start + 1}-${range.end + 1}`;
     }
     a.download = `${fileName}${suffix}.html`;
@@ -1616,7 +1637,7 @@ export default function App() {
   const downloadZip = async () => {
     const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
-    const sortedPoints = Array.from(splitPoints).sort((a: number, b: number) => a - b);
+    const sortedPoints = splitPointsArray;
     const sections: { start: number; end: number }[] = [];
     
     let last = 0;
@@ -1632,7 +1653,9 @@ export default function App() {
 
     sections.forEach((s, i) => {
       const html = generateFinalHtml(s);
-      const name = sectionNames[s.start] || `section_${i + 1}`;
+      const startLog = mergedLogs[s.start];
+      const stableId = startLog ? (startLog.id.startsWith('merged:') ? startLog.id.split(',').pop()! : startLog.id) : '';
+      const name = sectionNames[stableId] || `section_${i + 1}`;
       folder?.file(`${name}.html`, html);
     });
 
@@ -2012,7 +2035,7 @@ export default function App() {
                     
                     {isNarrationDropdownOpen && (
                       <div className="absolute right-0 top-full mt-1 w-40 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
-                        <div className="max-h-80 overflow-y-auto custom-scrollbar p-1">
+                        <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-1">
                           <button
                             onClick={() => {
                               setNarrationCharacter(null);
@@ -2688,11 +2711,7 @@ export default function App() {
                     `}</style>
 
                     {(() => {
-                      const filteredLogsWithGlobalIdx = mergedLogs.map((log, globalIdx) => ({ log, globalIdx }))
-                        .filter(({ log }) => 
-                          tabSettings[log.tab]?.visible && 
-                          (charSettings[log.name]?.visible !== false)
-                        );
+                      const filteredLogsWithGlobalIdx = mergedLogs.map((log, globalIdx) => ({ log, globalIdx }));
                       
                       return filteredLogsWithGlobalIdx.slice(0, visibleCount).map(({ log, globalIdx }, idx) => {
                         const prevGlobalIdx = idx > 0 ? filteredLogsWithGlobalIdx[idx - 1].globalIdx : -1;
@@ -2700,6 +2719,9 @@ export default function App() {
                         const isNextSameTab = idx < filteredLogsWithGlobalIdx.length - 1 && filteredLogsWithGlobalIdx[idx + 1].log.tab === log.tab;
                         const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
                         
+                        const isPrevNarration = idx > 0 && filteredLogsWithGlobalIdx[idx - 1].log.name === narrationCharacter && (tabSettings[filteredLogsWithGlobalIdx[idx - 1].log.tab]?.format || 'main') === 'main';
+                        const isNextNarration = idx < filteredLogsWithGlobalIdx.length - 1 && filteredLogsWithGlobalIdx[idx + 1].log.name === narrationCharacter && (tabSettings[filteredLogsWithGlobalIdx[idx + 1].log.tab]?.format || 'main') === 'main';
+
                         return (
                           <LogItem 
                             key={log.id}
@@ -2717,20 +2739,20 @@ export default function App() {
                             splitPoints={splitPoints}
                             sectionNames={sectionNames}
                             imageInputIdx={imageInputIdx}
-                            onToggleSplit={(i: number) => {
+                            onToggleSplit={(id: string) => {
                               const next = new Set(splitPoints);
-                              if (next.has(i)) next.delete(i);
-                              else next.add(i);
+                              if (next.has(id)) next.delete(id);
+                              else next.add(id);
                               setSplitPoints(next);
                               saveToHistory({ splitPoints: Array.from(next) });
                             }}
-                            onRenameSection={(i: number, name: string) => {
-                              const next = { ...sectionNames, [i]: name };
+                            onRenameSection={(id: string, name: string) => {
+                              const next = { ...sectionNames, [id]: name };
                               setSectionNames(next);
                               saveToHistory({ sectionNames: next });
                             }}
-                            onInsertImage={(i: number) => {
-                              setImageInputIdx(i === imageInputIdx ? null : i);
+                            onInsertImage={(id: string) => {
+                              setImageInputIdx(id === imageInputIdx ? null : id);
                             }}
                             onAddImageUrl={(id: string, url: string) => {
                               const next = { ...insertedImages };
@@ -2769,10 +2791,12 @@ export default function App() {
                             splitPointsArray={splitPointsArray}
                             isPrevSameTab={isPrevSameTab}
                             isNextSameTab={isNextSameTab}
-                            isPrevSplit={idx > 0 && splitPoints.has(prevGlobalIdx)}
+                            isPrevSplit={idx > 0 && splitPoints.has(filteredLogsWithGlobalIdx[idx - 1].log.id.startsWith('merged:') ? filteredLogsWithGlobalIdx[idx - 1].log.id.split(',').pop()! : filteredLogsWithGlobalIdx[idx - 1].log.id)}
                             mergeTabStyles={mergeTabStyles}
                             showTabNames={showTabNames}
                             hideEmptyAvatars={hideEmptyAvatars}
+                            isPrevNarration={isPrevNarration}
+                            isNextNarration={isNextNarration}
                           />
                         );
                       });
