@@ -2287,8 +2287,8 @@ export default function App() {
                       >
                         인라인 스타일
                       </button>
-                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 bg-stone-800 text-white text-[9px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                        각 태그에 직접 스타일을 부여합니다.
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 bg-stone-800 text-white text-[9px] rounded whitespace-nowrap text-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                        각 태그에 직접 스타일을 부여합니다.<br />(티스토리 기본 스킨 사용 시)
                       </div>
                     </div>
                   </div>
@@ -2330,7 +2330,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center justify-center pt-0.5 opacity-30">
-            <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.3em]">v1.0.1</span>
+            <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.3em]">v1.0.2</span>
           </div>
         </div>
       </aside>
