@@ -1210,7 +1210,7 @@ export default function App() {
       }
       .log-item { position: relative; margin-bottom: 2px; }
       .tab-name-block { margin: 12px ${r(paddingSize * 1.3)}px 4px ${r(paddingSize * 1.3)}px; display: flex; }
-      .tab-name-badge { padding: 2px 10px; border-radius: 4px; font-size: 0.8em; font-weight: bold; }
+      .tab-name-badge { padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; }
       
       /* Main Format */
       .main-row { 
@@ -1228,7 +1228,7 @@ export default function App() {
         object-fit: contain;
       }
       .main-body { flex-grow: 1; line-height: 1.5; }
-      .main-name { font-weight: bold; font-size: 1em; margin-bottom: 2px; display: block; }
+      .main-name { font-weight: bold; font-size: 0.93em; margin-bottom: 2px; display: block; }
       .main-content { font-size: 1em; color: ${textColor}; white-space: pre-wrap; word-break: break-all; }
 
       /* Other Format */
@@ -1238,7 +1238,7 @@ export default function App() {
         gap: ${r(gapSize / 1.5)}px;
         align-items: baseline;
       }
-      .other-name { font-weight: bold; flex-shrink: 0; font-size: 1em; }
+      .other-name { font-weight: bold; flex-shrink: 0; font-size: 0.93em; }
       .other-content { font-size: 1em; color: ${otherTextColor}; white-space: pre-wrap; word-break: break-all; }
 
       /* Info Format */
@@ -1257,7 +1257,7 @@ export default function App() {
         border-radius: 8px; 
         margin: 8px ${r(paddingSize * 1.3)}px; 
       }
-      .command-text { font-family: 'NanumGothicCodingLigature', monospace; color: ${otherTextColor}; font-size: 0.9em; }
+      .command-text { font-family: 'NanumGothicCodingLigature', monospace; color: ${textColor}; font-weight: bold; line-height: 1.6; }
 
       /* Secret Format */
       .secret-row {
@@ -1388,14 +1388,14 @@ export default function App() {
         html += `<div style="margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
         
         if (log.isCommand) {
-          const nameHtml = log.name !== 'system' ? `<span style="color: ${color}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; font-size: 0.9em;">[ ${log.name} ]</span> ` : '';
+          const nameHtml = log.name !== 'system' ? `<span style="color: ${color}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold;">[ ${log.name} ]</span> ` : '';
           const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
           if (format === 'secret') {
             const tabColor = tabSet?.color || '#ffd400';
             const secretBg = getSecretBg(tabColor);
-            html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; font-size: 0.9em; ${marginLeft}">${finalHtmlContent}</span></div>`;
+            html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
           } else {
-            html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;">${nameHtml}<span style="color: ${otherTextColor}; font-family: 'NanumGothicCodingLigature', monospace; font-size: 0.9em; ${marginLeft}">${finalHtmlContent}</span></div>`;
+            html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
           }
         } else if (isNarration) {
           html += `<div style="padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic;">${finalHtmlContent}</div>`;
@@ -1409,10 +1409,10 @@ export default function App() {
           const infoRadius = shouldMergeStyle 
             ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
             : '4px';
-          const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : `4px solid ${borderColor}`;
-          const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : 'none';
+          const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'border-top: none;' : '';
+          const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'border-bottom: none;' : '';
 
-          html += `<div style="padding: ${r(paddingSize * 1.3)}px ${r(paddingSize * 1.6)}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: ${infoMargin}; border-radius: ${infoRadius}; border-top: ${infoBorderTop}; border-bottom: ${infoBorderBottom};">
+          html += `<div style="padding: ${r(paddingSize * 1.3)}px ${r(paddingSize * 1.6)}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: ${infoMargin}; border-radius: ${infoRadius}; ${infoBorderTop} ${infoBorderBottom}">
             ${!isCont ? `<span style="${nameStyle}">${log.name}</span>` : ''}
             <div style="${contentStyle}">${finalHtmlContent}</div>
           </div>`;
@@ -1473,7 +1473,7 @@ export default function App() {
           if (format === 'secret') {
             const tabColor = tabSet?.color || '#ffd400';
             const secretBg = getSecretBg(tabColor);
-            html += `<div class="command-box" style="background: ${secretBg}; border-color: rgba(0,0,0,0.1);">${nameHtml}<span class="command-text" style="color: ${textColor}; font-weight: bold; ${marginLeft}">${finalHtmlContent}</span></div>`;
+            html += `<div class="command-box" style="background: ${secretBg};">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
           } else {
             html += `<div class="command-box">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
           }
@@ -1489,9 +1489,10 @@ export default function App() {
           const infoRadius = shouldMergeStyle 
             ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
             : '4px';
-          const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : undefined;
+          const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'border-top: none;' : '';
+          const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'border-bottom: none;' : '';
 
-          html += `<div class="info-row" style="margin: ${infoMargin}; border-radius: ${infoRadius}; border-top: ${infoBorderTop};">
+          html += `<div class="info-row" style="margin: ${infoMargin}; border-radius: ${infoRadius}; ${infoBorderTop} ${infoBorderBottom}">
             ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
             <div class="main-content">${finalHtmlContent}</div>
           </div>`;
@@ -1580,8 +1581,8 @@ export default function App() {
       if (range.start === 0) {
         name = sectionNames[0];
       } else {
-        const startLog = mergedLogs[range.start];
-        const stableId = startLog ? (startLog.id.startsWith('merged:') ? startLog.id.split(',').pop()! : startLog.id) : '';
+        const splitLog = mergedLogs[range.start - 1];
+        const stableId = splitLog ? (splitLog.id.startsWith('merged:') ? splitLog.id.split(',').pop()! : splitLog.id) : '';
         name = sectionNames[stableId];
       }
       suffix = name ? `_${name}` : `_part${range.start + 1}-${range.end + 1}`;
@@ -1613,8 +1614,8 @@ export default function App() {
       if (s.start === 0) {
         name = sectionNames[0];
       } else {
-        const startLog = mergedLogs[s.start];
-        const stableId = startLog ? (startLog.id.startsWith('merged:') ? startLog.id.split(',').pop()! : startLog.id) : '';
+        const splitLog = mergedLogs[s.start - 1];
+        const stableId = splitLog ? (splitLog.id.startsWith('merged:') ? splitLog.id.split(',').pop()! : splitLog.id) : '';
         name = sectionNames[stableId];
       }
       const finalName = name ? `${fileName}_${name}` : `${fileName}_section_${i + 1}`;
@@ -2519,8 +2520,8 @@ export default function App() {
                                 if (s.start === 0) {
                                   name = sectionNames[0];
                                 } else {
-                                  const startLog = mergedLogs[s.start];
-                                  const stableId = startLog ? (startLog.id.startsWith('merged:') ? startLog.id.split(',').pop()! : startLog.id) : '';
+                                  const splitLog = mergedLogs[s.start - 1];
+                                  const stableId = splitLog ? (splitLog.id.startsWith('merged:') ? splitLog.id.split(',').pop()! : splitLog.id) : '';
                                   name = sectionNames[stableId];
                                 }
                                 const finalName = name || `섹션 ${i + 1}`;
