@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import DOMPurify from 'dompurify';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { createPortal } from 'react-dom';
 import { Analytics } from "@vercel/analytics/react";
 import { 
@@ -47,38 +49,14 @@ import { motion, AnimatePresence } from 'motion/react';
 import { HexColorPicker, RgbColorPicker } from 'react-colorful';
 import { twMerge } from 'tailwind-merge';
 import { clsx, type ClassValue } from 'clsx';
+import { TabFormat, LogEntry, CharSetting, TabSetting } from './types';
+import { parseLogFile } from './parser';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 const r = (n: number) => Math.round(n * 10) / 10;
-
-type TabFormat = 'main' | 'other' | 'info' | 'secret';
-
-interface LogEntry {
-  id: string;
-  color: string;
-  tab: string;
-  name: string;
-  content: string;
-  isCommand: boolean;
-  isContinuation?: boolean;
-}
-
-interface CharSetting {
-  name: string;
-  color: string;
-  imageUrl: string;
-  visible: boolean;
-}
-
-interface TabSetting {
-  name: string;
-  format: TabFormat;
-  visible: boolean;
-  color?: string; // For secret format
-}
 
 const Toggle = ({ enabled, onChange }: { enabled: boolean; onChange: (val: boolean) => void }) => (
   <button
@@ -234,6 +212,62 @@ const LogAvatar = React.memo(({ img, theme, avatarSize, hideEmptyAvatars }: any)
   );
 });
 
+const SectionNameEditor = ({ initialName, defaultName, onSave }: { initialName: string, defaultName: string, onSave: (name: string) => void }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [value, setValue] = useState(initialName);
+
+  useEffect(() => {
+    setValue(initialName);
+  }, [initialName]);
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-2 w-48">
+        <input 
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              onSave(value);
+              setIsEditing(false);
+            } else if (e.key === 'Escape') {
+              setValue(initialName);
+              setIsEditing(false);
+            }
+          }}
+          autoFocus
+          placeholder={defaultName}
+          className="bg-black/20 border border-white/20 rounded px-2 py-0.5 text-xs font-bold text-white outline-none placeholder:text-white/30 flex-1 min-w-0"
+        />
+        <button 
+          onClick={() => {
+            onSave(value);
+            setIsEditing(false);
+          }}
+          className="bg-white/20 hover:bg-white/30 text-white rounded p-1 transition-colors shrink-0 flex items-center justify-center"
+          title="확인"
+        >
+          <Check className="w-3 h-3" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className="cursor-pointer text-xs font-bold text-white w-48 truncate flex items-center h-[22px]"
+      onClick={() => {
+        setValue(initialName);
+        setIsEditing(true);
+      }}
+      title="클릭하여 이름 수정"
+    >
+      {initialName || <span className="text-white/30">{defaultName}</span>}
+    </div>
+  );
+};
+
 const LogItem = React.memo(({ 
   log, 
   idx, 
@@ -301,6 +335,8 @@ const LogItem = React.memo(({
       return match;
     });
   }
+  
+  const safeHtmlContent = useMemo(() => DOMPurify.sanitize(finalHtmlContent, { ADD_ATTR: ['target'] }), [finalHtmlContent]);
   
   const getSecretBg = (hex: string) => {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -420,7 +456,7 @@ const LogItem = React.memo(({
             margin: `8px ${r(paddingSize * 1.3)}px`
           }}>
             {log.name !== 'system' && <span style={{ color, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace" }}>[ {log.name} ]</span>}
-            <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#333333', fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: finalHtmlContent }} />
+            <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#333333', fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
           </div>
         ) : isNarration ? (
           <div style={{ 
@@ -431,7 +467,7 @@ const LogItem = React.memo(({
             fontWeight: 'bold',
             fontStyle: 'italic'
           }}>
-            <div dangerouslySetInnerHTML={{ __html: finalHtmlContent }} />
+            <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
           </div>
         ) : format === 'other' ? (
           <div style={{ padding: `${r(paddingSize / 3)}px ${r(paddingSize * 1.3)}px`, display: 'flex', gap: `${r(gapSize / 1.5)}px`, alignItems: 'baseline' }}>
@@ -440,7 +476,7 @@ const LogItem = React.memo(({
                 <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px` }} className="cursor-default">{log.name}</span>
               </div>
             )}
-            <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', marginLeft: log.isContinuation ? `${r(nameSize * 4)}px` : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: finalHtmlContent }} />
+            <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', marginLeft: log.isContinuation ? `${r(nameSize * 4)}px` : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
           </div>
         ) : format === 'info' ? (
           <div style={{ 
@@ -459,7 +495,7 @@ const LogItem = React.memo(({
                 <span style={{ fontWeight: 'bold', color, display: 'block' }} className="cursor-default">{log.name}</span>
               </div>
             )}
-            <div dangerouslySetInnerHTML={{ __html: finalHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', lineHeight: 1.6 }} />
+            <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', lineHeight: 1.6 }} />
           </div>
         ) : (
           <div style={{ 
@@ -490,7 +526,7 @@ const LogItem = React.memo(({
                   <span className="cursor-default">{log.name}</span>
                 </div>
               )}
-              <div dangerouslySetInnerHTML={{ __html: finalHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333' }} />
+              <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333' }} />
             </div>
           </div>
         )}
@@ -575,13 +611,11 @@ const LogItem = React.memo(({
       {isSplit && (
         <div className="mt-1 mb-1 px-4 font-sans relative">
           <div className="flex items-end justify-between max-w-full">
-            <div className="bg-[#e6005c] rounded-t-lg px-4 py-1.5 flex items-center shadow-lg max-w-sm">
-              <input 
-                type="text"
-                value={sectionNames[stableId] || ''}
-                onChange={(e) => onRenameSection(stableId, e.target.value)}
-                placeholder={`섹션 ${splitPointsArray.indexOf(idx) + 2}`}
-                className="bg-transparent border-none text-xs font-bold text-white outline-none placeholder:text-white/30 w-48"
+            <div className="bg-[#e6005c] rounded-t-lg px-4 py-1 flex items-center shadow-lg max-w-sm">
+              <SectionNameEditor 
+                initialName={sectionNames[stableId] || ''}
+                defaultName={`섹션 ${splitPointsArray.indexOf(idx) + 2}`}
+                onSave={(name) => onRenameSection(stableId, name)}
               />
             </div>
             <div className={cn(
@@ -656,7 +690,6 @@ export default function App() {
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [showCopyMenu, setShowCopyMenu] = useState(false);
   const [initialState, setInitialState] = useState<any>(null);
-  const [visibleCount, setVisibleCount] = useState(50);
   const [sectionNames, setSectionNames] = useState<Record<string, string>>({});
   const [mergeTabs, setMergeTabs] = useState<Set<TabFormat>>(new Set(['main', 'secret']));
   const [showTabNames, setShowTabNames] = useState<Set<TabFormat>>(new Set(['secret']));
@@ -665,26 +698,9 @@ export default function App() {
   const [narrationCharacter, setNarrationCharacter] = useState<string | null>(null);
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [listOffset, setListOffset] = useState(0);
 
-  // Virtualization: Increase visible count on scroll
-  useEffect(() => {
-    const container = previewContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      if (container.scrollHeight - container.scrollTop - container.clientHeight < 500) {
-        setVisibleCount(prev => Math.min(prev + 50, logs.length));
-      }
-    };
-
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [logs.length]);
-
-  useEffect(() => {
-    setVisibleCount(50);
-  }, [logs]);
-  
   // History for Undo/Redo
   const [history, setHistory] = useState<any[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -743,8 +759,8 @@ export default function App() {
       ...state
     };
     const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(JSON.parse(JSON.stringify(fullState)));
-    if (newHistory.length > 50) newHistory.shift();
+    newHistory.push(fullState);
+    if (newHistory.length > 15) newHistory.shift();
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
   };
@@ -788,7 +804,7 @@ export default function App() {
   const resetSettings = () => {
     if (confirm('설정을 초기화하시겠습니까?')) {
       if (initialState) {
-        const state = JSON.parse(JSON.stringify(initialState));
+        const state = initialState;
         setCharSettings(state.charSettings);
         setTabSettings(state.tabSettings);
         setTabOrder(state.tabOrder);
@@ -910,96 +926,19 @@ export default function App() {
     setOriginalFileName(fileName);
     setPageTitle(''); // Reset custom title on new upload
 
-    const text = await file.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(text, 'text/html');
-    const pTags = doc.querySelectorAll('p');
-    
-    const newLogs: LogEntry[] = [];
-    const newChars: Record<string, CharSetting> = {};
-    const newCharOrder: string[] = [];
-    const newTabs: Record<string, TabSetting> = {};
-    const newTabOrder: string[] = [];
-    const colorsFound = new Set<string>();
-
-    pTags.forEach((p, index) => {
-      const spans = Array.from(p.querySelectorAll('span'));
-      if (spans.length < 2) return;
-
-      const styleAttr = p.getAttribute('style') || '';
-      const colorMatch = styleAttr.match(/color\s*:\s*([^;]+)/i);
-      const color = colorMatch ? rgbToHex(colorMatch[1]) : rgbToHex(p.style.color);
-      
-      if (color && color !== '#000000') colorsFound.add(color.toUpperCase());
-
-      const tabRaw = spans[0].textContent?.trim() || '';
-      const tabMatch = tabRaw.match(/\[(.*?)\]/);
-      const tab = tabMatch ? tabMatch[1].trim() : '';
-      
-      let name = 'Unknown';
-      let content = '';
-
-      if (spans.length >= 3) {
-        name = spans[1].textContent?.trim() || 'Unknown';
-        content = spans[2].innerHTML.trim();
-      } else {
-        // Handle cases where name might be missing or structure is different
-        content = spans[1].innerHTML.trim();
-      }
-
-      const isCommand = content.includes('|') || content.includes('＞') || content.includes('→') || content.includes('choice[');
-
-      newLogs.push({
-        id: `log-${index}`,
-        color,
-        tab,
-        name,
-        content,
-        isCommand
-      });
-
-      if (!newChars[name]) {
-        newChars[name] = { name, color, imageUrl: '', visible: true };
-        newCharOrder.push(name);
-      } else {
-        newChars[name].color = color;
-      }
-
-      if (tab && !newTabs[tab]) {
-        let format: TabFormat = 'main';
-        const lowerTab = tab.toLowerCase();
-        if (lowerTab.includes('other') || lowerTab.includes('잡담')) format = 'other';
-        if (lowerTab.includes('info') || lowerTab.includes('정보')) format = 'info';
-        if (lowerTab.includes('secret') || lowerTab.includes('비밀')) format = 'secret';
-        newTabs[tab] = { name: tab, format, visible: true, color: format === 'secret' ? '#ffd400' : '#e6005c' };
-        newTabOrder.push(tab);
-      }
-    });
-
-    // Filter out leading empty logs
-    const isLogEmpty = (content: string) => {
-      const stripped = content.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
-      return stripped === '';
-    };
-    
-    let firstNonEmptyIndex = newLogs.findIndex(log => !isLogEmpty(log.content));
-    if (firstNonEmptyIndex === -1) firstNonEmptyIndex = 0;
-    const trimmedLogs = newLogs.slice(firstNonEmptyIndex);
-
-    // Check if 'system' is only used in command logs
-    if (newChars['system']) {
-      const hasNonCommandSystem = trimmedLogs.some(log => log.name === 'system' && !log.isCommand);
-      if (!hasNonCommandSystem) {
-        delete newChars['system'];
-        const idx = newCharOrder.indexOf('system');
-        if (idx !== -1) newCharOrder.splice(idx, 1);
-      }
-    }
+    const {
+      trimmedLogs,
+      newChars,
+      newCharOrder,
+      newTabs,
+      newTabOrder,
+      colorsFound
+    } = await parseLogFile(file);
 
     setLogs(trimmedLogs);
     setCharSettings(newChars);
     setCharOrder(newCharOrder);
-    setExtractedColors(Array.from(colorsFound));
+    setExtractedColors(colorsFound);
     setTabSettings(newTabs);
     setTabOrder(newTabOrder);
     setInsertedImages({});
@@ -1110,6 +1049,12 @@ export default function App() {
     return result;
   }, [logs, mergeTabs, tabSettings, charSettings]);
 
+  useLayoutEffect(() => {
+    if (listRef.current) {
+      setListOffset(listRef.current.offsetTop);
+    }
+  }, [mergedLogs.length, sectionNames, splitPoints]);
+
   const splitPointsArray = useMemo(() => {
     return mergedLogs
       .map((log, idx) => ({ log, idx }))
@@ -1119,6 +1064,14 @@ export default function App() {
       })
       .map(({ idx }) => idx);
   }, [mergedLogs, splitPoints]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: mergedLogs.length,
+    getScrollElement: () => previewContainerRef.current,
+    estimateSize: () => 100,
+    overscan: 10,
+    scrollMargin: listOffset,
+  });
 
   const sortedCharOrder = useMemo(() => {
     if (charSortMode === 'appearance') return charOrder;
@@ -1387,6 +1340,8 @@ export default function App() {
           return match;
         });
       }
+      
+      finalHtmlContent = DOMPurify.sanitize(finalHtmlContent, { ADD_ATTR: ['target'] });
 
       // Insert Tab Name if needed
       if (showTabNames.has(format) && !isPrevSameTab) {
@@ -1611,10 +1566,6 @@ export default function App() {
     `;
   };
 
-  const previewHtml = useMemo(() => {
-    if (mergedLogs.length === 0) return '';
-    return generateFinalHtml();
-  }, [mergedLogs, charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor, pageTitle, originalFileName, insertedImages, narrationCharacter]);
 
   const downloadHtml = (range?: { start: number; end: number }) => {
     const html = generateFinalHtml(range);
@@ -1625,9 +1576,14 @@ export default function App() {
     const fileName = pageTitle || originalFileName || 'ccfolia';
     let suffix = '_log';
     if (range) {
-      const startLog = mergedLogs[range.start];
-      const stableId = startLog ? (startLog.id.startsWith('merged:') ? startLog.id.split(',').pop()! : startLog.id) : '';
-      const name = sectionNames[stableId];
+      let name = '';
+      if (range.start === 0) {
+        name = sectionNames[0];
+      } else {
+        const startLog = mergedLogs[range.start];
+        const stableId = startLog ? (startLog.id.startsWith('merged:') ? startLog.id.split(',').pop()! : startLog.id) : '';
+        name = sectionNames[stableId];
+      }
       suffix = name ? `_${name}` : `_part${range.start + 1}-${range.end + 1}`;
     }
     a.download = `${fileName}${suffix}.html`;
@@ -1653,10 +1609,16 @@ export default function App() {
 
     sections.forEach((s, i) => {
       const html = generateFinalHtml(s);
-      const startLog = mergedLogs[s.start];
-      const stableId = startLog ? (startLog.id.startsWith('merged:') ? startLog.id.split(',').pop()! : startLog.id) : '';
-      const name = sectionNames[stableId] || `section_${i + 1}`;
-      folder?.file(`${name}.html`, html);
+      let name = '';
+      if (s.start === 0) {
+        name = sectionNames[0];
+      } else {
+        const startLog = mergedLogs[s.start];
+        const stableId = startLog ? (startLog.id.startsWith('merged:') ? startLog.id.split(',').pop()! : startLog.id) : '';
+        name = sectionNames[stableId];
+      }
+      const finalName = name ? `${fileName}_${name}` : `${fileName}_section_${i + 1}`;
+      folder?.file(`${finalName}.html`, html);
     });
 
     const content = await zip.generateAsync({ type: 'blob' });
@@ -2009,9 +1971,9 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="space-y-4"
+                className="space-y-2"
               >
-                <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm">
+                <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11">
                   <span className="text-[11px] font-bold text-white/70">이미지 배경 상자 숨김</span>
                   <Toggle 
                     enabled={hideEmptyAvatars} 
@@ -2022,7 +1984,7 @@ export default function App() {
                   />
                 </div>
 
-                <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm relative" ref={narrationDropdownRef}>
+                <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm relative h-11" ref={narrationDropdownRef}>
                   <span className="text-[11px] font-bold text-white/70">나레이션 캐릭터</span>
                   <div className="relative">
                     <button
@@ -2367,7 +2329,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center justify-center pt-0.5 opacity-30">
-            <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.3em]">v1.0.0</span>
+            <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.3em]">v1.0.1</span>
           </div>
         </div>
       </aside>
@@ -2456,7 +2418,7 @@ export default function App() {
             )}
             <button 
               onClick={() => {
-                const filename = `${pageTitle || 'log'}_style`;
+                const filename = `${pageTitle || originalFileName || 'log'}_style`;
                 const data = { 
                   charSettings, 
                   charOrder, 
@@ -2543,7 +2505,7 @@ export default function App() {
                           </div>
                           <div className="max-h-64 overflow-y-auto custom-scrollbar">
                             {(() => {
-                              const sortedPoints = Array.from(splitPoints).sort((a: number, b: number) => a - b);
+                              const sortedPoints = splitPointsArray;
                               const sections: { start: number; end: number }[] = [];
                               let last = 0;
                               sortedPoints.forEach((p: number) => {
@@ -2552,29 +2514,41 @@ export default function App() {
                               });
                               sections.push({ start: last, end: mergedLogs.length - 1 });
                               
-                              return sections.map((s, i) => (
-                                <div key={i} className="flex items-center gap-2 pr-2 group">
-                                  <button 
-                                    onClick={() => { downloadHtml(s); setShowDownloadMenu(false); }}
-                                    className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
-                                  >
-                                    <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[9px] font-bold text-white/40 group-hover:text-white/60">
-                                      {i + 1}
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] font-bold text-white truncate max-w-[120px]">{sectionNames[s.start] || `섹션 ${i + 1}`}</p>
-                                      <p className="text-[9px] text-white/30">{s.start + 1} ~ {s.end + 1}번 블록</p>
-                                    </div>
-                                  </button>
-                                  <button 
-                                    onClick={() => { copyToClipboard(generateFinalHtml(s)); setShowDownloadMenu(false); }}
-                                    className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/30 hover:text-white"
-                                    title="HTML 복사"
-                                  >
-                                    <Copy className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ));
+                              return sections.map((s, i) => {
+                                let name = '';
+                                if (s.start === 0) {
+                                  name = sectionNames[0];
+                                } else {
+                                  const startLog = mergedLogs[s.start];
+                                  const stableId = startLog ? (startLog.id.startsWith('merged:') ? startLog.id.split(',').pop()! : startLog.id) : '';
+                                  name = sectionNames[stableId];
+                                }
+                                const finalName = name || `섹션 ${i + 1}`;
+
+                                return (
+                                  <div key={i} className="flex items-center gap-2 pr-2 group">
+                                    <button 
+                                      onClick={() => { downloadHtml(s); setShowDownloadMenu(false); }}
+                                      className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
+                                    >
+                                      <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[9px] font-bold text-white/40 group-hover:text-white/60">
+                                        {i + 1}
+                                      </div>
+                                      <div>
+                                        <p className="text-[11px] font-bold text-white truncate max-w-[120px]">{finalName}</p>
+                                        <p className="text-[9px] text-white/30">{s.start + 1} ~ {s.end + 1}번 블록</p>
+                                      </div>
+                                    </button>
+                                    <button 
+                                      onClick={() => { copyToClipboard(generateFinalHtml(s)); setShowDownloadMenu(false); }}
+                                      className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/30 hover:text-white"
+                                      title="HTML 복사"
+                                    >
+                                      <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                );
+                              });
                             })()}
                           </div>
                           <div className="h-px bg-white/5 my-1" />
@@ -2616,13 +2590,15 @@ export default function App() {
                   {/* Top Section Name Input */}
                   <div className="max-w-[800px] mx-auto px-4 pt-4 pb-1 font-sans relative">
                     <div className="flex items-end justify-between max-w-full">
-                      <div className="bg-[#e6005c] rounded-t-lg px-4 py-1.5 flex items-center shadow-lg max-w-sm">
-                        <input 
-                          type="text"
-                          value={sectionNames[0] || ''}
-                          onChange={(e) => setSectionNames(prev => ({ ...prev, [0]: e.target.value }))}
-                          placeholder="섹션 1"
-                          className="bg-transparent border-none text-xs font-bold text-white outline-none placeholder:text-white/30 w-48"
+                      <div className="bg-[#e6005c] rounded-t-lg px-4 py-1 flex items-center shadow-lg max-w-sm">
+                        <SectionNameEditor 
+                          initialName={sectionNames[0] || ''}
+                          defaultName="섹션 1"
+                          onSave={(name) => {
+                            const next = { ...sectionNames, [0]: name };
+                            setSectionNames(next);
+                            saveToHistory({ sectionNames: next });
+                          }}
                         />
                       </div>
                       <div className={cn(
@@ -2710,103 +2686,117 @@ export default function App() {
                       }
                     `}</style>
 
-                    {(() => {
-                      const filteredLogsWithGlobalIdx = mergedLogs.map((log, globalIdx) => ({ log, globalIdx }));
-                      
-                      return filteredLogsWithGlobalIdx.slice(0, visibleCount).map(({ log, globalIdx }, idx) => {
-                        const prevGlobalIdx = idx > 0 ? filteredLogsWithGlobalIdx[idx - 1].globalIdx : -1;
-                        const isPrevSameTab = idx > 0 && filteredLogsWithGlobalIdx[idx - 1].log.tab === log.tab;
-                        const isNextSameTab = idx < filteredLogsWithGlobalIdx.length - 1 && filteredLogsWithGlobalIdx[idx + 1].log.tab === log.tab;
+                    <div
+                      ref={listRef}
+                      style={{
+                        height: `${rowVirtualizer.getTotalSize()}px`,
+                        width: '100%',
+                        position: 'relative',
+                      }}
+                    >
+                      {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+                        const globalIdx = virtualItem.index;
+                        const log = mergedLogs[globalIdx];
+                        const idx = globalIdx; // In this context, idx and globalIdx are the same since we render from mergedLogs directly
+                        const isPrevSameTab = idx > 0 && mergedLogs[idx - 1].tab === log.tab;
+                        const isNextSameTab = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].tab === log.tab;
                         const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
                         
-                        const isPrevNarration = idx > 0 && filteredLogsWithGlobalIdx[idx - 1].log.name === narrationCharacter && (tabSettings[filteredLogsWithGlobalIdx[idx - 1].log.tab]?.format || 'main') === 'main';
-                        const isNextNarration = idx < filteredLogsWithGlobalIdx.length - 1 && filteredLogsWithGlobalIdx[idx + 1].log.name === narrationCharacter && (tabSettings[filteredLogsWithGlobalIdx[idx + 1].log.tab]?.format || 'main') === 'main';
+                        const isPrevNarration = idx > 0 && mergedLogs[idx - 1].name === narrationCharacter && (tabSettings[mergedLogs[idx - 1].tab]?.format || 'main') === 'main';
+                        const isNextNarration = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].name === narrationCharacter && (tabSettings[mergedLogs[idx + 1].tab]?.format || 'main') === 'main';
 
                         return (
-                          <LogItem 
-                            key={log.id}
-                            idx={globalIdx}
-                            stableId={stableId}
-                            log={log}
-                            tabSet={tabSettings[log.tab]}
-                            char={charSettings[log.name] || { name: log.name, color: log.color, visible: true }}
-                            charSettings={charSettings}
-                            theme={theme}
-                            disableOtherColor={disableOtherColor}
-                            fontSize={fontSize}
-                            narrationCharacter={narrationCharacter}
-                            insertedImages={insertedImages}
-                            splitPoints={splitPoints}
-                            sectionNames={sectionNames}
-                            imageInputIdx={imageInputIdx}
-                            onToggleSplit={(id: string) => {
-                              const next = new Set(splitPoints);
-                              if (next.has(id)) next.delete(id);
-                              else next.add(id);
-                              setSplitPoints(next);
-                              saveToHistory({ splitPoints: Array.from(next) });
+                          <div
+                            key={virtualItem.key}
+                            data-index={virtualItem.index}
+                            ref={rowVirtualizer.measureElement}
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              width: '100%',
+                              transform: `translateY(${virtualItem.start}px)`,
                             }}
-                            onRenameSection={(id: string, name: string) => {
-                              const next = { ...sectionNames, [id]: name };
-                              setSectionNames(next);
-                              saveToHistory({ sectionNames: next });
-                            }}
-                            onInsertImage={(id: string) => {
-                              setImageInputIdx(id === imageInputIdx ? null : id);
-                            }}
-                            onAddImageUrl={(id: string, url: string) => {
-                              const next = { ...insertedImages };
-                              if (!next[id]) next[id] = [];
-                              next[id].push({ url, width: '400', align: 'center' });
-                              setInsertedImages(next);
-                              saveToHistory({ insertedImages: next });
-                              setImageInputIdx(null);
-                            }}
-                            onDeleteImage={(id: string, imgIdx: number) => {
-                              const next = { ...insertedImages };
-                              next[id] = next[id].filter((_: any, j: number) => j !== imgIdx);
-                              if (next[id].length === 0) delete next[id];
-                              setInsertedImages(next);
-                              saveToHistory({ insertedImages: next });
-                            }}
-                            onUpdateImageWidth={(id: string, imgIdx: number, width: string) => {
-                              const next = { ...insertedImages };
-                              if (next[id] && next[id][imgIdx]) {
-                                next[id][imgIdx] = { ...next[id][imgIdx], width };
+                          >
+                            <LogItem 
+                              idx={globalIdx}
+                              stableId={stableId}
+                              log={log}
+                              tabSet={tabSettings[log.tab]}
+                              char={charSettings[log.name] || { name: log.name, color: log.color, visible: true }}
+                              charSettings={charSettings}
+                              theme={theme}
+                              disableOtherColor={disableOtherColor}
+                              fontSize={fontSize}
+                              narrationCharacter={narrationCharacter}
+                              insertedImages={insertedImages}
+                              splitPoints={splitPoints}
+                              sectionNames={sectionNames}
+                              imageInputIdx={imageInputIdx}
+                              onToggleSplit={(id: string) => {
+                                const next = new Set(splitPoints);
+                                if (next.has(id)) next.delete(id);
+                                else next.add(id);
+                                setSplitPoints(next);
+                                saveToHistory({ splitPoints: Array.from(next) });
+                              }}
+                              onRenameSection={(id: string, name: string) => {
+                                const next = { ...sectionNames, [id]: name };
+                                setSectionNames(next);
+                                saveToHistory({ sectionNames: next });
+                              }}
+                              onInsertImage={(id: string) => {
+                                setImageInputIdx(id === imageInputIdx ? null : id);
+                              }}
+                              onAddImageUrl={(id: string, url: string) => {
+                                const next = { ...insertedImages };
+                                next[id] = next[id] ? [...next[id], { url, width: '400', align: 'center' }] : [{ url, width: '400', align: 'center' }];
                                 setInsertedImages(next);
                                 saveToHistory({ insertedImages: next });
-                              }
-                            }}
-                            onUpdateImageAlign={(id: string, imgIdx: number, align: 'left' | 'center' | 'right') => {
-                              const next = { ...insertedImages };
-                              if (next[id] && next[id][imgIdx]) {
-                                next[id][imgIdx] = { ...next[id][imgIdx], align };
+                                setImageInputIdx(null);
+                              }}
+                              onDeleteImage={(id: string, imgIdx: number) => {
+                                const next = { ...insertedImages };
+                                next[id] = next[id].filter((_: any, j: number) => j !== imgIdx);
+                                if (next[id].length === 0) delete next[id];
                                 setInsertedImages(next);
                                 saveToHistory({ insertedImages: next });
-                              }
-                            }}
-                            onEditLog={onEditLog}
-                            onDeleteLog={onDeleteLog}
-                            mergedLogsCount={mergedLogs.length}
-                            splitPointsArray={splitPointsArray}
-                            isPrevSameTab={isPrevSameTab}
-                            isNextSameTab={isNextSameTab}
-                            isPrevSplit={idx > 0 && splitPoints.has(filteredLogsWithGlobalIdx[idx - 1].log.id.startsWith('merged:') ? filteredLogsWithGlobalIdx[idx - 1].log.id.split(',').pop()! : filteredLogsWithGlobalIdx[idx - 1].log.id)}
-                            mergeTabStyles={mergeTabStyles}
-                            showTabNames={showTabNames}
-                            hideEmptyAvatars={hideEmptyAvatars}
-                            isPrevNarration={isPrevNarration}
-                            isNextNarration={isNextNarration}
-                          />
+                              }}
+                              onUpdateImageWidth={(id: string, imgIdx: number, width: string) => {
+                                const next = { ...insertedImages };
+                                if (next[id] && next[id][imgIdx]) {
+                                  next[id] = [...next[id]];
+                                  next[id][imgIdx] = { ...next[id][imgIdx], width };
+                                  setInsertedImages(next);
+                                  saveToHistory({ insertedImages: next });
+                                }
+                              }}
+                              onUpdateImageAlign={(id: string, imgIdx: number, align: 'left' | 'center' | 'right') => {
+                                const next = { ...insertedImages };
+                                if (next[id] && next[id][imgIdx]) {
+                                  next[id] = [...next[id]];
+                                  next[id][imgIdx] = { ...next[id][imgIdx], align };
+                                  setInsertedImages(next);
+                                  saveToHistory({ insertedImages: next });
+                                }
+                              }}
+                              onEditLog={onEditLog}
+                              onDeleteLog={onDeleteLog}
+                              mergedLogsCount={mergedLogs.length}
+                              splitPointsArray={splitPointsArray}
+                              isPrevSameTab={isPrevSameTab}
+                              isNextSameTab={isNextSameTab}
+                              isPrevSplit={idx > 0 && splitPoints.has(mergedLogs[idx - 1].id.startsWith('merged:') ? mergedLogs[idx - 1].id.split(',').pop()! : mergedLogs[idx - 1].id)}
+                              mergeTabStyles={mergeTabStyles}
+                              showTabNames={showTabNames}
+                              hideEmptyAvatars={hideEmptyAvatars}
+                              isPrevNarration={isPrevNarration}
+                              isNextNarration={isNextNarration}
+                            />
+                          </div>
                         );
-                      });
-                    })()}
-                    
-                    {visibleCount < mergedLogs.length && (
-                      <div className="py-10 text-center text-stone-400 text-xs font-bold">
-                        스크롤하여 더 보기... ({visibleCount} / {mergedLogs.length})
-                      </div>
-                    )}
+                      })}
+                    </div>
                   </div>
                 </div>
 
