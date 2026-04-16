@@ -43,7 +43,8 @@ import {
   Copy,
   ExternalLink,
   ArrowUpDown,
-  ChevronDown
+  ChevronDown,
+  Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HexColorPicker, RgbColorPicker } from 'react-colorful';
@@ -70,6 +71,9 @@ export default function App() {
   const [isTitleEditing, setIsTitleEditing] = useState(false);
   const [pageTitle, setPageTitle] = useState('');
   const [tempTitle, setTempTitle] = useState('');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Sync tempTitle when pageTitle changes (e.g. from history)
   useEffect(() => {
@@ -115,7 +119,7 @@ export default function App() {
   const [showCopyMenu, setShowCopyMenu] = useState(false);
   const [initialState, setInitialState] = useState<any>(null);
   const [sectionNames, setSectionNames] = useState<Record<string, string>>({});
-  const [mergeTabs, setMergeTabs] = useState<Set<TabFormat>>(new Set(['main', 'secret']));
+  const [mergeTabs, setMergeTabs] = useState<Set<TabFormat>>(new Set(['main', 'secret', 'other']));
   const [showTabNames, setShowTabNames] = useState<Set<TabFormat>>(new Set(['secret']));
   const [mergeTabStyles, setMergeTabStyles] = useState<Set<TabFormat>>(new Set(['secret']));
   const [hideEmptyAvatars, setHideEmptyAvatars] = useState(false);
@@ -241,7 +245,7 @@ export default function App() {
         setInsertedImages(state.insertedImages || {});
         setSplitPoints(new Set(state.splitPoints || []));
         setSectionNames(state.sectionNames || {});
-        setMergeTabs(new Set(state.mergeTabs || ['main', 'secret']));
+        setMergeTabs(new Set(state.mergeTabs || ['main', 'secret', 'other']));
         setShowTabNames(new Set(state.showTabNames || ['secret']));
         setMergeTabStyles(new Set(state.mergeTabStyles || ['secret']));
         setHideEmptyAvatars(state.hideEmptyAvatars || false);
@@ -253,7 +257,7 @@ export default function App() {
         setFontFamily('Noto Sans KR');
         setTheme('dark');
         setDisableOtherColor(true);
-        setMergeTabs(new Set(['main', 'secret']));
+        setMergeTabs(new Set(['main', 'secret', 'other']));
         setShowTabNames(new Set(['secret']));
         setMergeTabStyles(new Set(['secret']));
         setHideEmptyAvatars(false);
@@ -368,7 +372,7 @@ export default function App() {
     setInsertedImages({});
     setSplitPoints(new Set());
     setSectionNames({});
-    setMergeTabs(new Set(['main', 'secret']));
+    setMergeTabs(new Set(['main', 'secret', 'other']));
     setMergeTabStyles(new Set(['secret']));
     setShowTabNames(new Set(['secret']));
     setHideEmptyAvatars(false);
@@ -392,7 +396,7 @@ export default function App() {
       insertedImages: {},
       splitPoints: [] as number[],
       sectionNames: {} as Record<number, string>,
-      mergeTabs: ['main', 'secret'],
+      mergeTabs: ['main', 'secret', 'other'],
       showTabNames: ['secret'],
       mergeTabStyles: ['secret'],
       hideEmptyAvatars: false
@@ -489,8 +493,24 @@ export default function App() {
       .map(({ idx }) => idx);
   }, [mergedLogs, splitPoints]);
 
+  const displayItems = useMemo(() => {
+    if (!searchQuery) {
+      return mergedLogs.map((log, index) => ({ log, isMatched: true, originalIndex: index }));
+    }
+    const lowerQuery = searchQuery.toLowerCase();
+    return mergedLogs.map((log, index) => {
+      const isMatched = log.content.toLowerCase().includes(lowerQuery) || log.name.toLowerCase().includes(lowerQuery);
+      const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
+      const isSplit = splitPoints.has(stableId);
+      if (isMatched || isSplit) {
+        return { log, isMatched, originalIndex: index };
+      }
+      return null;
+    }).filter(Boolean) as { log: any, isMatched: boolean, originalIndex: number }[];
+  }, [mergedLogs, searchQuery, splitPoints]);
+
   const rowVirtualizer = useVirtualizer({
-    count: mergedLogs.length,
+    count: displayItems.length,
     getScrollElement: () => previewContainerRef.current,
     estimateSize: () => 100,
     overscan: 10,
@@ -1373,7 +1393,7 @@ export default function App() {
                                 }
                               }}
                               className="w-6 h-6 rounded-md border border-white/10 shadow-sm transition-all hover:scale-105"
-                              style={{ backgroundColor: tab.color || (tab.format === 'secret' ? '#ffd400' : '#e6005c') }}
+                              style={{ backgroundColor: tab.color || '#ffd400' }}
                             />
                           </div>
                         </div>
@@ -1754,7 +1774,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center justify-center pt-0.5 opacity-30">
-            <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.3em]">v1.0.3</span>
+            <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.3em]">v1.1.0</span>
           </div>
         </div>
       </aside>
@@ -1769,16 +1789,51 @@ export default function App() {
           "bg-[#1a1a1a] border-white/5"
         )}>
           <div className="flex items-center gap-3 xl:gap-6 shrink-0 min-w-0">
-            <div className={cn(
-              "flex items-center justify-center gap-2 px-2.5 xl:px-3 py-1.5 rounded-lg border shrink-0",
-              "bg-white/5 border-white/5"
-            )}>
-              <Eye className={cn("w-3.5 h-3.5 shrink-0", "text-white/40")} />
-              <span className={cn("hidden xl:inline-block text-[11px] font-bold truncate", "text-white/60")}>미리보기</span>
+            <div className="flex items-center">
+              <AnimatePresence mode="wait">
+                {!isSearchExpanded ? (
+                  <motion.button
+                    key="search-icon"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    onClick={() => { setIsSearchExpanded(true); setTimeout(() => searchInputRef.current?.focus(), 100); }}
+                    className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition-colors shrink-0"
+                    title="로그 검색"
+                  >
+                    <Search className="w-4 h-4" />
+                  </motion.button>
+                ) : (
+                  <motion.div
+                    key="search-input"
+                    initial={{ width: 0, opacity: 0 }}
+                    animate={{ width: 240, opacity: 1 }}
+                    exit={{ width: 0, opacity: 0 }}
+                    className="flex items-center bg-black/20 border border-white/20 rounded-full px-3 py-1.5 overflow-hidden shrink-0"
+                  >
+                    <Search className="w-3.5 h-3.5 text-white/50 shrink-0" />
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="로그 검색..."
+                      className="bg-transparent border-none outline-none text-xs text-white ml-2 w-full placeholder:text-white/30"
+                    />
+                    <button 
+                      onClick={() => { setIsSearchExpanded(false); setSearchQuery(''); }}
+                      className="shrink-0 ml-1 p-0.5 rounded-full hover:bg-white/20 text-white/50 hover:text-white transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
+            
             <div className={cn("hidden xl:block h-4 w-px shrink-0", "bg-white/10")} />
             <p className={cn("hidden xl:block text-[11px] font-bold truncate", "text-white/30")}>
-              총 <span className="text-white/60">{logs.length}</span>개의 로그 항목
+              총 <span className={cn("text-white/60", searchQuery && "text-[#e6005c]")}>{searchQuery ? displayItems.filter(item => item.isMatched).length : logs.length}</span>개의 로그 항목
             </p>
           </div>
 
@@ -2120,9 +2175,9 @@ export default function App() {
                       }}
                     >
                       {rowVirtualizer.getVirtualItems().map((virtualItem) => {
-                        const globalIdx = virtualItem.index;
-                        const log = mergedLogs[globalIdx];
-                        const idx = globalIdx; // In this context, idx and globalIdx are the same since we render from mergedLogs directly
+                        const displayItem = displayItems[virtualItem.index];
+                        const { log, isMatched, originalIndex: globalIdx } = displayItem;
+                        const idx = globalIdx;
                         const isPrevSameTab = idx > 0 && mergedLogs[idx - 1].tab === log.tab;
                         const isNextSameTab = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].tab === log.tab;
                         const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
@@ -2145,6 +2200,7 @@ export default function App() {
                           >
                             <LogItem 
                               idx={globalIdx}
+                              isMatched={isMatched}
                               stableId={stableId}
                               log={log}
                               tabSet={tabSettings[log.tab]}

@@ -69,7 +69,7 @@ export const parseLogFile = async (file: File) => {
       if (lowerTab.includes('other') || lowerTab.includes('잡담')) format = 'other';
       if (lowerTab.includes('info') || lowerTab.includes('정보')) format = 'info';
       if (lowerTab.includes('secret') || lowerTab.includes('비밀')) format = 'secret';
-      newTabs[tab] = { name: tab, format, visible: true, color: format === 'secret' ? '#ffd400' : '#e6005c' };
+      newTabs[tab] = { name: tab, format, visible: true, color: '#ffd400' };
       newTabOrder.push(tab);
     }
   });
