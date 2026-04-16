@@ -450,12 +450,16 @@ export default function App() {
       const tabSet = tabSettings[log.tab];
       const format = tabSet?.format || 'main';
       
+      const currentStableId = currentMerged ? (currentMerged.id.startsWith('merged:') ? currentMerged.id.split(',').pop()! : currentMerged.id) : null;
+      const hasSplitPoint = currentStableId ? splitPoints.has(currentStableId) : false;
+
       const shouldMerge = mergeTabs.has(format) && 
                           currentMerged && 
                           currentMerged.name === log.name && 
                           currentMerged.tab === log.tab && 
                           !log.isCommand && 
-                          !currentMerged.isCommand;
+                          !currentMerged.isCommand &&
+                          !hasSplitPoint;
 
       if (shouldMerge && currentMerged) {
         currentMerged.content += `\n${log.content}`;
@@ -475,7 +479,7 @@ export default function App() {
     }
 
     return result;
-  }, [logs, mergeTabs, tabSettings, charSettings]);
+  }, [logs, mergeTabs, tabSettings, charSettings, splitPoints]);
 
   useLayoutEffect(() => {
     if (listRef.current) {
