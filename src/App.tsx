@@ -1540,28 +1540,44 @@ export default function App() {
             </button>
           </div>
 
-          <div className="flex items-center justify-between pt-3 mt-1 border-t border-white/5">
-            <label className="flex items-center gap-1.5 cursor-pointer group select-none">
-              <button
-                type="button"
-                onClick={() => setRememberSettings(!rememberSettings)}
-                className={cn(
-                  "relative inline-flex h-3.5 w-6 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
-                  rememberSettings ? "bg-[#e6005c]" : "bg-white/20"
-                )}
-              >
-                <span
+          <div className="flex items-center justify-between pt-3 mt-1 border-t border-white/5 relative z-50">
+            <div className="flex items-center gap-1.5">
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <button
+                  type="button"
+                  onClick={() => setRememberSettings(!rememberSettings)}
                   className={cn(
-                    "pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-                    rememberSettings ? "translate-x-2.5" : "translate-x-0"
+                    "relative inline-flex h-3.5 w-6 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                    rememberSettings ? "bg-[#e6005c]" : "bg-white/20"
                   )}
-                />
-              </button>
-              <span className={cn(
-                  "text-[9px] font-bold transition-colors",
-                  rememberSettings ? "text-white/80" : "text-white/30 group-hover:text-white/50"
-              )}>설정 기억하기</span>
-            </label>
+                >
+                  <span
+                    className={cn(
+                      "pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                      rememberSettings ? "translate-x-2.5" : "translate-x-0"
+                    )}
+                  />
+                </button>
+                <span className={cn(
+                    "text-[9px] font-bold transition-colors",
+                    rememberSettings ? "text-white/80" : "text-white/30"
+                )}>설정 기억하기</span>
+              </label>
+              <div className="relative group/help flex items-center">
+                <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
+                <div className="absolute left-0 bottom-full mb-3 w-56 opacity-0 invisible group-hover/help:opacity-100 group-hover/help:visible transition-all bg-[#1a1a1a] border border-white/10 rounded-xl p-3 text-[11px] leading-relaxed text-white/60 shadow-2xl pointer-events-none z-[100]">
+                  <p className="mb-2">
+                    변경되는 설정을 브라우저에 자동 저장합니다.
+                  </p>
+                  <p className="mb-2">
+                    모든 데이터는 서버 전송 없이 개인 기기에만 보관됩니다. <span className="text-white/30 text-[9px]">(브라우저 캐시 삭제 시 초기화)</span>
+                  </p>
+                  <p className="text-[#e6005c] font-medium">
+                    토글을 끄면 저장된 데이터가 삭제되며, 새로고침 시 기본 설정으로 돌아갑니다.
+                  </p>
+                </div>
+              </div>
+            </div>
             <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.1.1</span>
           </div>
         </div>
