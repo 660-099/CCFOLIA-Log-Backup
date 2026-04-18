@@ -165,9 +165,9 @@ export const generateFinalHtmlStr = (
     const hasImageAfter = currentImages.length > 0;
     const hasImageBefore = prevImages.length > 0;
 
-    const isNarration = log.name === narrationCharacter && format === 'main';
-    const isPrevNarration = idx > 0 && filteredLogs[idx - 1].name === narrationCharacter && (tabSettings[filteredLogs[idx - 1].tabId]?.format || 'main') === 'main';
-    const isNextNarration = idx < filteredLogs.length - 1 && filteredLogs[idx + 1].name === narrationCharacter && (tabSettings[filteredLogs[idx + 1].tabId]?.format || 'main') === 'main';
+    const isNarration = log.charId === narrationCharacter && format === 'main';
+    const isPrevNarration = idx > 0 && filteredLogs[idx - 1].charId === narrationCharacter && (tabSettings[filteredLogs[idx - 1].tabId]?.format || 'main') === 'main';
+    const isNextNarration = idx < filteredLogs.length - 1 && filteredLogs[idx + 1].charId === narrationCharacter && (tabSettings[filteredLogs[idx + 1].tabId]?.format || 'main') === 'main';
 
     let displayContent = log.content;
     if (log.isCommand) {

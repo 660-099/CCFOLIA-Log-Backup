@@ -400,32 +400,98 @@ export default function App() {
 
   const [jsonFileName, setJsonFileName] = useState('');
 
-  // Handle Style Upload
-  const handleStyleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Project Upload
+  const handleProjectUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     try {
-      const json = JSON.parse(await file.text());
+      const jsonText = await file.text();
+      const json = JSON.parse(jsonText);
+      
+      let confirmMessage = "";
+      
+      if (logs.length > 0) {
+        confirmMessage += "현재 작업 중인 데이터를 덮어씌우시겠습니까?\n";
+      }
+      
+      // Validation to check if it matches original HTML
+      if (json.originalFileName && originalFileName && json.originalFileName !== originalFileName) {
+        confirmMessage += `\n주의: 이 프로젝트 파일은 "${json.originalFileName}" 파일용입니다.\n현재 로드된 파일("${originalFileName}")과 이름이 다릅니다.`;
+      }
+      
+      if (confirmMessage) {
+        if (!window.confirm(confirmMessage.trim() + "\n\n그래도 계속하시겠습니까?")) {
+          e.target.value = '';
+          return;
+        }
+      }
+
       if (json.charSettings) setCharSettings(json.charSettings);
       if (json.charOrder) setCharOrder(json.charOrder);
       if (json.tabSettings) setTabSettings(json.tabSettings);
+      if (json.tabOrder) setTabOrder(json.tabOrder);
+      if (json.pageTitle !== undefined) setPageTitle(json.pageTitle);
+      
       if (json.cssFormat) setCssFormat(json.cssFormat);
       if (json.fontSize) setFontSize(json.fontSize);
+      if (json.fontFamily) setFontFamily(json.fontFamily);
+      if (json.theme) setTheme(json.theme);
       if (json.disableOtherColor !== undefined) setDisableOtherColor(json.disableOtherColor);
+      
+      if (json.splitPoints) setSplitPoints(new Set(json.splitPoints));
+      if (json.sectionNames) setSectionNames(json.sectionNames);
+      if (json.insertedImages) setInsertedImages(json.insertedImages);
+      
+      if (json.mergeTabs) setMergeTabs(new Set(json.mergeTabs));
+      if (json.showTabNames) setShowTabNames(new Set(json.showTabNames));
+      if (json.mergeTabStyles) setMergeTabStyles(new Set(json.mergeTabStyles));
+      if (json.hideEmptyAvatars !== undefined) setHideEmptyAvatars(json.hideEmptyAvatars);
+      if (json.narrationCharacter !== undefined) setNarrationCharacter(json.narrationCharacter);
+
+      saveToHistory(json);
       setJsonFileName(file.name);
     } catch (err) {
-      alert('스타일 파일을 읽는 중 오류가 발생했습니다.');
+      alert('프로젝트 파일을 읽는 중 오류가 발생했습니다.');
     }
+    e.target.value = '';
   };
 
-  const exportStyle = () => {
-    const data = { charSettings, charOrder, tabSettings, cssFormat, fontSize, disableOtherColor };
+  const exportProject = () => {
+    const data = { 
+      originalFileName,
+      charSettings, 
+      charOrder, 
+      tabSettings, 
+      tabOrder,
+      pageTitle,
+      cssFormat, 
+      fontSize, 
+      fontFamily, 
+      theme, 
+      disableOtherColor,
+      splitPoints: Array.from(splitPoints),
+      sectionNames,
+      insertedImages,
+      mergeTabs: Array.from(mergeTabs),
+      showTabNames: Array.from(showTabNames),
+      mergeTabStyles: Array.from(mergeTabStyles),
+      hideEmptyAvatars,
+      narrationCharacter
+    };
+    
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const fileName = pageTitle || originalFileName || 'ccfolia';
-    a.download = `${fileName}_style.json`;
+    
+    // Title is excluded from export logic per request. Only originalFileName is used.
+    let baseName = 'ccfolia_project';
+    if (originalFileName) {
+      baseName = originalFileName.replace(/\.html$/, '');
+    }
+    
+    a.download = `${baseName}.json`;
     a.click();
   };
 
@@ -917,7 +983,7 @@ export default function App() {
 
                 <div className="space-y-3">
                   <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
-                    <Palette className="w-3.5 h-3.5" /> 스타일 불러오기
+                    <Palette className="w-3.5 h-3.5" /> 프로젝트 관리
                   </h2>
                   <div 
                     onClick={() => styleInputRef.current?.click()}
@@ -938,7 +1004,7 @@ export default function App() {
                           "text-[11px] font-bold truncate leading-none mt-0.5 transition-colors",
                           jsonFileName ? "text-white/90" : "text-white/60"
                         )}>
-                          {jsonFileName || 'JSON 설정 파일 선택'}
+                          {jsonFileName || '프로젝트 파일(.json) 불러오기...'}
                         </p>
                       </div>
                     </div>
@@ -958,7 +1024,7 @@ export default function App() {
                       <div className="w-6 h-6 shrink-0" />
                     )}
                   </div>
-                  <input type="file" ref={styleInputRef} onChange={handleStyleUpload} accept=".json" className="hidden" />
+                  <input type="file" ref={styleInputRef} onChange={handleProjectUpload} accept=".json" className="hidden" />
                 </div>
               </motion.div>
             )}
@@ -1203,7 +1269,7 @@ export default function App() {
                       onClick={() => setIsNarrationDropdownOpen(!isNarrationDropdownOpen)}
                       className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/80 px-2 py-1 outline-none hover:border-white/20 transition-colors"
                     >
-                      <span className="max-w-[100px] truncate">{narrationCharacter || '선택 안 함'}</span>
+                      <span className="max-w-[100px] truncate">{narrationCharacter ? charSettings[narrationCharacter]?.name || narrationCharacter : '선택 안 함'}</span>
                       <ChevronDown className="w-3 h-3 opacity-50" />
                     </button>
                     
@@ -1223,22 +1289,26 @@ export default function App() {
                           >
                             선택 안 함
                           </button>
-                          {Object.keys(charSettings).map(charName => (
-                            <button
-                              key={charName}
-                              onClick={() => {
-                                setNarrationCharacter(charName);
-                                saveToHistory({ narrationCharacter: charName });
-                                setIsNarrationDropdownOpen(false);
-                              }}
-                              className={cn(
-                                "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
-                                narrationCharacter === charName ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
-                              )}
-                            >
-                              {charName}
-                            </button>
-                          ))}
+                          {Object.keys(charSettings).map(charId => {
+                            const char = charSettings[charId];
+                            if (!char) return null;
+                            return (
+                              <button
+                                key={charId}
+                                onClick={() => {
+                                  setNarrationCharacter(charId);
+                                  saveToHistory({ narrationCharacter: charId });
+                                  setIsNarrationDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
+                                  narrationCharacter === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
+                                )}
+                              >
+                                {char.name}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -1701,40 +1771,15 @@ export default function App() {
               </div>
             )}
             <button 
-              onClick={() => {
-                const filename = `${pageTitle || originalFileName || 'log'}_style`;
-                const data = { 
-                  charSettings, 
-                  charOrder, 
-                  tabSettings, 
-                  cssFormat, 
-                  fontSize, 
-                  disableOtherColor, 
-                  pageTitle, 
-                  fontFamily, 
-                  theme,
-                  sectionNames,
-                  splitPoints: Array.from(splitPoints),
-                  insertedImages
-                };
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${filename}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-              }}
+              onClick={exportProject}
               className={cn(
                 "flex items-center justify-center gap-2 px-3 xl:px-4 py-2 border rounded-xl transition-all text-[11px] font-bold shrink-0",
                 "bg-white/5 hover:bg-white/10 border-white/10 text-white/60 hover:text-white"
               )}
-              title="스타일 저장"
+              title="프로젝트 저장"
             >
               <FileJson className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden xl:inline-block truncate">스타일 저장</span>
+              <span className="hidden xl:inline-block truncate">프로젝트 저장</span>
             </button>
 
             <div className="relative">
@@ -2004,8 +2049,8 @@ export default function App() {
                         const isNextSameTab = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].tab === log.tab;
                         const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
                         
-                        const isPrevNarration = idx > 0 && mergedLogs[idx - 1].name === narrationCharacter && (tabSettings[mergedLogs[idx - 1].tabId]?.format || 'main') === 'main';
-                        const isNextNarration = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].name === narrationCharacter && (tabSettings[mergedLogs[idx + 1].tabId]?.format || 'main') === 'main';
+                        const isPrevNarration = idx > 0 && mergedLogs[idx - 1].charId === narrationCharacter && (tabSettings[mergedLogs[idx - 1].tabId]?.format || 'main') === 'main';
+                        const isNextNarration = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].charId === narrationCharacter && (tabSettings[mergedLogs[idx + 1].tabId]?.format || 'main') === 'main';
 
                         return (
                           <div

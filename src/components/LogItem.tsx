@@ -53,7 +53,7 @@ export const LogItem = React.memo(({
   const img = char.imageUrl;
   const isSecret = format === 'secret';
   const tabColor = tabSet.color || '#ffd400';
-  const isNarration = log.name === narrationCharacter && format === 'main';
+  const isNarration = log.charId === narrationCharacter && format === 'main';
 
   let displayContent = log.content;
   if (log.isCommand) {
