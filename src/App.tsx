@@ -44,10 +44,10 @@ import {
   ExternalLink,
   ArrowUpDown,
   ChevronDown,
-  Search
+  Search,
+  List
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { HexColorPicker, RgbColorPicker } from 'react-colorful';
 import { twMerge } from 'tailwind-merge';
 import { clsx, type ClassValue } from 'clsx';
 import { TabFormat, LogEntry, CharSetting, TabSetting } from './types';
@@ -56,16 +56,9 @@ import { cn, r, rgbToHex, linkify } from './utils';
 import { Toggle } from './components/Toggle';
 import { LogItem } from './components/LogItem';
 import { SectionNameEditor } from './components/SectionNameEditor';
-
-const fonts = [
-  { name: 'Noto Sans KR', value: "'Noto Sans KR', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');" },
-  { name: '(폰트 적용X)', value: "inherit", import: "" },
-  { name: 'Pretendard', value: "'Pretendard', sans-serif", import: "@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');" },
-  { name: '나눔고딕', value: "'Nanum Gothic', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700&display=swap');" },
-  { name: 'Noto Serif KR', value: "'Noto Serif KR', serif", import: "@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700&display=swap');" },
-  { name: 'Gothic A1', value: "'Gothic A1', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;700&display=swap');" },
-  { name: 'Orbit', value: "'Orbit', sans-serif", import: "@import url('https://fonts.googleapis.com/css2?family=Orbit&display=swap');" }
-];
+import { ColorPickerPopup, CharacterNameWithTooltip } from './components/ColorPickerPopup';
+import { generateFinalHtmlStr } from './utils/htmlGenerator';
+import { fonts } from './constants';
 
 export default function App() {
   const [isTitleEditing, setIsTitleEditing] = useState(false);
@@ -74,6 +67,7 @@ export default function App() {
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [isTocHovered, setIsTocHovered] = useState(false);
 
   // Sync tempTitle when pageTitle changes (e.g. from history)
   useEffect(() => {
@@ -271,72 +265,45 @@ export default function App() {
     }
   }, [charSettings]);
 
-  const hexToRgb = (hex: string) => {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgb(${r}, ${g}, ${b})`;
-  };
-
-  const hexToHsl = (hex: string) => {
-    let r = parseInt(hex.slice(1, 3), 16) / 255;
-    let g = parseInt(hex.slice(3, 5), 16) / 255;
-    let b = parseInt(hex.slice(5, 7), 16) / 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    let h = 0, s, l = (max + min) / 2;
-    if (max === min) h = s = 0;
-    else {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      switch (max) {
-        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-        case g: h = (b - r) / d + 2; break;
-        case b: h = (r - g) / d + 4; break;
-      }
-      h /= 6;
-    }
-    return `hsl(${Math.round(h * 360)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)`;
-  };
-
-  const renameCharacter = (oldName: string, newName: string) => {
-    if (!newName || oldName === newName) {
+  const renameCharacter = (charId: string, newName: string) => {
+    if (!newName) {
       setRenamingChar(null);
       return;
     }
-    if (charSettings[newName]) {
-      alert('이미 존재하는 이름입니다.');
+    const oldName = charSettings[charId]?.name;
+    if (oldName === newName) {
+      setRenamingChar(null);
       return;
     }
 
-    setLogs(prev => prev.map(log => log.name === oldName ? { ...log, name: newName } : log));
-    setCharOrder(prev => prev.map(n => n === oldName ? newName : n));
+    setLogs(prev => prev.map(log => log.charId === charId ? { ...log, name: newName } : log));
     setCharSettings(prev => {
       const next = { ...prev };
-      const setting = next[oldName];
-      delete next[oldName];
-      next[newName] = { ...setting, name: newName };
+      if (next[charId]) {
+        next[charId] = { ...next[charId], name: newName };
+      }
       return next;
     });
     setRenamingChar(null);
   };
 
-  const renameTab = (oldName: string, newName: string) => {
-    if (!newName || oldName === newName) {
+  const renameTab = (tabId: string, newName: string) => {
+    if (!newName) {
       setRenamingTab(null);
       return;
     }
-    if (tabSettings[newName]) {
-      alert('이미 존재하는 탭 이름입니다.');
+    const oldName = tabSettings[tabId]?.name;
+    if (oldName === newName) {
+      setRenamingTab(null);
       return;
     }
 
-    setLogs(prev => prev.map(log => log.tab === oldName ? { ...log, tab: newName } : log));
-    setTabOrder(prev => prev.map(n => n === oldName ? newName : n));
+    setLogs(prev => prev.map(log => log.tabId === tabId ? { ...log, tab: newName } : log));
     setTabSettings(prev => {
       const next = { ...prev };
-      const setting = next[oldName];
-      delete next[oldName];
-      next[newName] = { ...setting, name: newName };
+      if (next[tabId]) {
+        next[tabId] = { ...next[tabId], name: newName };
+      }
       return next;
     });
     setRenamingTab(null);
@@ -442,12 +409,12 @@ export default function App() {
     let mergedIds: string[] = [];
 
     const visibleLogs = logs.filter(log => 
-      tabSettings[log.tab]?.visible && 
-      (charSettings[log.name]?.visible !== false)
+      tabSettings[log.tabId]?.visible && 
+      (charSettings[log.charId]?.visible !== false)
     );
 
     visibleLogs.forEach((log) => {
-      const tabSet = tabSettings[log.tab];
+      const tabSet = tabSettings[log.tabId];
       const format = tabSet?.format || 'main';
       
       const currentStableId = currentMerged ? (currentMerged.id.startsWith('merged:') ? currentMerged.id.split(',').pop()! : currentMerged.id) : null;
@@ -497,6 +464,68 @@ export default function App() {
       .map(({ idx }) => idx);
   }, [mergedLogs, splitPoints]);
 
+  const sectionsList = useMemo(() => {
+    if (mergedLogs.length === 0) return [];
+    const list = [];
+    
+    const firstEnd = splitPointsArray.length > 0 ? splitPointsArray[0] - 1 : mergedLogs.length - 1;
+    list.push({ 
+      id: 'section-0', 
+      name: sectionNames[0] || '섹션 1',
+      startBlock: 1,
+      endBlock: firstEnd + 1,
+      targetOriginalIndex: 0
+    });
+
+    splitPointsArray.forEach((idx, i) => {
+      const splitLog = mergedLogs[idx];
+      const stableId = splitLog ? (splitLog.id.startsWith('merged:') ? splitLog.id.split(',').pop()! : splitLog.id) : '';
+      const startBlock = idx + 1;
+      const endBlock = i + 1 < splitPointsArray.length ? splitPointsArray[i + 1] : mergedLogs.length;
+      
+      list.push({ 
+        id: `section-${stableId}`, 
+        name: sectionNames[stableId] || `섹션 ${i + 2}`,
+        startBlock,
+        endBlock,
+        targetOriginalIndex: idx
+      });
+    });
+    return list;
+  }, [splitPointsArray, sectionNames, mergedLogs]);
+
+  const scrollToSection = (targetOriginalIndex: number, sectionId: string) => {
+    if (targetOriginalIndex === 0 || sectionId === 'section-0') {
+      rowVirtualizer.scrollToIndex(0, { align: 'start' });
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (previewContainerRef.current) {
+            previewContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
+          }
+        }, 10);
+      });
+      return;
+    }
+
+    const virtualIndex = displayItems.findIndex(item => item.originalIndex === targetOriginalIndex);
+    if (virtualIndex !== -1) {
+      rowVirtualizer.scrollToIndex(virtualIndex, { align: 'start' });
+      
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const el = document.getElementById(sectionId);
+          const container = previewContainerRef.current;
+          if (el && container) {
+            const elRect = el.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            const offsetTop = elRect.top - containerRect.top + container.scrollTop - 50;
+            container.scrollTo({ top: offsetTop, behavior: 'auto' });
+          }
+        }, 30);
+      });
+    }
+  };
+
   const displayItems = useMemo(() => {
     if (!searchQuery) {
       return mergedLogs.map((log, index) => ({ log, isMatched: true, originalIndex: index }));
@@ -523,7 +552,10 @@ export default function App() {
 
   const sortedCharOrder = useMemo(() => {
     if (charSortMode === 'appearance') return charOrder;
-    return [...charOrder].sort((a, b) => {
+    return [...charOrder].sort((idA, idB) => {
+      const a = charSettings[idA]?.name || 'Unknown';
+      const b = charSettings[idB]?.name || 'Unknown';
+
       // Handle "Unknown" or empty names by putting them at the end
       if (a === 'Unknown' && b !== 'Unknown') return 1;
       if (a !== 'Unknown' && b === 'Unknown') return -1;
@@ -536,7 +568,7 @@ export default function App() {
 
       return a.localeCompare(b, 'ko', { sensitivity: 'base', numeric: true });
     });
-  }, [charOrder, charSortMode]);
+  }, [charOrder, charSortMode, charSettings]);
 
   const onEditLog = (id: string, content: string) => {
     if (id.startsWith('merged:')) {
@@ -609,415 +641,36 @@ export default function App() {
     });
   };
 
-  const generateFinalHtml = (range?: { start: number; end: number }) => {
+  const getHtmlString = (range?: { start: number; end: number }) => {
+    const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
     const targetLogs = range ? mergedLogs.slice(range.start, range.end + 1) : mergedLogs;
     const filteredLogs = targetLogs.filter(log => 
-      tabSettings[log.tab]?.visible && 
-      (charSettings[log.name]?.visible !== false)
+      tabSettings[log.tabId]?.visible && 
+      (charSettings[log.charId]?.visible !== false)
     );
 
-    const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
-    
-    let fontImport = selectedFont.import;
-    let fontValue = selectedFont.value;
-
-    const isDark = theme === 'dark';
-    const bgColor = isDark ? '#242424' : '#FFFFFF';
-    const textColor = isDark ? '#EEEEEE' : '#1A1A1A';
-    const otherTextColor = isDark ? '#AAAAAA' : '#666666';
-    const infoBg = isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)';
-    const borderColor = isDark ? '#444' : '#DDD';
-    const avatarPlaceholder = isDark ? '#1e1e1e' : '#f0f0f0';
-
-    const getSecretBg = (hex: string) => {
-      const rgb = hexToRgbValues(hex || '#ffff00');
-      return isDark ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)` : `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.08)`;
-    };
-
-    const scale = fontSize / 14;
-    const avatarSize = Math.round(46 * scale);
-    const gapSize = Math.round(12 * scale);
-    const paddingSize = Math.round(12 * scale);
-    const nameSize = Math.round(13 * scale);
-
-    const css = `
-      ${fontImport}
-      @import url('https://hangeul.pstatic.net/hangeul_static/css/nanum-gothic-coding.css');
-      .log-container * { box-sizing: border-box; min-width: 0; }
-      .log-container { 
-        width: 100%; 
-        max-width: 800px; 
-        margin: 0 auto; 
-        ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''}
-        background: ${bgColor}; 
-        color: ${textColor}; 
-        line-height: 1.6; 
-        padding: 20px 0; 
-        font-size: ${fontSize}px;
-        overflow-x: hidden;
-      }
-      .log-item { position: relative; margin-bottom: 2px; }
-      .tab-name-block { margin: 12px ${r(paddingSize * 1.3)}px 4px ${r(paddingSize * 1.3)}px; display: flex; }
-      .tab-name-badge { padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; }
-      
-      /* Main Format */
-      .main-row { 
-        display: flex; 
-        gap: ${gapSize}px; 
-        padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; 
-        align-items: flex-start; 
-      }
-      .main-avatar { 
-        width: ${avatarSize}px; 
-        height: ${avatarSize}px; 
-        flex-shrink: 0; 
-        background-color: ${avatarPlaceholder}; 
-        border-radius: 4px; 
-        object-fit: contain;
-      }
-      .main-body { flex-grow: 1; line-height: 1.5; }
-      .main-name { font-weight: bold; font-size: 0.93em; margin-bottom: 2px; display: block; }
-      .main-content { font-size: 1em; color: ${textColor}; white-space: pre-wrap; word-break: break-all; }
-
-      /* Other Format */
-      .other-row { 
-        padding: ${r(paddingSize / 3)}px ${r(paddingSize * 1.3)}px; 
-        display: flex;
-        gap: ${r(gapSize / 1.5)}px;
-        align-items: baseline;
-      }
-      .other-name { font-weight: bold; flex-shrink: 0; font-size: 0.93em; }
-      .other-content { font-size: 1em; color: ${otherTextColor}; white-space: pre-wrap; word-break: break-all; }
-
-      /* Info Format */
-      .info-row { 
-        padding: ${r(paddingSize * 1.3)}px ${r(paddingSize * 1.6)}px; 
-        background: ${infoBg};
-        border-left: 4px solid ${borderColor};
-        margin: 8px ${r(paddingSize * 1.3)}px;
-        border-radius: 4px;
-      }
-      
-      .command-box { 
-        background: rgba(0, 0, 0, 0.1); 
-        border: 1px solid ${borderColor}; 
-        padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; 
-        border-radius: 8px; 
-        margin: 8px ${r(paddingSize * 1.3)}px; 
-      }
-      .command-text { font-family: 'NanumGothicCodingLigature', monospace; color: ${textColor}; font-weight: bold; line-height: 1.6; }
-
-      /* Secret Format */
-      .secret-row {
-        display: flex; 
-        gap: ${gapSize}px; 
-        padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; 
-        align-items: flex-start;
-        margin: 4px ${r(paddingSize * 1.3)}px;
-        border-radius: 4px;
-      }
-
-      /* Narration Format */
-      .narration-row {
-        padding: ${paddingSize}px ${r(paddingSize * 1.3)}px;
-        text-align: center;
-        color: ${textColor};
-        line-height: 1.6;
-        font-weight: bold;
-        font-style: italic;
-      }
-    `;
-
-    const isInline = cssFormat === 'inline';
-    let html = isInline ? `<div style="width: 100%; max-width: 800px; margin: 0 auto; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: 1.6; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden; box-sizing: border-box;">\n` : '';
-
-    filteredLogs.forEach((log, idx) => {
-      const globalIdx = mergedLogs.findIndex(l => l.id === log.id);
-      const tabSet = tabSettings[log.tab];
-      const format = tabSet?.format || 'main';
-      const char = charSettings[log.name];
-      const color = char?.color || log.color;
-      const otherNameColor = disableOtherColor ? otherTextColor : color;
-      const img = char?.imageUrl;
-      const isCont = log.isContinuation;
-      const hideAvatar = hideEmptyAvatars;
-
-      const isValidUrl = (url: string) => {
-        if (!url) return false;
-        return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image/');
-      };
-
-      // Calculate isPrevSameTab and isNextSameTab for Tab Integration
-      const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
-      const currentImages = (insertedImages[stableId] || []).filter(imgData => {
-        const url = typeof imgData === 'string' ? imgData : imgData.url;
-        return isValidUrl(url);
-      });
-      const prevStableId = idx > 0 ? (filteredLogs[idx-1].id.startsWith('merged:') ? filteredLogs[idx-1].id.split(',').pop()! : filteredLogs[idx-1].id) : '';
-      const prevImages = idx > 0 ? (insertedImages[prevStableId] || []).filter(imgData => {
-        const url = typeof imgData === 'string' ? imgData : imgData.url;
-        return isValidUrl(url);
-      }) : [];
-
-      const isPrevSameTab = idx > 0 && filteredLogs[idx - 1].tab === log.tab;
-      const isNextSameTab = idx < filteredLogs.length - 1 && filteredLogs[idx + 1].tab === log.tab;
-      const shouldMergeStyle = mergeTabStyles.has(format) && (isPrevSameTab || isNextSameTab);
-      const hasImageAfter = currentImages.length > 0;
-      const hasImageBefore = prevImages.length > 0;
-
-      const isNarration = log.name === narrationCharacter && format === 'main';
-      const isPrevNarration = idx > 0 && filteredLogs[idx - 1].name === narrationCharacter && (tabSettings[filteredLogs[idx - 1].tab]?.format || 'main') === 'main';
-      const isNextNarration = idx < filteredLogs.length - 1 && filteredLogs[idx + 1].name === narrationCharacter && (tabSettings[filteredLogs[idx + 1].tab]?.format || 'main') === 'main';
-
-      let displayContent = log.content;
-      if (log.isCommand) {
-        displayContent = displayContent.replace(/^(?:<[^>]+>|\s)*(?:<br\s*\/?>|\n)+(?:<[^>]+>|\s)*/gi, (match: string) => {
-          return match.replace(/(?:<br\s*\/?>|\n)+/gi, '');
-        });
-        displayContent = displayContent.replace(/\](?:<[^>]+>|\s)*(?:<br\s*\/?>|\n)+(?:<[^>]+>|\s)*/gi, (match: string) => {
-          return match.replace(/(?:<br\s*\/?>|\n)+/gi, ' ');
-        });
-      }
-      let finalHtmlContent = linkify(displayContent);
-      if (log.name === 'system') {
-        finalHtmlContent = finalHtmlContent.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
-          const char = charSettings[p1.trim()];
-          if (char) {
-            return `<span style="color: ${char.color};">${match}</span>`;
-          }
-          return match;
-        });
-      }
-      
-      finalHtmlContent = DOMPurify.sanitize(finalHtmlContent, { ADD_ATTR: ['target'] });
-
-      // Insert Tab Name if needed
-      if (showTabNames.has(format) && !isPrevSameTab) {
-        const tabName = log.tab;
-        const isSecret = format === 'secret';
-        const tabColor = tabSet?.color || '#ffd400';
-        const tabBg = getSecretBg(tabColor);
-        
-        if (isInline) {
-          html += `<div style="margin: 12px ${r(paddingSize * 1.3)}px 4px ${r(paddingSize * 1.3)}px; display: flex;">
-            <div style="background: ${tabBg}; color: ${tabColor}; padding: 2px 10px; border-radius: 4px; font-size: ${r(nameSize * 0.8)}px; font-weight: bold; border: 1px solid ${tabColor}44;">
-              ${tabName}
-            </div>
-          </div>`;
-        } else {
-          html += `<div class="tab-name-block">
-            <div class="tab-name-badge" style="background: ${tabBg}; color: ${tabColor}; border: 1px solid ${tabColor}44;">
-              ${tabName}
-            </div>
-          </div>`;
-        }
-      }
-
-      if (isInline) {
-        const avatarStyle = `width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; background-color: ${hideAvatar ? 'transparent' : avatarPlaceholder}; border-radius: 4px; object-fit: contain;`;
-        const bodyStyle = `flex-grow: 1; line-height: 1.6;`;
-        const nameStyle = `font-weight: bold; color: ${color}; font-size: ${nameSize}px; margin-bottom: 2px; display: block;`;
-        const contentStyle = `font-size: 1em; color: ${textColor}; word-break: break-all;`;
-        const otherContentStyle = `font-size: 1em; color: ${otherTextColor}; word-break: break-all;`;
-        
-        // Tab Integration margin/border logic
-        let itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? '0' : '2px') : (isCont ? '0' : '2px');
-        let itemMarginTop = '0';
-        
-        if (isNarration) {
-          itemMarginTop = isPrevNarration ? '0' : '16px';
-          itemMarginBottom = isNextNarration ? '0' : '16px';
-        }
-
-        // Rounding logic for tab integration
-        const isSectionStart = idx === 0 || hasImageBefore;
-        const isSectionEnd = isNextSameTab === false || hasImageAfter;
-
-        html += `<div style="margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
-        
-        if (log.isCommand) {
-          const nameHtml = log.name !== 'system' ? `<span style="color: ${color}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold;">[ ${log.name} ]</span> ` : '';
-          const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
-          if (format === 'secret') {
-            const tabColor = tabSet?.color || '#ffd400';
-            const secretBg = getSecretBg(tabColor);
-            html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
-          } else {
-            html += `<div style="background: rgba(0,0,0,0.1); border: 1px solid ${borderColor}; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; border-radius: 8px; margin: 8px ${r(paddingSize * 1.3)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
-          }
-        } else if (isNarration) {
-          html += `<div style="padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic;">${finalHtmlContent}</div>`;
-        } else if (format === 'other') {
-          html += `<div style="padding: ${r(paddingSize / 3)}px ${r(paddingSize * 1.3)}px; display: flex; gap: ${r(gapSize / 1.5)}px; align-items: baseline;">
-            ${!isCont ? `<span style="font-weight: bold; color: ${otherNameColor}; font-size: ${nameSize}px; flex-shrink: 0;">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}
-            <span style="${otherContentStyle}">${finalHtmlContent}</span>
-          </div>`;
-        } else if (format === 'info') {
-          const infoMargin = shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `8px ${r(paddingSize * 1.3)}px`;
-          const infoRadius = shouldMergeStyle 
-            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
-            : '4px';
-          const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'border-top: none;' : '';
-          const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'border-bottom: none;' : '';
-
-          html += `<div style="padding: ${r(paddingSize * 1.3)}px ${r(paddingSize * 1.6)}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: ${infoMargin}; border-radius: ${infoRadius}; ${infoBorderTop} ${infoBorderBottom}">
-            ${!isCont ? `<span style="${nameStyle}">${log.name}</span>` : ''}
-            <div style="${contentStyle}">${finalHtmlContent}</div>
-          </div>`;
-        } else if (format === 'secret') {
-          const tabColor = tabSet?.color || '#ffd400';
-          const secretBg = getSecretBg(tabColor);
-          const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
-          const secretMargin = shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `4px ${r(paddingSize * 1.3)}px`;
-          const secretRadius = shouldMergeStyle 
-            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
-            : '4px';
-          const secretBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : 'none';
-          const secretBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : 'none';
-
-          html += `
-            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; align-items: flex-start; background: ${secretBg}; border-left: 4px solid ${tabColor}; margin: ${secretMargin}; border-radius: ${secretRadius}; border-top: ${secretBorderTop}; border-bottom: ${secretBorderBottom};">
-              ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
-              <div style="${bodyStyle}">
-                ${!isCont ? `<div style="${nameStyle}">${log.name}</div>` : ''}
-                <div style="${contentStyle}">${finalHtmlContent}</div>
-              </div>
-            </div>`;
-        } else {
-          const avatarHtml = img 
-            ? `<img src="${img}" style="${avatarStyle}" />` 
-            : `<div style="${avatarStyle}"></div>`;
-          
-          const contAvatarHtml = `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`;
-
-          html += `
-            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingSize}px ${r(paddingSize * 1.3)}px; align-items: flex-start; ${isCont ? 'padding-top: 2px;' : ''}">
-              ${!isCont ? avatarHtml : contAvatarHtml}
-              <div style="${bodyStyle}">
-                ${!isCont ? `<div style="${nameStyle}">${log.name}</div>` : ''}
-                <div style="${contentStyle}">${finalHtmlContent}</div>
-              </div>
-            </div>`;
-        }
-        html += `</div>`;
-      } else {
-        // Rounding logic for tab integration
-        const isSectionStart = idx === 0 || hasImageBefore;
-        const isSectionEnd = isNextSameTab === false || hasImageAfter;
-
-        let itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? '0' : '2px') : (isCont ? '0' : '2px');
-        let itemMarginTop = '0';
-
-        if (isNarration) {
-          itemMarginTop = isPrevNarration ? '0' : '16px';
-          itemMarginBottom = isNextNarration ? '0' : '16px';
-        }
-
-        html += `<div class="log-item" style="margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
-
-        if (log.isCommand) {
-          const nameHtml = log.name !== 'system' ? `<span class="command-text" style="color: ${color}; font-weight: bold;">[ ${log.name} ]</span> ` : '';
-          const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
-          if (format === 'secret') {
-            const tabColor = tabSet?.color || '#ffd400';
-            const secretBg = getSecretBg(tabColor);
-            html += `<div class="command-box" style="background: ${secretBg};">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
-          } else {
-            html += `<div class="command-box">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
-          }
-        } else if (isNarration) {
-          html += `<div class="narration-row">${finalHtmlContent}</div>`;
-        } else if (format === 'other') {
-          html += `<div class="other-row">
-            ${!isCont ? `<span class="other-name" style="color: ${otherNameColor}">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}
-            <span class="other-content">${finalHtmlContent}</span>
-          </div>`;
-        } else if (format === 'info') {
-          const infoMargin = shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `8px ${r(paddingSize * 1.3)}px`;
-          const infoRadius = shouldMergeStyle 
-            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
-            : '4px';
-          const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'border-top: none;' : '';
-          const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'border-bottom: none;' : '';
-
-          html += `<div class="info-row" style="margin: ${infoMargin}; border-radius: ${infoRadius}; ${infoBorderTop} ${infoBorderBottom}">
-            ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
-            <div class="main-content">${finalHtmlContent}</div>
-          </div>`;
-        } else if (format === 'secret') {
-          const tabColor = tabSet?.color || '#ffd400';
-          const secretBg = getSecretBg(tabColor);
-          const avatarHtml = img ? `<img src="${img}" class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}" />` : `<div class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}"></div>`;
-          const secretMargin = shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `4px ${r(paddingSize * 1.3)}px`;
-          const secretRadius = shouldMergeStyle 
-            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
-            : '4px';
-          const secretBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : undefined;
-
-          html += `
-            <div class="secret-row" style="background: ${secretBg}; border-left: 4px solid ${tabColor}; margin: ${secretMargin}; border-radius: ${secretRadius}; border-top: ${secretBorderTop};">
-              ${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
-              <div class="main-body">
-                ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
-                <div class="main-content">${finalHtmlContent}</div>
-              </div>
-            </div>`;
-        } else {
-          const avatarHtml = img ? `<img src="${img}" class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}" />` : `<div class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}"></div>`;
-          html += `
-            <div class="main-row ${isCont ? 'continuation' : ''}">
-              ${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
-              <div class="main-body">
-                ${!isCont ? `<span class="main-name" style="color: ${color}">${log.name}</span>` : ''}
-                <div class="main-content">${finalHtmlContent}</div>
-              </div>
-            </div>`;
-        }
-        html += `</div>`;
-      }
-
-      // Insert images if any
-      const currentStableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
-      if (insertedImages[currentStableId]) {
-        insertedImages[currentStableId].forEach(imgData => {
-          const url = typeof imgData === 'string' ? imgData : imgData.url;
-          if (!isValidUrl(url)) return;
-          
-          const align = (typeof imgData === 'string' ? 'center' : imgData.align) || 'center';
-          const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
-          const width = typeof imgData === 'string' ? undefined : imgData.width;
-          const widthStyle = width ? `width: ${width}px;` : 'max-width: 100%;';
-          html += `<div style="display: flex; justify-content: ${justify}; margin: 10px ${r(paddingSize * 1.3)}px;">
-            <img src="${url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
-          </div>`;
-        });
-      }
-    });
-
-    if (isInline) {
-      html += `</div>`;
-    }
-
-    return `
-      <!DOCTYPE html>
-      <html lang="ko">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${pageTitle}</title>
-        <link href="https://hangeul.pstatic.net/hangeul_static/css/nanum-gothic-coding.css" rel="stylesheet">
-        ${isInline ? '' : `<style>${css}</style>`}
-      </head>
-      <body style="margin: 0;">
-        ${isInline ? html : `<div class="log-container">\n${html}\n</div>`}
-      </body>
-      </html>
-    `;
+    return generateFinalHtmlStr(
+      filteredLogs,
+      mergedLogs,
+      charSettings,
+      tabSettings,
+      cssFormat,
+      theme,
+      fontSize,
+      fontFamily,
+      disableOtherColor,
+      hideEmptyAvatars,
+      narrationCharacter,
+      insertedImages,
+      mergeTabStyles,
+      showTabNames,
+      pageTitle,
+      selectedFont.value
+    );
   };
 
-
   const downloadHtml = (range?: { start: number; end: number }) => {
-    const html = generateFinalHtml(range);
+    const html = getHtmlString(range);
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1057,7 +710,32 @@ export default function App() {
     const folder = zip.folder(folderName);
 
     sections.forEach((s, i) => {
-      const html = generateFinalHtml(s);
+      const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
+      const targetLogs = mergedLogs.slice(s.start, s.end + 1);
+      const filteredLogs = targetLogs.filter(log => 
+        tabSettings[log.tabId]?.visible && 
+        (charSettings[log.charId]?.visible !== false)
+      );
+
+      const html = generateFinalHtmlStr(
+        filteredLogs,
+        mergedLogs,
+        charSettings,
+        tabSettings,
+        cssFormat,
+        theme,
+        fontSize,
+        fontFamily,
+        disableOtherColor,
+        hideEmptyAvatars,
+        narrationCharacter,
+        insertedImages,
+        mergeTabStyles,
+        showTabNames,
+        pageTitle,
+        selectedFont.value
+      );
+      
       let name = '';
       if (s.start === 0) {
         name = sectionNames[0];
@@ -1313,36 +991,36 @@ export default function App() {
                     <Settings className="w-3.5 h-3.5" /> 탭별 출력 설정
                   </h2>
                   {tabOrder.length > 0 ? (
-                    tabOrder.map(tabName => {
-                      const tab = tabSettings[tabName];
+                    tabOrder.map(tabId => {
+                      const tab = tabSettings[tabId];
                       if (!tab) return null;
                       return (
-                        <div key={tab.name} className="p-3 bg-white/5 rounded-xl border border-white/5 shadow-sm flex flex-col gap-3">
+                        <div key={tab.id} className="p-3 bg-white/5 rounded-xl border border-white/5 shadow-sm flex flex-col gap-3">
                         <div className="flex items-center gap-2">
                           <Toggle 
                             enabled={tab.visible} 
                             onChange={(val) => {
-                              const next = { ...tabSettings, [tab.name]: { ...tab, visible: val } };
+                              const next = { ...tabSettings, [tab.id]: { ...tab, visible: val } };
                               setTabSettings(next);
                               saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                             }} 
                           />
-                          {renamingTab === tab.name ? (
+                          {renamingTab === tab.id ? (
                             <div className="flex gap-1 flex-1">
                               <input 
                                 type="text"
                                 value={newTabNameInput}
                                 autoFocus
                                 onChange={(e) => setNewTabNameInput(e.target.value)}
-                                onBlur={() => renameTab(tab.name, newTabNameInput)}
+                                onBlur={() => renameTab(tab.id, newTabNameInput)}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Enter') renameTab(tab.name, newTabNameInput);
+                                  if (e.key === 'Enter') renameTab(tab.id, newTabNameInput);
                                   if (e.key === 'Escape') setRenamingTab(null);
                                 }}
                                 className="bg-black/40 text-[11px] font-bold text-white px-2 py-1 rounded border border-[#e6005c] outline-none flex-1"
                               />
                               <button 
-                                onClick={() => renameTab(tab.name, newTabNameInput)}
+                                onClick={() => renameTab(tab.id, newTabNameInput)}
                                 className="p-1 bg-[#e6005c] text-white rounded"
                               >
                                 <CheckSquare className="w-3 h-3" />
@@ -1356,7 +1034,7 @@ export default function App() {
                                 {tab.name}
                               </span>
                               <button 
-                                onClick={() => { setRenamingTab(tab.name); setNewTabNameInput(tab.name); }}
+                                onClick={() => { setRenamingTab(tab.id); setNewTabNameInput(tab.name); }}
                                 className="p-1 text-white/20 hover:text-[#e6005c] transition-colors"
                               >
                                 <Pencil className="w-3 h-3" />
@@ -1370,7 +1048,7 @@ export default function App() {
                               <button
                                 key={f}
                                 onClick={() => {
-                                  const next = { ...tabSettings, [tab.name]: { ...tab, format: f } };
+                                  const next = { ...tabSettings, [tab.id]: { ...tab, format: f } };
                                   setTabSettings(next);
                                   saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                                 }}
@@ -1388,11 +1066,11 @@ export default function App() {
                           <div className="relative">
                             <button
                               onClick={(e) => {
-                                if (activeColorPicker === `tab-${tab.name}`) {
+                                if (activeColorPicker === `tab-${tab.id}`) {
                                   setActiveColorPicker(null);
                                   setColorPickerRect(null);
                                 } else {
-                                  setActiveColorPicker(`tab-${tab.name}`);
+                                  setActiveColorPicker(`tab-${tab.id}`);
                                   setColorPickerRect(e.currentTarget.getBoundingClientRect());
                                 }
                               }}
@@ -1496,37 +1174,37 @@ export default function App() {
                 </div>
                 {sortedCharOrder.length > 0 ? (
                   <div className="space-y-2">
-                    {sortedCharOrder.map(charName => {
-                      const char = charSettings[charName];
+                    {sortedCharOrder.map(charId => {
+                      const char = charSettings[charId];
                       if (!char) return null;
                       return (
-                        <div key={char.name} className="p-2 bg-white/5 rounded-2xl border border-white/5 shadow-sm flex items-center gap-2 relative group/charitem">
+                        <div key={char.id} className="p-2 bg-white/5 rounded-2xl border border-white/5 shadow-sm flex items-center gap-2 relative group/charitem">
                           <div className="shrink-0">
                             <Toggle 
                               enabled={char.visible} 
                               onChange={(val) => {
-                                const next = { ...charSettings, [char.name]: { ...char, visible: val } };
+                                const next = { ...charSettings, [char.id]: { ...char, visible: val } };
                                 setCharSettings(next);
                                 saveToHistory({ charSettings: next, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                               }} 
                             />
                           </div>
                           
-                          {renamingChar === char.name ? (
+                          {renamingChar === char.id ? (
                             <div className="flex gap-1 w-32 shrink-0">
                               <input 
                                 type="text" 
                                 value={newNameInput}
                                 onChange={(e) => setNewNameInput(e.target.value)}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Enter') renameCharacter(char.name, newNameInput);
+                                  if (e.key === 'Enter') renameCharacter(char.id, newNameInput);
                                   if (e.key === 'Escape') setRenamingChar(null);
                                 }}
                                 className="w-full text-[10px] font-bold px-1 py-0.5 border border-[#e6005c] rounded outline-none bg-black/20 text-white"
                                 autoFocus
                               />
                               <button 
-                                onClick={() => renameCharacter(char.name, newNameInput)}
+                                onClick={() => renameCharacter(char.id, newNameInput)}
                                 className="p-0.5 bg-[#e6005c] text-white rounded"
                               >
                                 <CheckSquare className="w-3 h-3" />
@@ -1536,7 +1214,7 @@ export default function App() {
                             <div className="flex items-center gap-1 w-24 shrink-0 overflow-visible relative">
                               <CharacterNameWithTooltip name={char.name} />
                               <button 
-                                onClick={() => { setRenamingChar(char.name); setNewNameInput(char.name); }}
+                                onClick={() => { setRenamingChar(char.id); setNewNameInput(char.name); }}
                                 className="p-0.5 text-white/20 hover:text-[#e6005c] transition-colors"
                               >
                                 <Pencil className="w-2.5 h-2.5" />
@@ -1547,11 +1225,11 @@ export default function App() {
                           <div className="relative shrink-0">
                             <button
                               onClick={(e) => {
-                                if (activeColorPicker === char.name) {
+                                if (activeColorPicker === char.id) {
                                   setActiveColorPicker(null);
                                   setColorPickerRect(null);
                                 } else {
-                                  setActiveColorPicker(char.name);
+                                  setActiveColorPicker(char.id);
                                   setColorPickerRect(e.currentTarget.getBoundingClientRect());
                                 }
                               }}
@@ -1565,7 +1243,7 @@ export default function App() {
                             placeholder="이미지 URL"
                             value={char.imageUrl}
                             onChange={(e) => {
-                              const next = { ...charSettings, [char.name]: { ...char, imageUrl: e.target.value } };
+                              const next = { ...charSettings, [char.id]: { ...char, imageUrl: e.target.value } };
                               setCharSettings(next);
                             }}
                             onBlur={() => {
@@ -1778,7 +1456,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center justify-center pt-0.5 opacity-30">
-            <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.3em]">v1.1.0</span>
+            <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.3em]">v1.1.1</span>
           </div>
         </div>
       </aside>
@@ -1794,28 +1472,24 @@ export default function App() {
         )}>
           <div className="flex items-center gap-3 xl:gap-6 shrink-0 min-w-0">
             <div className="flex items-center">
-              <AnimatePresence mode="wait">
-                {!isSearchExpanded ? (
-                  <motion.button
-                    key="search-icon"
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    onClick={() => { setIsSearchExpanded(true); setTimeout(() => searchInputRef.current?.focus(), 100); }}
-                    className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition-colors shrink-0"
-                    title="로그 검색"
-                  >
-                    <Search className="w-4 h-4" />
-                  </motion.button>
-                ) : (
-                  <motion.div
-                    key="search-input"
-                    initial={{ width: 0, opacity: 0 }}
-                    animate={{ width: 240, opacity: 1 }}
-                    exit={{ width: 0, opacity: 0 }}
-                    className="flex items-center bg-black/20 border border-white/20 rounded-full px-3 py-1.5 overflow-hidden shrink-0"
-                  >
-                    <Search className="w-3.5 h-3.5 text-white/50 shrink-0" />
+              <div 
+                className={cn(
+                  "flex items-center overflow-hidden shrink-0 transition-all duration-200 ease-out border rounded-full",
+                  isSearchExpanded 
+                    ? "w-[240px] px-3 py-1.5 bg-white/5 border-white/10" 
+                    : "w-8 h-8 bg-white/5 hover:bg-white/10 border-white/10 cursor-pointer justify-center"
+                )}
+                onClick={() => {
+                  if (!isSearchExpanded) {
+                    setIsSearchExpanded(true);
+                    setTimeout(() => searchInputRef.current?.focus(), 50);
+                  }
+                }}
+              >
+                <Search className={cn("shrink-0", isSearchExpanded ? "w-3.5 h-3.5 text-white/50" : "w-3.5 h-3.5 text-white/60 hover:text-white")} />
+                
+                {isSearchExpanded && (
+                  <>
                     <input
                       ref={searchInputRef}
                       type="text"
@@ -1825,14 +1499,18 @@ export default function App() {
                       className="bg-transparent border-none outline-none text-xs text-white ml-2 w-full placeholder:text-white/30"
                     />
                     <button 
-                      onClick={() => { setIsSearchExpanded(false); setSearchQuery(''); }}
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        setIsSearchExpanded(false); 
+                        setSearchQuery(''); 
+                      }}
                       className="shrink-0 ml-1 p-0.5 rounded-full hover:bg-white/20 text-white/50 hover:text-white transition-colors"
                     >
                       <X className="w-3 h-3" />
                     </button>
-                  </motion.div>
+                  </>
                 )}
-              </AnimatePresence>
+              </div>
             </div>
             
             <div className={cn("hidden xl:block h-4 w-px shrink-0", "bg-white/10")} />
@@ -1958,7 +1636,7 @@ export default function App() {
                       className="absolute right-0 mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
                     >
                       <button 
-                        onClick={() => { copyToClipboard(generateFinalHtml()); setShowDownloadMenu(false); }}
+                        onClick={() => { copyToClipboard(getHtmlString()); setShowDownloadMenu(false); }}
                         className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
                       >
                         <Copy className="w-4 h-4 text-blue-400" />
@@ -2024,7 +1702,7 @@ export default function App() {
                                       </div>
                                     </button>
                                     <button 
-                                      onClick={() => { copyToClipboard(generateFinalHtml(s)); setShowDownloadMenu(false); }}
+                                      onClick={() => { copyToClipboard(getHtmlString(s)); setShowDownloadMenu(false); }}
                                       className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/30 hover:text-white"
                                       title="HTML 복사"
                                     >
@@ -2072,7 +1750,7 @@ export default function App() {
                   theme === 'dark' ? "bg-[#242424]" : "bg-white"
                 )}>
                   {/* Top Section Name Input */}
-                  <div className="max-w-[800px] mx-auto px-4 pt-4 pb-1 font-sans relative">
+                  <div id="section-0" className="max-w-[800px] mx-auto px-4 pt-2 font-sans relative">
                     <div className="flex items-end justify-between max-w-full">
                       <div className="bg-[#e6005c] rounded-t-lg px-4 py-1 flex items-center shadow-lg max-w-sm">
                         <SectionNameEditor 
@@ -2176,6 +1854,7 @@ export default function App() {
                         height: `${rowVirtualizer.getTotalSize()}px`,
                         width: '100%',
                         position: 'relative',
+                        marginTop: '-8px'
                       }}
                     >
                       {rowVirtualizer.getVirtualItems().map((virtualItem) => {
@@ -2186,8 +1865,8 @@ export default function App() {
                         const isNextSameTab = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].tab === log.tab;
                         const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
                         
-                        const isPrevNarration = idx > 0 && mergedLogs[idx - 1].name === narrationCharacter && (tabSettings[mergedLogs[idx - 1].tab]?.format || 'main') === 'main';
-                        const isNextNarration = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].name === narrationCharacter && (tabSettings[mergedLogs[idx + 1].tab]?.format || 'main') === 'main';
+                        const isPrevNarration = idx > 0 && mergedLogs[idx - 1].name === narrationCharacter && (tabSettings[mergedLogs[idx - 1].tabId]?.format || 'main') === 'main';
+                        const isNextNarration = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].name === narrationCharacter && (tabSettings[mergedLogs[idx + 1].tabId]?.format || 'main') === 'main';
 
                         return (
                           <div
@@ -2207,8 +1886,8 @@ export default function App() {
                               isMatched={isMatched}
                               stableId={stableId}
                               log={log}
-                              tabSet={tabSettings[log.tab]}
-                              char={charSettings[log.name] || { name: log.name, color: log.color, visible: true }}
+                              tabSet={tabSettings[log.tabId]}
+                              char={charSettings[log.charId] || { id: log.charId, name: log.name, color: log.color, visible: true, imageUrl: '' }}
                               charSettings={charSettings}
                               theme={theme}
                               disableOtherColor={disableOtherColor}
@@ -2282,6 +1961,8 @@ export default function App() {
                         );
                       })}
                     </div>
+                    {/* Spacer for visibility (Preview only) */}
+                    <div className="w-full shrink-0" style={{ height: '60px' }} />
                   </div>
                 </div>
 
@@ -2297,8 +1978,8 @@ export default function App() {
                           setColorPickerRect(null);
                         }}
                         onChange={(newColor) => {
-                          const tabName = activeColorPicker.replace('tab-', '');
-                          const next = { ...tabSettings, [tabName]: { ...tabSettings[tabName], color: newColor } };
+                          const tabId = activeColorPicker.replace('tab-', '');
+                          const next = { ...tabSettings, [tabId]: { ...tabSettings[tabId], color: newColor } };
                           setTabSettings(next);
                           saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                         }}
@@ -2343,6 +2024,48 @@ export default function App() {
             )}
           </div>
         </div>
+        {logs.length > 0 && (
+          <div 
+            className="z-50 flex flex-col items-end"
+            style={{ position: 'fixed', bottom: '19px', right: '19px' }}
+            onMouseEnter={() => setIsTocHovered(true)}
+            onMouseLeave={() => setIsTocHovered(false)}
+          >
+            <AnimatePresence>
+              {isTocHovered && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="mb-3 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[350px] w-56 transform origin-bottom-right"
+                >
+                  <div className="px-3 border-b border-white/10 bg-white/5 flex items-center justify-center shrink-0" style={{ height: '26px' }}>
+                    <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-widest text-center m-0 leading-none">섹션 이동</h3>
+                  </div>
+                  <div className="overflow-y-auto custom-scrollbar flex-1 p-2 space-y-1">
+                    {sectionsList.map((sec) => (
+                      <button
+                        key={sec.id}
+                        onClick={() => scrollToSection(sec.targetOriginalIndex, sec.id)}
+                        className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[12px] font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                      >
+                        <span className="truncate pr-2">{sec.name}</span>
+                        <span className="text-[10px] font-mono text-white/30 whitespace-nowrap">{sec.startBlock}~{sec.endBlock}</span>
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div 
+              className="bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-black/80 transition-colors shadow-lg cursor-pointer shrink-0"
+              style={{ width: '50px', height: '50px', borderRadius: '50%' }}
+            >
+              <List className="w-6 h-6" />
+            </div>
+          </div>
+        )}
       </main>
       </div>
 
@@ -2373,218 +2096,3 @@ export default function App() {
     </div>
   );
 }
-
-// Helper Components
-const CharacterNameWithTooltip = ({ name }: { name: string }) => {
-  const [isTruncated, setIsTruncated] = useState(false);
-  const spanRef = useRef<HTMLSpanElement>(null);
-
-  const checkTruncation = () => {
-    if (spanRef.current) {
-      setIsTruncated(spanRef.current.scrollWidth > spanRef.current.clientWidth);
-    }
-  };
-
-  return (
-    <div className="flex-1 min-w-0 relative group/tooltip">
-      <span 
-        ref={spanRef}
-        onMouseEnter={checkTruncation}
-        className="text-[10px] font-bold truncate block text-white cursor-default"
-      >
-        {name}
-      </span>
-      {isTruncated && (
-        <div className="absolute left-0 bottom-full mb-1 px-2 py-1 bg-stone-800 text-white text-[10px] rounded whitespace-nowrap opacity-0 group-hover/tooltip:opacity-100 transition-all duration-200 pointer-events-none z-[100] shadow-xl border border-white/10">
-          {name}
-        </div>
-      )}
-    </div>
-  );
-};
-
-interface ColorPickerPopupProps {
-  color: string;
-  extractedColors: string[];
-  triggerRect: DOMRect;
-  onChange: (newColor: string) => void;
-  onClose: () => void;
-}
-
-const DEFAULT_COLORS = [
-  '#212121', '#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
-  '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b',
-  '#ffc107', '#ff9800', '#ff5722', '#795548', '#607d8b', '#9e9e9e', '#e0e0e0'
-];
-
-const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose, onChange }: ColorPickerPopupProps) => {
-  const [mode, setMode] = useState<'hex' | 'rgb'>('hex');
-  const [isEditing, setIsEditing] = useState(false);
-  const [selectedColor, setSelectedColor] = useState(color);
-  const [tempColorInput, setTempColorInput] = useState(color);
-  const [position, setPosition] = useState({ top: -9999, left: -9999 });
-  const [isPositioned, setIsPositioned] = useState(false);
-  const popupRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    if (popupRef.current && triggerRect) {
-      const popupRect = popupRef.current.getBoundingClientRect();
-      const popupWidth = popupRect.width;
-      const popupHeight = popupRect.height;
-      
-      let top = triggerRect.bottom + 8;
-      let left = triggerRect.left;
-
-      // Check right edge
-      if (left + popupWidth > window.innerWidth) {
-        left = triggerRect.right - popupWidth;
-      }
-      
-      // Check left edge
-      if (left < 0) {
-        left = 8;
-      }
-
-      // Check bottom edge
-      if (top + popupHeight > window.innerHeight) {
-        top = triggerRect.top - popupHeight - 8;
-      }
-      
-      // Check top edge
-      if (top < 0) {
-        top = 8;
-      }
-
-      setPosition({ top, left });
-      
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setIsPositioned(true);
-        });
-      });
-    }
-  }, [triggerRect]);
-
-  const rgb = hexToRgbValues(selectedColor);
-  const normalizedDefaultColors = DEFAULT_COLORS.map(c => c.toLowerCase());
-  const usedColors = extractedColors.filter(c => !normalizedDefaultColors.includes(c.toLowerCase()));
-
-  return createPortal(
-    <div className="fixed inset-0 z-[100]">
-      <div className="absolute inset-0" onClick={onClose} />
-      <div 
-        ref={popupRef}
-        className={cn(
-          "absolute p-4 bg-[#222] rounded-2xl shadow-2xl border border-white/10 w-[240px] space-y-4",
-          isPositioned ? "animate-in fade-in zoom-in-95 duration-200" : "invisible opacity-0"
-        )}
-        style={{ 
-          top: position.top, 
-          left: position.left,
-          transition: isPositioned ? undefined : 'none'
-        }}
-      >
-        <div className="h-32 overflow-hidden rounded-lg">
-          {mode === 'hex' ? (
-            <HexColorPicker color={selectedColor} onChange={setSelectedColor} className="!w-full !h-full" />
-          ) : (
-            <RgbColorPicker color={rgb} onChange={(c) => setSelectedColor(rgbToHexValues(c))} className="!w-full !h-full" />
-          )}
-        </div>
-        
-        <div className="flex items-center gap-2 bg-black/40 p-2 rounded-xl border border-white/5">
-          <div className="w-8 h-8 rounded-lg shadow-inner border border-white/10 shrink-0" style={{ backgroundColor: selectedColor }} />
-          <div className="flex-1 min-w-0">
-            <input 
-              type="text"
-              value={isEditing ? tempColorInput : (mode === 'hex' ? selectedColor.toUpperCase() : `${rgb.r},${rgb.g},${rgb.b}`)}
-              onFocus={() => {
-                setIsEditing(true);
-                setTempColorInput(mode === 'hex' ? selectedColor.toUpperCase() : `${rgb.r},${rgb.g},${rgb.b}`);
-              }}
-              onBlur={() => {
-                setIsEditing(false);
-                if (mode === 'hex') {
-                  if (/^#[0-9A-F]{6}$/i.test(tempColorInput)) {
-                    setSelectedColor(tempColorInput);
-                  }
-                } else {
-                  const parts = tempColorInput.split(',').map(p => parseInt(p.trim()));
-                  if (parts.length === 3 && parts.every(p => !isNaN(p) && p >= 0 && p <= 255)) {
-                    setSelectedColor(rgbToHexValues({ r: parts[0], g: parts[1], b: parts[2] }));
-                  }
-                }
-              }}
-              onChange={(e) => setTempColorInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.currentTarget.blur();
-                }
-              }}
-              className="w-full bg-transparent text-xs font-mono font-bold text-white outline-none cursor-text"
-            />
-          </div>
-          <button 
-            onClick={() => setMode(mode === 'hex' ? 'rgb' : 'hex')}
-            className="p-1.5 bg-white/5 hover:bg-white/10 rounded-md text-pink-400 transition-colors"
-            title={mode === 'hex' ? 'RGB 모드로 전환' : 'HEX 모드로 전환'}
-          >
-            <ChevronsUpDown className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="pt-3 border-t border-white/5">
-          <div className="grid grid-cols-7 gap-1">
-            {DEFAULT_COLORS.map(c => (
-              <button
-                key={c}
-                onClick={() => setSelectedColor(c)}
-                className="w-6 h-6 rounded-md border border-white/10 hover:scale-110 transition-transform"
-                style={{ backgroundColor: c }}
-                title={c}
-              />
-            ))}
-          </div>
-        </div>
-
-        {usedColors.length > 0 && (
-          <div className="pt-3 border-t border-white/5">
-            <div className="grid grid-cols-7 gap-1 max-h-24 overflow-y-auto pr-1 custom-scrollbar">
-              {usedColors.map(c => (
-                <button
-                  key={c}
-                  onClick={() => setSelectedColor(c)}
-                  className="w-6 h-6 rounded-md border border-white/10 hover:scale-110 transition-transform"
-                  style={{ backgroundColor: c }}
-                  title={c}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        <button 
-          onClick={() => {
-            onChange(selectedColor);
-            onClose();
-          }}
-          className="w-full py-2.5 bg-[#e6005c] text-white rounded-xl text-xs font-bold hover:bg-[#ff0066] transition-all active:scale-95"
-        >
-          확인
-        </button>
-      </div>
-    </div>,
-    document.body
-  );
-};
-
-const hexToRgbValues = (hex: string) => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return { r, g, b };
-};
-
-const rgbToHexValues = ({ r, g, b }: { r: number; g: number; b: number }) => {
-  return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-};

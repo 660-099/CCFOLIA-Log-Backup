@@ -21,6 +21,11 @@ export const parseLogFile = async (file: File) => {
   const newTabOrder: string[] = [];
   const colorsFound = new Set<string>();
 
+  let tabCounter = 0;
+  let charCounter = 0;
+  const fallbackTabIds = new Map<string, string>();
+  const fallbackCharIds = new Map<string, string>();
+
   pTags.forEach((p, index) => {
     const spans = Array.from(p.querySelectorAll('span'));
     if (spans.length < 2) return;
@@ -47,30 +52,49 @@ export const parseLogFile = async (file: File) => {
 
     const isCommand = content.includes('|') || content.includes('＞') || content.includes('→') || content.includes('choice[');
 
+    // Identity Extraction
+    let tabId = p.getAttribute('data-tab-id');
+    if (!tabId) {
+      if (tab && !fallbackTabIds.has(tab)) {
+        fallbackTabIds.set(tab, `tab_${++tabCounter}`);
+      }
+      tabId = tab ? fallbackTabIds.get(tab)! : '';
+    }
+
+    let charId = p.getAttribute('data-char-id');
+    if (!charId) {
+      if (!fallbackCharIds.has(name)) {
+        fallbackCharIds.set(name, `char_${++charCounter}`);
+      }
+      charId = fallbackCharIds.get(name)!;
+    }
+
     newLogs.push({
       id: `log-${index}`,
       color,
+      tabId,
       tab,
+      charId,
       name,
       content,
       isCommand
     });
 
-    if (!newChars[name]) {
-      newChars[name] = { name, color, imageUrl: '', visible: true };
-      newCharOrder.push(name);
+    if (!newChars[charId]) {
+      newChars[charId] = { id: charId, name, color, imageUrl: '', visible: true };
+      newCharOrder.push(charId);
     } else {
-      newChars[name].color = color;
+      newChars[charId].color = color; // keep last color, or maybe we shouldn't overwrite?
     }
 
-    if (tab && !newTabs[tab]) {
+    if (tabId && !newTabs[tabId]) {
       let format: TabFormat = 'main';
       const lowerTab = tab.toLowerCase();
       if (lowerTab.includes('other') || lowerTab.includes('잡담')) format = 'other';
       if (lowerTab.includes('info') || lowerTab.includes('정보')) format = 'info';
       if (lowerTab.includes('secret') || lowerTab.includes('비밀')) format = 'secret';
-      newTabs[tab] = { name: tab, format, visible: true, color: '#ffd400' };
-      newTabOrder.push(tab);
+      newTabs[tabId] = { id: tabId, name: tab, format, visible: true, color: '#ffd400' };
+      newTabOrder.push(tabId);
     }
   });
 
@@ -83,11 +107,13 @@ export const parseLogFile = async (file: File) => {
   if (firstNonEmptyIndex === -1) firstNonEmptyIndex = 0;
   const trimmedLogs = newLogs.slice(firstNonEmptyIndex);
 
-  if (newChars['system']) {
-    const hasNonCommandSystem = trimmedLogs.some(log => log.name === 'system' && !log.isCommand);
+  // Check for 'system' char removal by looking for any character named 'system' that lacks non-commands
+  const systemCharIds = newCharOrder.filter(id => newChars[id]?.name.toLowerCase() === 'system');
+  for (const sysId of systemCharIds) {
+    const hasNonCommandSystem = trimmedLogs.some(log => log.charId === sysId && !log.isCommand);
     if (!hasNonCommandSystem) {
-      delete newChars['system'];
-      const idx = newCharOrder.indexOf('system');
+      delete newChars[sysId];
+      const idx = newCharOrder.indexOf(sysId);
       if (idx !== -1) newCharOrder.splice(idx, 1);
     }
   }

@@ -29,3 +29,36 @@ export const linkify = (text: string) => {
     `<div style="margin-bottom: ${i === arr.length - 1 ? '0' : '0.8em'};">${line || '&nbsp;'}</div>`
   ).join('');
 };
+
+export const hexToRgbValues = (hex: string) => {
+  if (!hex) return { r: 0, g: 0, b: 0 };
+  const str = hex.replace('#', '');
+  const r = parseInt(str.length === 3 ? str.slice(0, 1).repeat(2) : str.slice(0, 2), 16) || 0;
+  const g = parseInt(str.length === 3 ? str.slice(1, 2).repeat(2) : str.slice(2, 4), 16) || 0;
+  const b = parseInt(str.length === 3 ? str.slice(2, 3).repeat(2) : str.slice(4, 6), 16) || 0;
+  return { r, g, b };
+};
+
+export const rgbToHexValues = ({ r, g, b }: { r: number; g: number; b: number }) => {
+  return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+};
+
+export const hexToHsl = (hex: string) => {
+  let r = parseInt(hex.slice(1, 3), 16) / 255;
+  let g = parseInt(hex.slice(3, 5), 16) / 255;
+  let b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s, l = (max + min) / 2;
+  if (max === min) h = s = 0;
+  else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+};

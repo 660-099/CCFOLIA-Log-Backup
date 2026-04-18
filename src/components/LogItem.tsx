@@ -356,7 +356,7 @@ export const LogItem = React.memo(({
       )}
       
       {isSplit && (
-        <div className="mt-1 mb-1 px-4 font-sans relative">
+        <div id={`section-${stableId}`} className="mt-1 mb-1 px-4 font-sans relative">
           <div className="flex items-end justify-between max-w-full">
             <div className="bg-[#e6005c] rounded-t-lg px-4 py-1 flex items-center shadow-lg max-w-sm">
               <SectionNameEditor 
