@@ -81,11 +81,13 @@ export default function App() {
   const [tabOrder, setTabOrder] = useState<string[]>([]);
   const [extractedColors, setExtractedColors] = useState<string[]>([]);
   const [tabSettings, setTabSettings] = useState<Record<string, TabSetting>>({});
-  const [cssFormat, setCssFormat] = useLocalStorage<'inline' | 'internal'>('ccfolia_cssFormat', 'internal');
-  const [fontSize, setFontSize] = useLocalStorage<number>('ccfolia_fontSize', 14);
-  const [fontFamily, setFontFamily] = useLocalStorage<string>('ccfolia_fontFamily', 'Noto Sans KR');
-  const [theme, setTheme] = useLocalStorage<'dark' | 'light'>('ccfolia_theme', 'dark');
-  const [disableOtherColor, setDisableOtherColor] = useLocalStorage<boolean>('ccfolia_disableOtherColor', true);
+  const [rememberSettings, setRememberSettings] = useLocalStorage<boolean>('ccfolia_rememberSettings', true);
+  
+  const [cssFormat, setCssFormat] = useLocalStorage<'inline' | 'internal'>('ccfolia_cssFormat', 'internal', undefined, undefined, rememberSettings);
+  const [fontSize, setFontSize] = useLocalStorage<number>('ccfolia_fontSize', 14, undefined, undefined, rememberSettings);
+  const [fontFamily, setFontFamily] = useLocalStorage<string>('ccfolia_fontFamily', 'Noto Sans KR', undefined, undefined, rememberSettings);
+  const [theme, setTheme] = useLocalStorage<'dark' | 'light'>('ccfolia_theme', 'dark', undefined, undefined, rememberSettings);
+  const [disableOtherColor, setDisableOtherColor] = useLocalStorage<boolean>('ccfolia_disableOtherColor', true, undefined, undefined, rememberSettings);
   const [isEditingFontSize, setIsEditingFontSize] = useState(false);
   const [renamingChar, setRenamingChar] = useState<string | null>(null);
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
@@ -119,24 +121,27 @@ export default function App() {
     'ccfolia_mergeTabs',
     new Set(['main', 'secret', 'other']),
     (val) => { try { return new Set(JSON.parse(val)); } catch { return new Set(['main', 'secret', 'other']); } },
-    (val) => JSON.stringify(Array.from(val))
+    (val) => JSON.stringify(Array.from(val)),
+    rememberSettings
   );
 
   const [showTabNames, setShowTabNames] = useLocalStorage<Set<TabFormat>>(
     'ccfolia_showTabNames',
     new Set(['secret']),
     (val) => { try { return new Set(JSON.parse(val)); } catch { return new Set(['secret']); } },
-    (val) => JSON.stringify(Array.from(val))
+    (val) => JSON.stringify(Array.from(val)),
+    rememberSettings
   );
 
   const [mergeTabStyles, setMergeTabStyles] = useLocalStorage<Set<TabFormat>>(
     'ccfolia_mergeTabStyles',
     new Set(['secret']),
     (val) => { try { return new Set(JSON.parse(val)); } catch { return new Set(['secret']); } },
-    (val) => JSON.stringify(Array.from(val))
+    (val) => JSON.stringify(Array.from(val)),
+    rememberSettings
   );
 
-  const [hideEmptyAvatars, setHideEmptyAvatars] = useLocalStorage<boolean>('ccfolia_hideEmptyAvatars', false);
+  const [hideEmptyAvatars, setHideEmptyAvatars] = useLocalStorage<boolean>('ccfolia_hideEmptyAvatars', false, undefined, undefined, rememberSettings);
   const [narrationCharacter, setNarrationCharacter] = useState<string | null>(null);
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -1535,8 +1540,29 @@ export default function App() {
             </button>
           </div>
 
-          <div className="flex items-center justify-center pt-0.5 opacity-30">
-            <span className="text-[8px] font-bold text-white/40 uppercase tracking-[0.3em]">v1.1.1</span>
+          <div className="flex items-center justify-between pt-3 mt-1 border-t border-white/5">
+            <label className="flex items-center gap-1.5 cursor-pointer group select-none">
+              <button
+                type="button"
+                onClick={() => setRememberSettings(!rememberSettings)}
+                className={cn(
+                  "relative inline-flex h-3.5 w-6 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                  rememberSettings ? "bg-[#e6005c]" : "bg-white/20"
+                )}
+              >
+                <span
+                  className={cn(
+                    "pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                    rememberSettings ? "translate-x-2.5" : "translate-x-0"
+                  )}
+                />
+              </button>
+              <span className={cn(
+                  "text-[9px] font-bold transition-colors",
+                  rememberSettings ? "text-white/80" : "text-white/30 group-hover:text-white/50"
+              )}>설정 기억하기</span>
+            </label>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.1.1</span>
           </div>
         </div>
       </aside>
