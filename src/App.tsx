@@ -59,6 +59,7 @@ import { SectionNameEditor } from './components/SectionNameEditor';
 import { ColorPickerPopup, CharacterNameWithTooltip } from './components/ColorPickerPopup';
 import { generateFinalHtmlStr } from './utils/htmlGenerator';
 import { fonts } from './constants';
+import { useLocalStorage } from './hooks/useLocalStorage';
 
 export default function App() {
   const [isTitleEditing, setIsTitleEditing] = useState(false);
@@ -80,11 +81,11 @@ export default function App() {
   const [tabOrder, setTabOrder] = useState<string[]>([]);
   const [extractedColors, setExtractedColors] = useState<string[]>([]);
   const [tabSettings, setTabSettings] = useState<Record<string, TabSetting>>({});
-  const [cssFormat, setCssFormat] = useState<'inline' | 'internal'>('internal');
-  const [fontSize, setFontSize] = useState<number>(14);
-  const [fontFamily, setFontFamily] = useState<string>('Noto Sans KR');
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [disableOtherColor, setDisableOtherColor] = useState(true);
+  const [cssFormat, setCssFormat] = useLocalStorage<'inline' | 'internal'>('ccfolia_cssFormat', 'internal');
+  const [fontSize, setFontSize] = useLocalStorage<number>('ccfolia_fontSize', 14);
+  const [fontFamily, setFontFamily] = useLocalStorage<string>('ccfolia_fontFamily', 'Noto Sans KR');
+  const [theme, setTheme] = useLocalStorage<'dark' | 'light'>('ccfolia_theme', 'dark');
+  const [disableOtherColor, setDisableOtherColor] = useLocalStorage<boolean>('ccfolia_disableOtherColor', true);
   const [isEditingFontSize, setIsEditingFontSize] = useState(false);
   const [renamingChar, setRenamingChar] = useState<string | null>(null);
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
@@ -113,10 +114,29 @@ export default function App() {
   const [showCopyMenu, setShowCopyMenu] = useState(false);
   const [initialState, setInitialState] = useState<any>(null);
   const [sectionNames, setSectionNames] = useState<Record<string, string>>({});
-  const [mergeTabs, setMergeTabs] = useState<Set<TabFormat>>(new Set(['main', 'secret', 'other']));
-  const [showTabNames, setShowTabNames] = useState<Set<TabFormat>>(new Set(['secret']));
-  const [mergeTabStyles, setMergeTabStyles] = useState<Set<TabFormat>>(new Set(['secret']));
-  const [hideEmptyAvatars, setHideEmptyAvatars] = useState(false);
+  
+  const [mergeTabs, setMergeTabs] = useLocalStorage<Set<TabFormat>>(
+    'ccfolia_mergeTabs',
+    new Set(['main', 'secret', 'other']),
+    (val) => { try { return new Set(JSON.parse(val)); } catch { return new Set(['main', 'secret', 'other']); } },
+    (val) => JSON.stringify(Array.from(val))
+  );
+
+  const [showTabNames, setShowTabNames] = useLocalStorage<Set<TabFormat>>(
+    'ccfolia_showTabNames',
+    new Set(['secret']),
+    (val) => { try { return new Set(JSON.parse(val)); } catch { return new Set(['secret']); } },
+    (val) => JSON.stringify(Array.from(val))
+  );
+
+  const [mergeTabStyles, setMergeTabStyles] = useLocalStorage<Set<TabFormat>>(
+    'ccfolia_mergeTabStyles',
+    new Set(['secret']),
+    (val) => { try { return new Set(JSON.parse(val)); } catch { return new Set(['secret']); } },
+    (val) => JSON.stringify(Array.from(val))
+  );
+
+  const [hideEmptyAvatars, setHideEmptyAvatars] = useLocalStorage<boolean>('ccfolia_hideEmptyAvatars', false);
   const [narrationCharacter, setNarrationCharacter] = useState<string | null>(null);
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
