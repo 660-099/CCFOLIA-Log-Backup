@@ -36,6 +36,7 @@ import {
   FileText,
   ChevronsUpDown,
   Users,
+  User,
   ImageOff,
   AlignLeft,
   AlignCenter,
@@ -60,6 +61,135 @@ import { ColorPickerPopup, CharacterNameWithTooltip } from './components/ColorPi
 import { generateFinalHtmlStr } from './utils/htmlGenerator';
 import { fonts } from './constants';
 import { useLocalStorage } from './hooks/useLocalStorage';
+
+const Section = ({ children, className = '' }: { children: React.ReactNode, className?: string }) => (
+  <div className={cn("space-y-4", className)}>
+    {children}
+  </div>
+);
+
+const SectionTitle = ({ icon: Icon, title, rightElement }: { icon: any, title: React.ReactNode, rightElement?: React.ReactNode }) => (
+  <div className="flex items-center justify-between">
+    <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
+      <Icon className="w-3.5 h-3.5" /> {title}
+    </h2>
+    {rightElement}
+  </div>
+);
+
+const Tooltip = ({ 
+  children, 
+  content, 
+  position = 'top',
+  className
+}: { 
+  children: React.ReactNode; 
+  content: React.ReactNode; 
+  position?: 'top' | 'right' | 'bottom' | 'left';
+  className?: string;
+}) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0, opacity: 0 });
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  const updatePosition = useCallback(() => {
+    if (!triggerRef.current || !tooltipRef.current) return;
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const tooltipRect = tooltipRef.current.getBoundingClientRect();
+
+    let top = 0;
+    let left = 0;
+    const margin = 8;
+
+    let finalPosition = position;
+
+    // Flip logic
+    if (position === 'top' && triggerRect.top - tooltipRect.height - margin < 0) finalPosition = 'bottom';
+    if (position === 'bottom' && triggerRect.bottom + tooltipRect.height + margin > window.innerHeight) finalPosition = 'top';
+    if (position === 'left' && triggerRect.left - tooltipRect.width - margin < 0) finalPosition = 'right';
+    if (position === 'right' && triggerRect.right + tooltipRect.width + margin > window.innerWidth) finalPosition = 'left';
+
+    switch (finalPosition) {
+      case 'top':
+        top = triggerRect.top - tooltipRect.height - margin;
+        left = triggerRect.left + (triggerRect.width / 2) - (tooltipRect.width / 2);
+        break;
+      case 'bottom':
+        top = triggerRect.bottom + margin;
+        left = triggerRect.left + (triggerRect.width / 2) - (tooltipRect.width / 2);
+        break;
+      case 'left':
+        top = triggerRect.top + (triggerRect.height / 2) - (tooltipRect.height / 2);
+        left = triggerRect.left - tooltipRect.width - margin;
+        break;
+      case 'right':
+        top = triggerRect.top + (triggerRect.height / 2) - (tooltipRect.height / 2);
+        left = triggerRect.right + margin;
+        break;
+    }
+
+    if (left < margin) left = margin;
+    else if (left + tooltipRect.width > window.innerWidth - margin) {
+      left = window.innerWidth - tooltipRect.width - margin;
+    }
+    
+    if (top < margin) top = margin;
+    else if (top + tooltipRect.height > window.innerHeight - margin) {
+      top = window.innerHeight - tooltipRect.height - margin;
+    }
+
+    setCoords({ top, left, opacity: 1 });
+  }, [position]);
+
+  useEffect(() => {
+    if (isVisible) {
+      const timer = setTimeout(() => {
+        updatePosition();
+      }, 0);
+      window.addEventListener('scroll', updatePosition, true);
+      window.addEventListener('resize', updatePosition);
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+      };
+    } else {
+      setCoords(prev => ({ ...prev, opacity: 0 }));
+    }
+  }, [isVisible, updatePosition]);
+
+  return (
+    <>
+      <div 
+        ref={triggerRef}
+        onMouseEnter={() => setIsVisible(true)}
+        onFocus={() => setIsVisible(true)}
+        onMouseLeave={() => setIsVisible(false)}
+        onBlur={() => setIsVisible(false)}
+        className="inline-flex cursor-help"
+      >
+        {children}
+      </div>
+      {isVisible && createPortal(
+        <div 
+          ref={tooltipRef}
+          style={{ 
+            top: coords.top, 
+            left: coords.left, 
+            opacity: coords.opacity,
+            transition: 'opacity 0.2s',
+            visibility: coords.opacity === 0 ? 'hidden' : 'visible'
+          }}
+          className={cn("fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-xl p-3 text-[11px] leading-relaxed text-white/60 shadow-2xl pointer-events-none w-56 font-normal text-left", className)}
+        >
+          {content}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+};
 
 export default function App() {
   const [isTitleEditing, setIsTitleEditing] = useState(false);
@@ -96,6 +226,9 @@ export default function App() {
   const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
   const [colorPickerRect, setColorPickerRect] = useState<DOMRect | null>(null);
   const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'settings'>('files');
+  const scrollPositions = useRef<Record<string, number>>({});
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
+
   const [mobileTab, setMobileTab] = useState<'settings' | 'preview'>('settings');
   const [charSortMode, setCharSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
   const [isNarrationDropdownOpen, setIsNarrationDropdownOpen] = useState(false);
@@ -850,6 +983,14 @@ export default function App() {
     a.click();
   };
 
+  const handleTabChange = (newTab: 'files' | 'tabs' | 'chars' | 'settings') => {
+    if (newTab === activeTab) return;
+    if (sidebarScrollRef.current) {
+      scrollPositions.current[activeTab] = sidebarScrollRef.current.scrollTop;
+    }
+    setActiveTab(newTab);
+  };
+
   return (
     <div className="flex flex-col md:flex-row h-[100dvh] bg-[#121212] font-sans text-stone-200 overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
@@ -901,12 +1042,12 @@ export default function App() {
           {[
             { id: 'files', icon: Upload, label: '파일' },
             { id: 'tabs', icon: Settings, label: '탭' },
-            { id: 'chars', icon: ImageIcon, label: '캐릭터' },
+            { id: 'chars', icon: User, label: '캐릭터' },
             { id: 'settings', icon: Palette, label: '디자인' }
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => handleTabChange(tab.id as any)}
               className={`flex-1 py-3 flex flex-col items-center gap-1.5 transition-all relative ${
                 activeTab === tab.id ? 'text-[#e6005c]' : 'text-white/30 hover:text-white/60'
               }`}
@@ -924,8 +1065,22 @@ export default function App() {
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <AnimatePresence mode="wait">
+        <div className="flex-1 overflow-y-auto p-6" ref={sidebarScrollRef}>
+          <AnimatePresence 
+            mode="wait"
+            onExitComplete={() => {
+              if (sidebarScrollRef.current) {
+                // Ensure immediate position restoration happens after unmount, but before remount finishes
+                // using a setTimeout of 0 pushes it to the end of the execution queue 
+                // so the DOM can update and actually accept the new scrollTop
+                setTimeout(() => {
+                  if (sidebarScrollRef.current) {
+                    sidebarScrollRef.current.scrollTop = scrollPositions.current[activeTab] || 0;
+                  }
+                }, 0);
+              }
+            }}
+          >
             {activeTab === 'files' && (
               <motion.div 
                 key="files"
@@ -934,10 +1089,8 @@ export default function App() {
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-6"
               >
-                <div className="space-y-3">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
-                    <MessageSquare className="w-3.5 h-3.5" /> 로그 업로드
-                  </h2>
+                <Section>
+                  <SectionTitle icon={MessageSquare} title="로그 업로드" />
                   <div 
                     onClick={() => fileInputRef.current?.click()}
                     className="w-full h-[50px] px-3 flex items-center justify-between border-2 border-dashed border-white/5 rounded-xl hover:border-[#e6005c] hover:bg-pink-500/5 transition-all group cursor-pointer"
@@ -979,32 +1132,57 @@ export default function App() {
                     )}
                   </div>
                   <input type="file" ref={fileInputRef} onChange={handleLogUpload} accept=".html" className="hidden" />
-                </div>
+                </Section>
 
-                <div className="space-y-3">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
-                    <Palette className="w-3.5 h-3.5" /> 프로젝트 관리
-                  </h2>
+                <Section>
+                  <SectionTitle 
+                    icon={Palette} 
+                    title={
+                      <div className="flex items-center gap-2">
+                        <span>프로젝트 관리</span>
+                        <Tooltip position="right" content={
+                          <>
+                            <p className="mb-2">
+                              섹션 분할, 삽화, 탭, 캐릭터 설정 등 현재의 모든 편집 데이터를 JSON 파일로 내보냅니다. 원본 로그를 업로드한 상태에서 이 파일을 불러오면 이전 작업 상태를 그대로 복원합니다.
+                            </p>
+                            <p className="text-[#e6005c] font-medium">
+                              프로젝트 파일은 편집 정보만 포함하므로, 원본 로그 파일이 없으면 복원되지 않습니다.
+                            </p>
+                          </>
+                        }>
+                          <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
+                        </Tooltip>
+                      </div>
+                    } 
+                  />
                   <div 
-                    onClick={() => styleInputRef.current?.click()}
-                    className="w-full h-[50px] px-3 flex items-center justify-between border-2 border-dashed border-white/5 rounded-xl hover:border-blue-500 hover:bg-blue-500/5 transition-all group cursor-pointer"
+                    onClick={() => {
+                      if (logs.length > 0) styleInputRef.current?.click();
+                    }}
+                    className={cn(
+                      "w-full h-[50px] px-3 flex items-center justify-between border-2 border-dashed rounded-xl transition-all group",
+                      logs.length > 0 
+                        ? "border-white/5 hover:border-blue-500 hover:bg-blue-500/5 cursor-pointer"
+                        : "border-white/5 opacity-50 cursor-not-allowed bg-white/5"
+                    )}
                   >
                     <div className="flex items-center gap-3 overflow-hidden">
                       <div className={cn(
                         "p-1.5 rounded-lg transition-colors shrink-0",
-                        jsonFileName ? "bg-blue-500/20" : "bg-[#242424] group-hover:bg-blue-500/20"
+                        jsonFileName ? "bg-blue-500/20" : (logs.length > 0 ? "bg-[#242424] group-hover:bg-blue-500/20" : "bg-white/5")
                       )}>
                         <FileJson className={cn(
                           "w-3.5 h-3.5 transition-colors",
-                          jsonFileName ? "text-blue-400" : "text-white/20 group-hover:text-blue-400"
+                          jsonFileName ? "text-blue-400" : (logs.length > 0 ? "text-white/20 group-hover:text-blue-400" : "text-white/20")
                         )} />
                       </div>
                       <div className="text-left w-full overflow-hidden">
                         <p className={cn(
                           "text-[11px] font-bold truncate leading-none mt-0.5 transition-colors",
-                          jsonFileName ? "text-white/90" : "text-white/60"
+                          jsonFileName ? "text-white/90" : "text-white/60",
+                          logs.length === 0 && "opacity-50"
                         )}>
-                          {jsonFileName || '프로젝트 파일(.json) 불러오기...'}
+                          {jsonFileName || '프로젝트 파일(.json) 선택'}
                         </p>
                       </div>
                     </div>
@@ -1025,7 +1203,7 @@ export default function App() {
                     )}
                   </div>
                   <input type="file" ref={styleInputRef} onChange={handleProjectUpload} accept=".json" className="hidden" />
-                </div>
+                </Section>
               </motion.div>
             )}
 
@@ -1037,7 +1215,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-6"
               >
-                <div className="space-y-3">
+                <Section>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm">
                       <span className="text-[11px] font-bold text-white/70">잡담 색상을 회색으로 통일</span>
@@ -1135,12 +1313,11 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                </div>
+                </Section>
 
-                <div className="space-y-2">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
-                    <Settings className="w-3.5 h-3.5" /> 탭별 출력 설정
-                  </h2>
+                <Section>
+                  <SectionTitle icon={Settings} title="개별 탭 출력 설정" />
+                  <div className="space-y-2">
                   {tabOrder.length > 0 ? (
                     tabOrder.map(tabId => {
                       const tab = tabSettings[tabId];
@@ -1239,7 +1416,8 @@ export default function App() {
                       <p className="text-sm font-medium">로그를 먼저 업로드하세요</p>
                     </div>
                   )}
-                </div>
+                  </div>
+                </Section>
               </motion.div>
             )}
 
@@ -1249,86 +1427,92 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="space-y-2"
+                className="space-y-6"
               >
-                <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11">
-                  <span className="text-[11px] font-bold text-white/70">이미지 배경 상자 숨김</span>
-                  <Toggle 
-                    enabled={hideEmptyAvatars} 
-                    onChange={(val) => {
-                      setHideEmptyAvatars(val);
-                      saveToHistory({ hideEmptyAvatars: val });
-                    }} 
-                  />
-                </div>
+                <Section>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11">
+                      <span className="text-[11px] font-bold text-white/70">이미지 배경 상자 숨김</span>
+                      <Toggle 
+                        enabled={hideEmptyAvatars} 
+                        onChange={(val) => {
+                          setHideEmptyAvatars(val);
+                          saveToHistory({ hideEmptyAvatars: val });
+                        }} 
+                      />
+                    </div>
 
-                <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm relative h-11" ref={narrationDropdownRef}>
-                  <span className="text-[11px] font-bold text-white/70">나레이션 캐릭터</span>
-                  <div className="relative">
-                    <button
-                      onClick={() => setIsNarrationDropdownOpen(!isNarrationDropdownOpen)}
-                      className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/80 px-2 py-1 outline-none hover:border-white/20 transition-colors"
-                    >
-                      <span className="max-w-[100px] truncate">{narrationCharacter ? charSettings[narrationCharacter]?.name || narrationCharacter : '선택 안 함'}</span>
-                      <ChevronDown className="w-3 h-3 opacity-50" />
-                    </button>
-                    
-                    {isNarrationDropdownOpen && (
-                      <div className="absolute right-0 top-full mt-1 w-40 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
-                        <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-1">
-                          <button
-                            onClick={() => {
-                              setNarrationCharacter(null);
-                              saveToHistory({ narrationCharacter: null });
-                              setIsNarrationDropdownOpen(false);
-                            }}
-                            className={cn(
-                              "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
-                              !narrationCharacter ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
-                            )}
-                          >
-                            선택 안 함
-                          </button>
-                          {Object.keys(charSettings).map(charId => {
-                            const char = charSettings[charId];
-                            if (!char) return null;
-                            return (
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm relative h-11" ref={narrationDropdownRef}>
+                      <span className="text-[11px] font-bold text-white/70">나레이션 캐릭터</span>
+                      <div className="relative">
+                        <button
+                          onClick={() => setIsNarrationDropdownOpen(!isNarrationDropdownOpen)}
+                          className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/80 px-2 py-1 outline-none hover:border-white/20 transition-colors"
+                        >
+                          <span className="max-w-[100px] truncate">{narrationCharacter ? charSettings[narrationCharacter]?.name || narrationCharacter : '선택 안 함'}</span>
+                          <ChevronDown className="w-3 h-3 opacity-50" />
+                        </button>
+                        
+                        {isNarrationDropdownOpen && (
+                          <div className="absolute right-0 top-full mt-1 w-40 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                            <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-1">
                               <button
-                                key={charId}
                                 onClick={() => {
-                                  setNarrationCharacter(charId);
-                                  saveToHistory({ narrationCharacter: charId });
+                                  setNarrationCharacter(null);
+                                  saveToHistory({ narrationCharacter: null });
                                   setIsNarrationDropdownOpen(false);
                                 }}
                                 className={cn(
-                                  "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
-                                  narrationCharacter === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
+                                  "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
+                                  !narrationCharacter ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
                                 )}
                               >
-                                {char.name}
+                                선택 안 함
                               </button>
-                            );
-                          })}
-                        </div>
+                              {Object.keys(charSettings).map(charId => {
+                                const char = charSettings[charId];
+                                if (!char) return null;
+                                return (
+                                  <button
+                                    key={charId}
+                                    onClick={() => {
+                                      setNarrationCharacter(charId);
+                                      saveToHistory({ narrationCharacter: charId });
+                                      setIsNarrationDropdownOpen(false);
+                                    }}
+                                    className={cn(
+                                      "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
+                                      narrationCharacter === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
+                                    )}
+                                  >
+                                    {char.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
+                </Section>
 
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
-                    <Users className="w-3.5 h-3.5" /> 캐릭터 설정
-                  </h2>
-                  <button 
-                    onClick={() => setCharSortMode(charSortMode === 'appearance' ? 'alphabetical' : 'appearance')}
-                    className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
-                  >
-                    <ArrowUpDown className="w-3 h-3" />
-                    {charSortMode === 'appearance' ? '등장순' : '가나다순'}
-                  </button>
-                </div>
-                {sortedCharOrder.length > 0 ? (
-                  <div className="space-y-2">
+                <Section>
+                  <SectionTitle 
+                    icon={Users} 
+                    title="캐릭터 설정" 
+                    rightElement={
+                      <button 
+                        onClick={() => setCharSortMode(charSortMode === 'appearance' ? 'alphabetical' : 'appearance')}
+                        className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5 mt-[-4px]"
+                      >
+                        <ArrowUpDown className="w-3 h-3" />
+                        {charSortMode === 'appearance' ? '등장순' : '가나다순'}
+                      </button>
+                    }
+                  />
+                  {sortedCharOrder.length > 0 ? (
+                    <div className="space-y-2">
                     {sortedCharOrder.map(charId => {
                       const char = charSettings[charId];
                       if (!char) return null;
@@ -1431,6 +1615,7 @@ export default function App() {
                     <p className="text-sm font-medium">로그를 먼저 업로드하세요</p>
                   </div>
                 )}
+                </Section>
               </motion.div>
             )}
 
@@ -1440,12 +1625,10 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="space-y-8"
+                className="space-y-6"
               >
-                <div className="space-y-4">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
-                    <Layout className="w-3.5 h-3.5" /> 테마 설정
-                  </h2>
+                <Section>
+                  <SectionTitle icon={Layout} title="테마 설정" />
                   <div className="grid grid-cols-2 gap-2">
                     <button 
                       onClick={() => { setTheme('dark'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme: 'dark', disableOtherColor }); }}
@@ -1468,14 +1651,10 @@ export default function App() {
                       화이트 모드
                     </button>
                   </div>
-                </div>
+                </Section>
 
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
-                      <Type className="w-3.5 h-3.5" /> 폰트 설정
-                    </h2>
-                  </div>
+                <Section>
+                  <SectionTitle icon={Type} title="폰트 설정" />
                   <select 
                     value={fontFamily}
                     onChange={(e) => { setFontFamily(e.target.value); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily: e.target.value, theme, disableOtherColor }); }}
@@ -1485,64 +1664,59 @@ export default function App() {
                       <option key={f.name} value={f.name} className="bg-[#1a1a1a]">{f.name}</option>
                     ))}
                   </select>
-                </div>
+                </Section>
 
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
-                        <Type className="w-3.5 h-3.5" /> 전체 크기 조절
-                      </h2>
-                      <div className="group relative">
-                        <HelpCircle className="w-3 h-3 text-white/20 cursor-help" />
-                        <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-stone-800 text-white text-[9px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                          폰트 크기에 맞춰 인장 및 간격이 자동 조절됩니다.
-                        </div>
-                      </div>
-                    </div>
-                    {isEditingFontSize ? (
-                      <input 
-                        type="number"
-                        value={fontSize}
-                        autoFocus
-                        onBlur={() => setIsEditingFontSize(false)}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value) || 12;
-                          setFontSize(val);
-                          saveToHistory({ charSettings, tabSettings, cssFormat, fontSize: val, fontFamily, theme, disableOtherColor });
-                        }}
-                        className="w-12 text-right text-xs font-bold text-[#e6005c] bg-pink-500/10 border border-pink-500/20 rounded px-1 outline-none"
-                      />
-                    ) : (
-                      <span 
-                        onClick={() => setIsEditingFontSize(true)}
-                        className="text-xs font-bold text-[#e6005c] cursor-pointer hover:underline"
-                      >
-                        {fontSize}px
-                      </span>
-                    )}
-                  </div>
-                  <input 
-                    type="range" 
-                    min="10" 
-                    max="30" 
-                    step="1"
-                    value={fontSize} 
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setFontSize(val);
-                      saveToHistory({ charSettings, tabSettings, cssFormat, fontSize: val, fontFamily, theme, disableOtherColor });
-                    }}
-                    className="w-full h-1.5 bg-white/5 rounded-lg appearance-none cursor-pointer accent-[#e6005c]"
+                <Section>
+                  <SectionTitle 
+                    icon={Type} 
+                    title="전체 크기 조절"
+                    rightElement={
+                      isEditingFontSize ? (
+                        <input 
+                          type="number"
+                          value={fontSize}
+                          autoFocus
+                          onBlur={() => setIsEditingFontSize(false)}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 12;
+                            setFontSize(val);
+                            saveToHistory({ charSettings, tabSettings, cssFormat, fontSize: val, fontFamily, theme, disableOtherColor });
+                          }}
+                          className="w-12 text-right text-xs font-bold text-[#e6005c] bg-pink-500/10 border border-pink-500/20 rounded px-1 outline-none"
+                        />
+                      ) : (
+                        <span 
+                          onClick={() => setIsEditingFontSize(true)}
+                          className="text-xs font-bold text-[#e6005c] cursor-pointer hover:underline"
+                        >
+                          {fontSize}px
+                        </span>
+                      )
+                    }
                   />
-                </div>
+                  <div className="pt-1 pb-4">
+                    <input 
+                      type="range" 
+                      min="10" 
+                      max="30" 
+                      step="1"
+                      value={fontSize} 
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setFontSize(val);
+                        saveToHistory({ charSettings, tabSettings, cssFormat, fontSize: val, fontFamily, theme, disableOtherColor });
+                      }}
+                      className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#e6005c]"
+                    />
+                  </div>
+                </Section>
 
-                <div className="space-y-4">
-                  <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
-                    <Palette className="w-3.5 h-3.5" /> CSS 출력 형식
-                  </h2>
+                <Section>
+                  <SectionTitle icon={Palette} title="CSS 출력 형식" />
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="group relative">
+                    <Tooltip position="top" content={
+                      <>HTML 상단에 스타일 시트를 포함합니다. <span className="text-[#e6005c] font-medium">(권장)</span></>
+                    }>
                       <button 
                         onClick={() => { setCssFormat('internal'); saveToHistory({ charSettings, tabSettings, cssFormat: 'internal', fontSize, fontFamily, theme, disableOtherColor }); }}
                         className={`w-full py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
@@ -1553,11 +1727,10 @@ export default function App() {
                       >
                         내부 스타일
                       </button>
-                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 bg-stone-800 text-white text-[9px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                        HTML 상단에 스타일 시트를 포함합니다. (권장)
-                      </div>
-                    </div>
-                    <div className="group relative">
+                    </Tooltip>
+                    <Tooltip position="top" content={
+                      <>각 태그에 직접 스타일을 부여합니다.<br />(티스토리 기본 스킨 사용 시)</>
+                    }>
                       <button 
                         onClick={() => { setCssFormat('inline'); saveToHistory({ charSettings, tabSettings, cssFormat: 'inline', fontSize, fontFamily, theme, disableOtherColor }); }}
                         className={`w-full py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
@@ -1568,12 +1741,9 @@ export default function App() {
                       >
                         인라인 스타일
                       </button>
-                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 bg-stone-800 text-white text-[9px] rounded whitespace-nowrap text-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-                        각 태그에 직접 스타일을 부여합니다.<br />(티스토리 기본 스킨 사용 시)
-                      </div>
-                    </div>
+                    </Tooltip>
                   </div>
-                </div>
+                </Section>
               </motion.div>
             )}
           </AnimatePresence>
@@ -1610,7 +1780,7 @@ export default function App() {
             </button>
           </div>
 
-          <div className="flex items-center justify-between pt-3 mt-1 border-t border-white/5 relative z-50">
+          <div className="flex items-center justify-between pt-2 mt-2 border-t border-white/5 relative z-50">
             <div className="flex items-center gap-1.5">
               <label className="flex items-center gap-1.5 cursor-pointer select-none">
                 <button
@@ -1633,20 +1803,18 @@ export default function App() {
                     rememberSettings ? "text-white/80" : "text-white/30"
                 )}>설정 기억하기</span>
               </label>
-              <div className="relative group/help flex items-center">
-                <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
-                <div className="absolute left-0 bottom-full mb-3 w-56 opacity-0 invisible group-hover/help:opacity-100 group-hover/help:visible transition-all bg-[#1a1a1a] border border-white/10 rounded-xl p-3 text-[11px] leading-relaxed text-white/60 shadow-2xl pointer-events-none z-[100]">
+              <Tooltip position="top" content={
+                <>
                   <p className="mb-2">
-                    변경되는 설정을 브라우저에 자동 저장합니다.
-                  </p>
-                  <p className="mb-2">
-                    모든 데이터는 서버 전송 없이 개인 기기에만 보관됩니다. <span className="text-white/30 text-[9px]">(브라우저 캐시 삭제 시 초기화)</span>
+                    변경되는 설정을 브라우저에 자동 저장합니다. 모든 데이터는 서버 전송 없이 개인 기기에만 보관됩니다. <span className="text-white/30 text-[9px]">(브라우저 캐시 삭제 시 초기화)</span>
                   </p>
                   <p className="text-[#e6005c] font-medium">
                     토글을 끄면 저장된 데이터가 삭제되며, 새로고침 시 기본 설정으로 돌아갑니다.
                   </p>
-                </div>
-              </div>
+                </>
+              }>
+                <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
+              </Tooltip>
             </div>
             <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.1.1</span>
           </div>

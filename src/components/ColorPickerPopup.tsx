@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Edit2, Pencil } from 'lucide-react';
+import { Check, Edit2, Pencil, ChevronsUpDown } from 'lucide-react';
 import { HexColorPicker } from 'react-colorful';
 import { cn, hexToRgbValues, rgbToHexValues, hexToHsl } from '../utils';
 import { ColorPickerPopupProps } from '../types';
@@ -97,7 +97,7 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
       <div 
         ref={popupRef}
         className={cn(
-          "absolute p-4 bg-[#222] rounded-2xl shadow-2xl border border-white/10 w-[240px] space-y-4",
+          "absolute p-3 bg-[#222] rounded-2xl shadow-2xl border border-white/10 w-[208px] space-y-3",
           isPositioned ? "animate-in fade-in zoom-in-95 duration-200" : "invisible opacity-0"
         )}
         style={{ 
@@ -107,206 +107,135 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
         }}
       >
         <div className="overflow-hidden rounded-lg">
-          {mode === 'hex' && (
-            <div className="react-colorful-custom">
-              <HexColorPicker
-                color={selectedColor}
-                onChange={(newColor) => {
-                  setSelectedColor(newColor);
-                  onChange(newColor);
-                }}
-              />
-            </div>
-          )}
-          {mode === 'rgb' && (
-            <div className="h-full bg-black/20 p-4 space-y-3">
-              {(['r', 'g', 'b'] as const).map((channel, i) => (
-                <div key={channel} className="flex items-center gap-3">
-                  <span className="w-4 text-[10px] font-bold text-white/50 uppercase">{channel}</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="255"
-                    value={Object.values(rgb)[i] as number}
-                    onChange={(e) => {
-                      const newRgb = { ...rgb, [channel]: parseInt(e.target.value) };
-                      const hex = '#' + Object.values(newRgb).map(x => (x as number).toString(16).padStart(2, '0')).join('');
-                      setSelectedColor(hex);
-                      onChange(hex);
-                    }}
-                    className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#e6005c]"
-                  />
-                  <span className="w-6 text-right text-[10px] text-white/80 font-mono">{Object.values(rgb)[i]}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {mode === 'hsl' && (
-            <div className="h-full bg-black/20 p-4 space-y-3">
-              {(['h', 's', 'l'] as const).map((channel, i) => {
-                const hsl = hexToHsl(selectedColor);
-                const maxVal = channel === 'h' ? 360 : 100;
-                return (
-                  <div key={channel} className="flex items-center gap-3">
-                    <span className="w-4 text-[10px] font-bold text-white/50 uppercase">{channel}</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max={maxVal}
-                      value={hsl[channel]}
-                      onChange={(e) => {
-                        const newHsl = { ...hsl, [channel]: parseInt(e.target.value) };
-                        // Convert HSL back to Hex
-                        let { h, s, l } = newHsl;
-                        s /= 100;
-                        l /= 100;
-                        const k = (n: number) => (n + h / 30) % 12;
-                        const a = s * Math.min(l, 1 - l);
-                        const f = (n: number) =>
-                          l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-                        const hex = rgbToHexValues({ r: Math.round(255 * f(0)), g: Math.round(255 * f(8)), b: Math.round(255 * f(4)) });
-                        setSelectedColor(hex);
-                        onChange(hex);
-                      }}
-                      className="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#e6005c]"
-                    />
-                    <span className="w-6 text-right text-[10px] text-white/80 font-mono">{hsl[channel]}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            onClick={() => setMode('hex')}
-            className={cn(
-              "flex-1 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
-              mode === 'hex' 
-                ? "bg-[#e6005c] border-[#e6005c] text-white" 
-                : "bg-transparent border-white/10 text-white/40 hover:text-white"
-            )}
-          >
-            HEX
-          </button>
-          <button
-            onClick={() => setMode('rgb')}
-            className={cn(
-              "flex-1 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
-              mode === 'rgb' 
-                ? "bg-[#e6005c] border-[#e6005c] text-white" 
-                : "bg-transparent border-white/10 text-white/40 hover:text-white"
-            )}
-          >
-            RGB
-          </button>
-          <button
-            onClick={() => setMode('hsl')}
-            className={cn(
-              "flex-1 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
-              mode === 'hsl' 
-                ? "bg-[#e6005c] border-[#e6005c] text-white" 
-                : "bg-transparent border-white/10 text-white/40 hover:text-white"
-            )}
-          >
-            HSL
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div 
-            className="w-6 h-6 rounded border border-white/10 shadow-sm shrink-0" 
-            style={{ backgroundColor: selectedColor }} 
-          />
-          {isEditing ? (
-            <div className="flex items-center gap-1 flex-1 min-w-0">
-              <input
-                type="text"
-                value={tempColorInput}
-                onChange={(e) => setTempColorInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    if (/^#[0-9A-Fa-f]{6}$/.test(tempColorInput)) {
-                      setSelectedColor(tempColorInput);
-                      onChange(tempColorInput);
-                      setIsEditing(false);
-                    }
-                  }
-                  if (e.key === 'Escape') {
-                    setIsEditing(false);
-                    setTempColorInput(selectedColor);
-                  }
-                }}
-                className="w-full text-xs font-mono px-2 py-1 bg-black/40 border border-[#e6005c] rounded text-white outline-none"
-                autoFocus
-              />
-              <button 
-                onClick={() => {
-                  if (/^#[0-9A-Fa-f]{6}$/.test(tempColorInput)) {
-                    setSelectedColor(tempColorInput);
-                    onChange(tempColorInput);
-                    setIsEditing(false);
-                  }
-                }}
-                className="p-1 bg-[#e6005c] text-white rounded shrink-0"
-              >
-                <Check className="w-3 h-3" />
-              </button>
-            </div>
-          ) : (
-            <div 
-              className="flex-1 px-2 py-1 bg-white/5 border border-white/10 rounded cursor-pointer group hover:border-white/20 transition-colors flex items-center justify-between"
-              onClick={() => {
-                setTempColorInput(selectedColor);
-                setIsEditing(true);
+          <div className="react-colorful-custom">
+            <HexColorPicker
+              color={selectedColor}
+              onChange={(newColor) => {
+                setSelectedColor(newColor);
+                onChange(newColor);
               }}
-            >
-              <span className="text-xs font-mono text-white/80">{selectedColor.toUpperCase()}</span>
-              <Edit2 className="w-3 h-3 text-white/20 group-hover:text-white/40" />
-            </div>
-          )}
+            />
+          </div>
         </div>
 
-        {(usedColors.length > 0 || extractedColors.length > 0) && (
-          <div className="space-y-3 pt-3 border-t border-white/10">
-            {usedColors.length > 0 && (
-              <div className="space-y-1.5">
-                <span className="text-[9px] font-bold text-white/40 uppercase tracking-wider block">사용중인 색상</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {usedColors.map(c => (
-                    <button
-                      key={`used-${c}`}
-                      onClick={() => {
-                        setSelectedColor(c);
-                        onChange(c);
-                      }}
-                      className="w-5 h-5 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-all shadow-sm"
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
-                </div>
+        {/* Edit Box */}
+        <div className="flex items-center justify-between bg-[#1a1a1a] p-1.5 rounded-xl border border-white/5 shadow-inner">
+          <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+            <div 
+              className="w-6 h-6 rounded-md border border-white/10 shadow-sm shrink-0" 
+              style={{ backgroundColor: selectedColor }} 
+            />
+            {isEditing ? (
+              <div className="flex items-center flex-1 min-w-0">
+                <input
+                  type="text"
+                  value={tempColorInput}
+                  onChange={(e) => setTempColorInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      let col = tempColorInput.trim();
+                      if (mode === 'hex') {
+                         if (!col.startsWith('#')) col = '#' + col;
+                         if (/^#[0-9A-Fa-f]{6}$/.test(col)) {
+                           setSelectedColor(col);
+                           onChange(col);
+                           setIsEditing(false);
+                         }
+                      } else {
+                         // parse rgb
+                         const parts = col.split(',').map(x => parseInt(x.trim()));
+                         if (parts.length === 3 && parts.every(x => !isNaN(x) && x >= 0 && x <= 255)) {
+                           const hex = '#' + parts.map(x => x.toString(16).padStart(2, '0')).join('');
+                           setSelectedColor(hex);
+                           onChange(hex);
+                           setIsEditing(false);
+                         }
+                      }
+                    }
+                    if (e.key === 'Escape') {
+                      setIsEditing(false);
+                      setTempColorInput(mode === 'hex' ? selectedColor.toUpperCase() : `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+                    }
+                  }}
+                  className="w-full text-[10px] font-bold px-1.5 py-1 bg-black/40 border border-[#e6005c] rounded-md text-white outline-none"
+                  autoFocus
+                  onBlur={() => setIsEditing(false)}
+                />
               </div>
+            ) : (
+              <span 
+                className="text-[10px] font-bold text-white cursor-pointer hover:text-white/80 transition-colors truncate"
+                onClick={() => {
+                  setTempColorInput(mode === 'hex' ? selectedColor.toUpperCase() : `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+                  setIsEditing(true);
+                }}
+              >
+                {mode === 'hex' ? selectedColor.toUpperCase() : `${rgb.r}, ${rgb.g}, ${rgb.b}`}
+              </span>
             )}
-            
-            <div className="space-y-1.5">
-              <span className="text-[9px] font-bold text-white/40 uppercase tracking-wider block">기본 색상</span>
-              <div className="flex flex-wrap gap-1.5">
-                {DEFAULT_COLORS.map(c => (
+          </div>
+          <button 
+            onClick={() => setMode(mode === 'hex' ? 'rgb' : 'hex')}
+            className="w-6 h-6 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-md text-white/40 hover:text-white transition-colors shrink-0 group relative"
+          >
+            <ChevronsUpDown className="w-3.5 h-3.5" />
+            <div className="absolute right-0 bottom-full mb-2 whitespace-nowrap bg-white text-black text-[10px] px-2 py-1 rounded shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all pointer-events-none">
+              {mode === 'hex' ? 'RGB 모드로 전환' : 'HEX 모드로 전환'}
+            </div>
+          </button>
+        </div>
+
+        {/* Colors Area */}
+        <div className="pt-3 border-t border-white/10 space-y-4">
+          {usedColors.length > 0 && (
+            <div className="space-y-2.5">
+              <span className="text-[9px] font-bold text-white/50">사용중인 색상</span>
+              <div className="grid grid-cols-7 gap-1.5">
+                {usedColors.map(c => (
                   <button
-                    key={`default-${c}`}
+                    key={`used-${c}`}
                     onClick={() => {
                       setSelectedColor(c);
                       onChange(c);
                     }}
-                    className="w-5 h-5 rounded-full border border-white/10 hover:scale-110 active:scale-95 transition-all shadow-sm"
+                    className={cn(
+                      "aspect-square rounded-full border transition-all shadow-sm",
+                      selectedColor.toLowerCase() === c.toLowerCase() ? "border-white scale-110 z-10" : "border-white/10 hover:scale-110 active:scale-95"
+                    )}
                     style={{ backgroundColor: c }}
                   />
                 ))}
               </div>
             </div>
+          )}
+
+          <div className="space-y-2.5">
+            <span className="text-[9px] font-bold text-white/50">기본 색상</span>
+            <div className="grid grid-cols-7 gap-1.5">
+              {DEFAULT_COLORS.map(c => (
+                <button
+                  key={`default-${c}`}
+                  onClick={() => {
+                    setSelectedColor(c);
+                    onChange(c);
+                  }}
+                  className={cn(
+                    "aspect-square rounded-full border transition-all shadow-sm",
+                    selectedColor.toLowerCase() === c.toLowerCase() ? "border-white scale-110 z-10" : "border-white/10 hover:scale-110 active:scale-95"
+                  )}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
           </div>
-        )}
+        </div>
+
+        <button 
+          onClick={onClose}
+          className="w-full py-1.5 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-xl text-[11px] font-bold transition-all shadow-lg shadow-pink-500/20 active:scale-95"
+        >
+          확인
+        </button>
       </div>
     </div>,
     document.body
