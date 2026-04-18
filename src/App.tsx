@@ -393,6 +393,8 @@ export default function App() {
     setHistoryIndex(0);
   };
 
+  const [jsonFileName, setJsonFileName] = useState('');
+
   // Handle Style Upload
   const handleStyleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -405,6 +407,7 @@ export default function App() {
       if (json.cssFormat) setCssFormat(json.cssFormat);
       if (json.fontSize) setFontSize(json.fontSize);
       if (json.disableOtherColor !== undefined) setDisableOtherColor(json.disableOtherColor);
+      setJsonFileName(file.name);
     } catch (err) {
       alert('스타일 파일을 읽는 중 오류가 발생했습니다.');
     }
@@ -864,17 +867,46 @@ export default function App() {
                   <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                     <MessageSquare className="w-3.5 h-3.5" /> 로그 업로드
                   </h2>
-                  <button 
+                  <div 
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full flex items-center gap-3 p-3 border-2 border-dashed border-white/5 rounded-xl hover:border-[#e6005c] hover:bg-pink-500/5 transition-all group"
+                    className="w-full h-[50px] px-3 flex items-center justify-between border-2 border-dashed border-white/5 rounded-xl hover:border-[#e6005c] hover:bg-pink-500/5 transition-all group cursor-pointer"
                   >
-                    <div className="p-1.5 bg-[#242424] rounded-lg group-hover:bg-[#e6005c]/20 transition-colors">
-                      <Upload className="w-3.5 h-3.5 text-white/20 group-hover:text-[#e6005c]" />
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className={cn(
+                        "p-1.5 rounded-lg transition-colors shrink-0",
+                        originalFileName ? "bg-[#e6005c]/20" : "bg-[#242424] group-hover:bg-[#e6005c]/20"
+                      )}>
+                        <Upload className={cn(
+                          "w-3.5 h-3.5 transition-colors",
+                          originalFileName ? "text-[#e6005c]" : "text-white/20 group-hover:text-[#e6005c]"
+                        )} />
+                      </div>
+                      <div className="text-left w-full overflow-hidden">
+                        <p className={cn(
+                          "text-[11px] font-bold truncate leading-none mt-0.5 transition-colors",
+                          originalFileName ? "text-white/90" : "text-white/60"
+                        )}>
+                          {originalFileName ? `${originalFileName}.html` : 'HTML 로그 파일 선택'}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <p className="text-[11px] font-bold text-white/60">HTML 로그 파일 선택</p>
-                    </div>
-                  </button>
+                    {originalFileName ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLogs([]);
+                          setOriginalFileName('');
+                          if (fileInputRef.current) fileInputRef.current.value = '';
+                        }}
+                        className="p-1 hover:bg-white/10 rounded-lg transition-colors shrink-0 flex items-center justify-center w-6 h-6"
+                        title="업로드 취소"
+                      >
+                        <X className="w-3.5 h-3.5 text-white/60 hover:text-white" />
+                      </button>
+                    ) : (
+                      <div className="w-6 h-6 shrink-0" />
+                    )}
+                  </div>
                   <input type="file" ref={fileInputRef} onChange={handleLogUpload} accept=".html" className="hidden" />
                 </div>
 
@@ -882,17 +914,45 @@ export default function App() {
                   <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2 mb-4">
                     <Palette className="w-3.5 h-3.5" /> 스타일 불러오기
                   </h2>
-                  <button 
+                  <div 
                     onClick={() => styleInputRef.current?.click()}
-                    className="w-full flex items-center gap-3 p-3 border-2 border-dashed border-white/5 rounded-xl hover:border-blue-500 hover:bg-blue-500/5 transition-all group"
+                    className="w-full h-[50px] px-3 flex items-center justify-between border-2 border-dashed border-white/5 rounded-xl hover:border-blue-500 hover:bg-blue-500/5 transition-all group cursor-pointer"
                   >
-                    <div className="p-1.5 bg-[#242424] rounded-lg group-hover:bg-blue-500/20 transition-colors">
-                      <FileJson className="w-3.5 h-3.5 text-white/20 group-hover:text-blue-400" />
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className={cn(
+                        "p-1.5 rounded-lg transition-colors shrink-0",
+                        jsonFileName ? "bg-blue-500/20" : "bg-[#242424] group-hover:bg-blue-500/20"
+                      )}>
+                        <FileJson className={cn(
+                          "w-3.5 h-3.5 transition-colors",
+                          jsonFileName ? "text-blue-400" : "text-white/20 group-hover:text-blue-400"
+                        )} />
+                      </div>
+                      <div className="text-left w-full overflow-hidden">
+                        <p className={cn(
+                          "text-[11px] font-bold truncate leading-none mt-0.5 transition-colors",
+                          jsonFileName ? "text-white/90" : "text-white/60"
+                        )}>
+                          {jsonFileName || 'JSON 설정 파일 선택'}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <p className="text-[11px] font-bold text-white/60">JSON 설정 파일 선택</p>
-                    </div>
-                  </button>
+                    {jsonFileName ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setJsonFileName('');
+                          if (styleInputRef.current) styleInputRef.current.value = '';
+                        }}
+                        className="p-1 hover:bg-white/10 rounded-lg transition-colors shrink-0 flex items-center justify-center w-6 h-6"
+                        title="업로드 취소"
+                      >
+                        <X className="w-3.5 h-3.5 text-white/60 hover:text-white" />
+                      </button>
+                    ) : (
+                      <div className="w-6 h-6 shrink-0" />
+                    )}
+                  </div>
                   <input type="file" ref={styleInputRef} onChange={handleStyleUpload} accept=".json" className="hidden" />
                 </div>
               </motion.div>
@@ -2042,15 +2102,24 @@ export default function App() {
                 )}
               </div>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-white/20 space-y-6 py-40">
+              <div className="flex-1 flex flex-col items-center justify-center space-y-6 py-40">
                 <div className="relative">
-                  <div className="w-32 h-32 bg-white/5 rounded-full flex items-center justify-center animate-pulse">
-                    <Upload className="w-12 h-12 text-white/10" />
+                  <div className={cn(
+                    "w-32 h-32 rounded-full flex items-center justify-center",
+                    theme === 'dark' ? "bg-white/5" : "bg-stone-900/5"
+                  )}>
+                    <Upload className={cn("w-12 h-12", theme === 'dark' ? "text-white/10" : "text-stone-900/20")} />
                   </div>
                 </div>
                 <div className="text-center space-y-2">
-                  <p className="text-2xl font-bold text-white/40 tracking-tight">로그 파일을 기다리고 있어요</p>
-                  <p className="text-sm font-medium text-white/20">CCFOLIA에서 추출한 HTML 파일을 업로드하여 시작하세요</p>
+                  <p className={cn(
+                    "text-2xl font-bold tracking-tight",
+                    theme === 'dark' ? "text-white/40" : "text-stone-900/40"
+                  )}>로그 파일을 기다리고 있어요</p>
+                  <p className={cn(
+                    "text-sm font-medium",
+                    theme === 'dark' ? "text-white/20" : "text-stone-900/40"
+                  )}>CCFOLIA에서 추출한 HTML 파일을 업로드하여 시작하세요</p>
                 </div>
                 <button 
                   onClick={() => fileInputRef.current?.click()}
