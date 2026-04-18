@@ -1795,7 +1795,6 @@ export default function App() {
                         border-bottom: 1px dotted ${theme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'};
                       }
                       .log-item-wrapper:hover .block-number { opacity: 1; }
-                      .log-item-wrapper:hover .split-trigger { opacity: 1; }
                       .block-number { 
                         position: absolute; 
                         right: 12px; 
@@ -1830,11 +1829,29 @@ export default function App() {
                         bottom: -14px;
                         left: 50%;
                         transform: translateX(-50%);
-                        z-index: 30;
+                        z-index: 50;
                         opacity: 0;
                         transition: opacity 0.2s;
                         display: flex;
                         gap: 8px;
+                        pointer-events: none;
+                      }
+                      .log-item-wrapper:hover .split-trigger,
+                      .split-trigger:hover { 
+                        opacity: 1; 
+                        pointer-events: auto;
+                      }
+                      .split-trigger::before {
+                        content: '';
+                        position: absolute;
+                        top: -6px;
+                        left: -6px;
+                        right: -6px;
+                        bottom: -6px;
+                        z-index: -1;
+                      }
+                      .virtualize-row:hover {
+                        z-index: 50 !important;
                       }
                       .split-line {
                         position: absolute;
@@ -1873,6 +1890,7 @@ export default function App() {
                             key={virtualItem.key}
                             data-index={virtualItem.index}
                             ref={rowVirtualizer.measureElement}
+                            className="virtualize-row"
                             style={{
                               position: 'absolute',
                               top: 0,
