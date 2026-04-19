@@ -233,11 +233,17 @@ export default function App() {
   const [charSortMode, setCharSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
   const [isNarrationDropdownOpen, setIsNarrationDropdownOpen] = useState(false);
   const narrationDropdownRef = useRef<HTMLDivElement>(null);
+  const [isFontDropdownOpen, setIsFontDropdownOpen] = useState(false);
+  const fontDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (narrationDropdownRef.current && !narrationDropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (narrationDropdownRef.current && !narrationDropdownRef.current.contains(target)) {
         setIsNarrationDropdownOpen(false);
+      }
+      if (fontDropdownRef.current && !fontDropdownRef.current.contains(target)) {
+        setIsFontDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -1670,15 +1676,39 @@ export default function App() {
 
                 <Section>
                   <SectionTitle icon={Type} title="폰트 설정" />
-                  <select 
-                    value={fontFamily}
-                    onChange={(e) => { setFontFamily(e.target.value); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily: e.target.value, theme, disableOtherColor }); }}
-                    className="w-full p-3 bg-white/5 border border-white/5 rounded-xl text-xs font-bold outline-none focus:border-[#e6005c] text-white/80 transition-all"
-                  >
-                    {fonts.map(f => (
-                      <option key={f.name} value={f.name} className="bg-[#1a1a1a]">{f.name}</option>
-                    ))}
-                  </select>
+                  <div className="relative" ref={fontDropdownRef}>
+                    <button
+                      onClick={() => setIsFontDropdownOpen(!isFontDropdownOpen)}
+                      className="w-full p-3 bg-white/5 border border-white/5 rounded-xl text-xs font-bold outline-none hover:border-white/20 transition-all flex items-center justify-between text-white/80"
+                    >
+                      <span style={{ fontFamily: fonts.find(f => f.name === fontFamily)?.value }}>{fontFamily}</span>
+                      <ChevronDown className="w-4 h-4 opacity-50" />
+                    </button>
+                    
+                    {isFontDropdownOpen && (
+                      <div className="absolute left-0 right-0 top-full mt-2 w-full bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
+                        <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-1">
+                          {fonts.map(f => (
+                            <button
+                              key={f.name}
+                              onClick={() => {
+                                setFontFamily(f.name);
+                                saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily: f.name, theme, disableOtherColor });
+                                setIsFontDropdownOpen(false);
+                              }}
+                              style={{ fontFamily: f.value }}
+                              className={cn(
+                                "w-full text-left px-3 py-2 text-xs rounded-lg transition-colors",
+                                fontFamily === f.name ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
+                              )}
+                            >
+                              {f.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </Section>
 
                 <Section>
