@@ -10,6 +10,7 @@ export interface LogEntry {
   content: string;
   isCommand: boolean;
   isContinuation?: boolean;
+  isHiddenContent?: boolean;
 }
 
 export interface CharSetting {

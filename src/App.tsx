@@ -548,9 +548,11 @@ export default function App() {
         confirmMessage += "현재 작업 중인 데이터를 덮어씌우시겠습니까?\n";
       }
       
-      // Validation to check if it matches original HTML
-      if (json.originalFileName && originalFileName && json.originalFileName !== originalFileName) {
-        confirmMessage += `\n주의: 이 프로젝트 파일은 "${json.originalFileName}" 파일용입니다.\n현재 로드된 파일("${originalFileName}")과 이름이 다릅니다.`;
+      const jsonTargetName = json.pageTitle || json.originalFileName;
+      const currentTargetName = pageTitle || originalFileName;
+      
+      if (jsonTargetName && currentTargetName && jsonTargetName !== currentTargetName) {
+        confirmMessage += `\n주의: 이 프로젝트 파일은 "${jsonTargetName}" 프로젝트용입니다.\n현재 작업 중인 문서("${currentTargetName}")와 이름이 다릅니다.`;
       }
       
       if (confirmMessage) {
@@ -565,6 +567,8 @@ export default function App() {
       if (json.tabSettings) setTabSettings(json.tabSettings);
       if (json.tabOrder) setTabOrder(json.tabOrder);
       if (json.pageTitle !== undefined) setPageTitle(json.pageTitle);
+      
+      if (json.logs) setLogs(json.logs); // Restore edited/deleted logs
       
       if (json.cssFormat) setCssFormat(json.cssFormat);
       if (json.fontSize) setFontSize(json.fontSize);
@@ -610,7 +614,8 @@ export default function App() {
       showTabNames: Array.from(showTabNames),
       mergeTabStyles: Array.from(mergeTabStyles),
       hideEmptyAvatars,
-      narrationCharacter
+      narrationCharacter,
+      logs // Included so edit/delete status can be restored
     };
     
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -618,9 +623,10 @@ export default function App() {
     const a = document.createElement('a');
     a.href = url;
     
-    // Title is excluded from export logic per request. Only originalFileName is used.
     let baseName = 'ccfolia_project';
-    if (originalFileName) {
+    if (pageTitle) {
+      baseName = pageTitle;
+    } else if (originalFileName) {
       baseName = originalFileName.replace(/\.html$/, '');
     }
     
@@ -635,10 +641,17 @@ export default function App() {
     let currentMerged: LogEntry | null = null;
     let mergedIds: string[] = [];
 
-    const visibleLogs = logs.filter(log => 
-      tabSettings[log.tabId]?.visible && 
-      (charSettings[log.charId]?.visible !== false)
-    );
+    const visibleLogs = logs.map(log => {
+      const isVisibleContent = tabSettings[log.tabId]?.visible && charSettings[log.charId]?.visible !== false;
+      const hasImage = insertedImages[log.id] && insertedImages[log.id].length > 0;
+      
+      if (isVisibleContent) {
+        return { ...log, isHiddenContent: false };
+      } else if (hasImage) {
+        return { ...log, isHiddenContent: true };
+      }
+      return null;
+    }).filter(Boolean) as LogEntry[];
 
     visibleLogs.forEach((log) => {
       const tabSet = tabSettings[log.tabId];
@@ -647,7 +660,9 @@ export default function App() {
       const currentStableId = currentMerged ? (currentMerged.id.startsWith('merged:') ? currentMerged.id.split(',').pop()! : currentMerged.id) : null;
       const hasSplitPoint = currentStableId ? splitPoints.has(currentStableId) : false;
 
-      const shouldMerge = mergeTabs.has(format) && 
+      const shouldMerge = !log.isHiddenContent && 
+                          !currentMerged?.isHiddenContent &&
+                          mergeTabs.has(format) && 
                           currentMerged && 
                           currentMerged.name === log.name && 
                           currentMerged.tab === log.tab && 
@@ -1816,7 +1831,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.1.1</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.1.2</span>
           </div>
         </div>
       </aside>
@@ -2074,7 +2089,7 @@ export default function App() {
           ref={previewContainerRef}
           className={cn(
             "flex-1 overflow-y-auto custom-scrollbar relative min-w-0 transition-colors",
-            theme === 'dark' ? "bg-[#242424]" : "bg-white"
+            theme === 'dark' ? "bg-[#313131]" : "bg-white"
           )}
         >
           <div className="w-full min-w-0 min-h-full flex flex-col">
@@ -2082,7 +2097,7 @@ export default function App() {
               <div className="relative group/preview">
                 <div className={cn(
                   "min-h-screen relative transition-colors",
-                  theme === 'dark' ? "bg-[#242424]" : "bg-white"
+                  theme === 'dark' ? "bg-[#313131]" : "bg-white"
                 )}>
                   {/* Top Section Name Input */}
                   <div id="section-0" className="max-w-[800px] mx-auto px-4 pt-2 font-sans relative">
@@ -2113,7 +2128,7 @@ export default function App() {
                     maxWidth: '800px', 
                     margin: '0 auto', 
                     padding: '0 0 40px 0',
-                    backgroundColor: theme === 'dark' ? '#242424' : '#FFFFFF',
+                    backgroundColor: theme === 'dark' ? '#313131' : '#FFFFFF',
                     color: theme === 'dark' ? '#EEEEEE' : '#333333',
                     fontFamily: fontFamily !== '(폰트 적용X)' ? (fonts.find(f => f.name === fontFamily)?.value || 'sans-serif') : undefined,
                     fontSize: `${fontSize}px`

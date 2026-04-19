@@ -8,7 +8,7 @@ export const LogAvatar = React.memo(({ img, theme, avatarSize, hideEmptyAvatars 
       width: `${avatarSize}px`, 
       height: `${avatarSize}px`, 
       flexShrink: 0, 
-      backgroundColor: hideEmptyAvatars ? 'transparent' : (theme === 'dark' ? '#1e1e1e' : '#f0f0f0'), 
+      backgroundColor: hideEmptyAvatars ? 'transparent' : (theme === 'dark' ? '#242424' : '#f0f0f0'), 
       borderRadius: '4px', 
       overflow: 'hidden', 
       display: 'flex', 

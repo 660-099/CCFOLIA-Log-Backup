@@ -45,14 +45,12 @@ export const LogItem = React.memo(({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(log.content.replace(/<br\s*\/?>/gi, '\n'));
 
-  if (!tabSet?.visible || !char?.visible) return null;
-
-  const format = tabSet.format;
+  const format = tabSet?.format || 'main';
   const color = char.color || log.color;
   const otherNameColor = disableOtherColor ? (theme === 'dark' ? '#AAAAAA' : '#444444') : color;
   const img = char.imageUrl;
   const isSecret = format === 'secret';
-  const tabColor = tabSet.color || '#ffd400';
+  const tabColor = tabSet?.color || '#ffd400';
   const isNarration = log.charId === narrationCharacter && format === 'main';
 
   let displayContent = log.content;
@@ -141,11 +139,11 @@ export const LogItem = React.memo(({
             </button>
           </div>
 
-          {!log.isContinuation && (
+          {!log.isHiddenContent && !log.isContinuation && (
             <div className="block-number font-sans">{idx + 1}</div>
           )}
 
-          {shouldShowIndex && (
+          {!log.isHiddenContent && shouldShowIndex && (
             <div style={{ margin: `12px ${r(paddingSize * 1.3)}px 4px ${r(paddingSize * 1.3)}px`, display: 'flex' }}>
               <div style={{ 
                 background: getSecretBg(tabColor), 
@@ -161,11 +159,12 @@ export const LogItem = React.memo(({
             </div>
           )}
           
-          <div className="log-item" style={{ 
-            marginBottom: itemMarginBottom,
-            marginTop: itemMarginTop
-          }}>
-            {isEditing ? (
+          {!log.isHiddenContent && (
+            <div className="log-item" style={{ 
+              marginBottom: itemMarginBottom,
+              marginTop: itemMarginTop
+            }}>
+              {isEditing ? (
               <div className="mx-4 my-2 p-3 bg-black/20 rounded-xl border border-white/10 flex flex-col gap-2">
                 <textarea 
                   value={editContent}
@@ -272,6 +271,7 @@ export const LogItem = React.memo(({
               </div>
             )}
           </div>
+          )}
 
           {insertedImages[stableId] && insertedImages[stableId].map((imgData: any, i: number) => (
             <LogImage 
