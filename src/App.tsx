@@ -47,7 +47,8 @@ import {
   ArrowUpDown,
   ChevronDown,
   Search,
-  List
+  List,
+  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
@@ -302,6 +303,7 @@ export default function App() {
   const [darkBgColor, setDarkBgColor] = useLocalStorage<string>('ccfolia_darkBgColor', '#212121', undefined, undefined, rememberSettings);
   const [lightBgColor, setLightBgColor] = useLocalStorage<string>('ccfolia_lightBgColor', '#ffffff', undefined, undefined, rememberSettings);
   const [disableOtherColor, setDisableOtherColor] = useLocalStorage<boolean>('ccfolia_disableOtherColor', true, undefined, undefined, rememberSettings);
+  const [isFilterBarEnabled, setIsFilterBarEnabled] = useLocalStorage<boolean>('ccfolia_filterBarEnabled', false, undefined, undefined, rememberSettings);
   const [isEditingFontSize, setIsEditingFontSize] = useState(false);
   const [renamingChar, setRenamingChar] = useState<string | null>(null);
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
@@ -328,11 +330,13 @@ export default function App() {
   const [sectionNames, setSectionNames] = useState<Record<string, string>>({});
   const [isLibraryAccordionOpen, setIsLibraryAccordionOpen] = useState(false);
   const [openLibraryDropdownId, setOpenLibraryDropdownId] = useState<string | null>(null);
+  const [hoverLibraryDropdownId, setHoverLibraryDropdownId] = useState<string | null>(null);
   const [librarySortMode, setLibrarySortMode] = useState<'newest' | 'oldest' | 'alphabetical'>('newest');
   const [isLibraryEditMode, setIsLibraryEditMode] = useState(false);
   const [renamingLibraryId, setRenamingLibraryId] = useState<string | null>(null);
   const [libraryNameInput, setLibraryNameInput] = useState('');
   const libraryDropdownRef = useRef<HTMLDivElement>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -442,6 +446,7 @@ export default function App() {
       darkBgColor,
       lightBgColor,
       disableOtherColor,
+      isFilterBarEnabled,
       logs,
       insertedImages,
       splitPoints: Array.from(splitPoints),
@@ -487,6 +492,7 @@ export default function App() {
     if (state.darkBgColor) setDarkBgColor(state.darkBgColor);
     if (state.lightBgColor) setLightBgColor(state.lightBgColor);
     setDisableOtherColor(state.disableOtherColor);
+    if (state.isFilterBarEnabled !== undefined) setIsFilterBarEnabled(state.isFilterBarEnabled);
     if (state.logs) setLogs(state.logs);
     if (state.insertedImages) setInsertedImages(state.insertedImages);
     if (state.splitPoints) setSplitPoints(new Set(state.splitPoints));
@@ -530,6 +536,7 @@ export default function App() {
         setDarkBgColor('#212121');
         setLightBgColor('#ffffff');
         setDisableOtherColor(true);
+        setIsFilterBarEnabled(false);
         setMergeTabs(new Set(['main', 'secret', 'other']));
         setShowTabNames(new Set(['secret']));
         setMergeTabStyles(new Set(['secret']));
@@ -1086,6 +1093,7 @@ export default function App() {
       theme,
       darkBgColor,
       lightBgColor,
+      isFilterBarEnabled,
       fontSize,
       fontFamily,
       disableOtherColor,
@@ -1335,6 +1343,10 @@ export default function App() {
                     )}
                   </div>
                   <input type="file" ref={fileInputRef} onChange={handleLogUpload} accept=".html" className="hidden" />
+                  <p className="px-1 pt-1 text-[9px] text-white/40 leading-tight flex items-center gap-1">
+                    <Info className="w-3 h-3 shrink-0" />
+                    <span><a href="https://lispcoc.github.io/ccfolia_log_getter/" target="_blank" rel="noopener noreferrer" className="text-[#e6005c] hover:underline">CCFOLIA Log Getter</a> 추출 파일을 지원합니다.</span>
+                  </p>
                 </Section>
 
                 <Section>
@@ -1706,11 +1718,12 @@ export default function App() {
                       icon={Users} 
                       title={
                         <div className="flex items-center gap-1.5">
-                          캐릭터 설정 불러오기
+                          캐릭터 보관함
                           <Tooltip content={
                             <div className="text-[11px] leading-relaxed w-[240px]">
                               이름이 일치하는 캐릭터에게 등록된 이미지 URL과 지정색을 적용합니다.<br/><br/>
-                              <span className="text-white/60">모든 데이터는 서버가 아니고 현재 브라우저(로컬 스토리지)에만 보관됩니다. 캐시를 지우거나 시크릿 모드를 사용하면 등록된 정보가 삭제됩니다.</span>
+                              {`">"`} 버튼의 목록에서 캐릭터를 선택하면 해당 인물의 설정만 즉시 적용됩니다.<br/><br/>
+                              <span className="text-[#e6005c]">모든 데이터는 서버가 아니고 현재 브라우저(로컬 스토리지)에만 보관됩니다. 캐시를 지우거나 시크릿 모드를 사용하면 등록된 정보가 삭제됩니다.</span>
                             </div>
                           } position="right">
                             <HelpCircle className="w-3.5 h-3.5 text-white/30 hover:text-white/60 transition-colors cursor-help" />
@@ -1831,10 +1844,10 @@ export default function App() {
                                             {dateStr && <span className="text-[9px] text-white/30 shrink-0 font-normal mb-[1px]">{dateStr}</span>}
                                           </div>
                                         )}
-                                        <div className="text-[9px] mt-1.5 leading-[1.3] w-full flex flex-wrap gap-x-[3px] gap-y-1">
+                                        <div className="text-[9px] mt-1.5 leading-[1.3] w-full flex flex-wrap gap-y-1">
                                           {lib.characters.map((c, idx) => (
-                                            <span key={idx} className="inline-flex items-center">
-                                              <span className="inline-block w-1.5 h-1.5 rounded-full mr-1 shrink-0" style={{ backgroundColor: c.color || '#ffffff' }} />
+                                            <span key={idx} className="char-unit inline-flex items-center mr-[7px]">
+                                              <span className="inline-block w-1.5 h-1.5 rounded-full mr-[3px] shrink-0" style={{ backgroundColor: c.color || '#ffffff' }} />
                                               <span className="text-white/60">{c.name}</span>
                                             </span>
                                           ))}
@@ -1881,26 +1894,56 @@ export default function App() {
                                           </div>
                                         ) : (
                                           <div className="flex items-center justify-end w-full">
-                                            <div className="relative">
+                                            <div 
+                                              className="relative"
+                                              onMouseEnter={() => {
+                                                if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                                setHoverLibraryDropdownId(lib.id);
+                                              }}
+                                              onMouseLeave={() => {
+                                                if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                                hoverTimeoutRef.current = setTimeout(() => {
+                                                  setHoverLibraryDropdownId(null);
+                                                }, 100);
+                                              }}
+                                            >
                                               <button
-                                                ref={openLibraryDropdownId === lib.id ? libraryDropdownRef : null}
+                                                ref={(openLibraryDropdownId === lib.id || hoverLibraryDropdownId === lib.id) ? libraryDropdownRef : null}
                                                 onClick={(e) => {
                                                   e.stopPropagation();
                                                   setOpenLibraryDropdownId(openLibraryDropdownId === lib.id ? null : lib.id);
                                                 }}
-                                                className="shrink-0 flex items-center justify-center outline-none relative z-10 w-7 h-7 rounded-md bg-white/5 hover:bg-white/10 transition-colors border border-white/5"
+                                                className={`shrink-0 flex items-center justify-center outline-none relative z-10 w-7 h-7 rounded-md transition-colors border ${
+                                                  openLibraryDropdownId === lib.id 
+                                                    ? 'bg-[#e6005c]/20 border-[#e6005c]/30 text-[#e6005c]' 
+                                                    : 'bg-white/5 hover:bg-white/10 border-white/5 text-white/60'
+                                                }`}
+                                                title="개별 캐릭터 적용"
                                               >
-                                                <User className="w-3.5 h-3.5 text-white/60" />
+                                                <ChevronRight className="w-3.5 h-3.5" />
                                               </button>
                                      
                                               <PortalDropdown
-                                                isOpen={openLibraryDropdownId === lib.id}
-                                                onClose={() => setOpenLibraryDropdownId(null)}
+                                                isOpen={openLibraryDropdownId === lib.id || hoverLibraryDropdownId === lib.id}
+                                                onClose={() => {
+                                                  setOpenLibraryDropdownId(null);
+                                                  setHoverLibraryDropdownId(null);
+                                                }}
                                                 triggerRef={libraryDropdownRef}
                                                 position="right"
                                               >
                                                 <div
                                                   className="w-48 bg-[#222] border border-white/10 rounded-xl shadow-2xl overflow-hidden pointer-events-auto"
+                                                  onMouseEnter={() => {
+                                                    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                                    setHoverLibraryDropdownId(lib.id);
+                                                  }}
+                                                  onMouseLeave={() => {
+                                                    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                                    hoverTimeoutRef.current = setTimeout(() => {
+                                                      setHoverLibraryDropdownId(null);
+                                                    }, 100);
+                                                  }}
                                                 >
                                                   <div className="max-h-[30vh] overflow-y-auto p-1 custom-scrollbar">
                                                     {lib.characters.map((c, i) => (
@@ -1910,6 +1953,7 @@ export default function App() {
                                                           e.stopPropagation();
                                                           applyCharacterFromLibrary(c);
                                                           setOpenLibraryDropdownId(null);
+                                                          setHoverLibraryDropdownId(null);
                                                         }}
                                                         className="relative w-full text-left pl-4 pr-3 py-2 text-[11px] rounded-lg transition-colors text-white/60 hover:bg-white/5 hover:text-white flex items-center gap-2 outline-none group overflow-hidden"
                                                       >
@@ -1935,7 +1979,7 @@ export default function App() {
                                   );
                                 })
                               ) : (
-                                <div className="text-center py-4 text-white/30 text-[10px]">등록된 도감이 없습니다.</div>
+                                <div className="text-center py-4 text-white/30 text-[10px]">등록된 캐릭터가 없습니다.</div>
                               );
                             })()}
                           </div>
@@ -1962,7 +2006,7 @@ export default function App() {
                 <Section>
                   <SectionTitle 
                     icon={List} 
-                    title="캐릭터 목록" 
+                    title="발언자 목록" 
                     rightElement={
                       <button 
                         onClick={() => setCharSortMode(charSortMode === 'appearance' ? 'alphabetical' : 'appearance')}
@@ -2241,7 +2285,8 @@ export default function App() {
 
                 <Section>
                   <SectionTitle icon={Palette} title="CSS 출력 형식" />
-                  <div className="grid grid-cols-2 gap-2">
+                  
+                  <div className="grid grid-cols-2 gap-2 mb-2">
                     <Tooltip position="top" className="text-center" content={
                       <>HTML 상단에 스타일 시트를 포함합니다. <span className="text-[#e6005c] font-medium">(권장)</span></>
                     }>
@@ -2270,6 +2315,17 @@ export default function App() {
                         인라인 스타일
                       </button>
                     </Tooltip>
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 mt-2">
+                    <span className="text-[11px] font-bold text-white/70">로그 필터 컨트롤러</span>
+                    <Toggle 
+                      enabled={isFilterBarEnabled}
+                      onChange={(enabled) => {
+                        setIsFilterBarEnabled(enabled);
+                        saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor, disableOtherColor, isFilterBarEnabled: enabled });
+                      }}
+                    />
                   </div>
                 </Section>
               </motion.div>
