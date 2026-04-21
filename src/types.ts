@@ -29,6 +29,16 @@ export interface TabSetting {
   color?: string; // For secret format
 }
 
+export interface CharacterLibraryItem {
+  id: string;
+  name: string;
+  characters: {
+    name: string;
+    color: string;
+    imageUrl: string;
+  }[];
+}
+
 export interface ColorPickerPopupProps {
   color: string;
   extractedColors: string[];

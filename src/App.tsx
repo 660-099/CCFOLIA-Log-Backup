@@ -51,7 +51,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
 import { clsx, type ClassValue } from 'clsx';
-import { TabFormat, LogEntry, CharSetting, TabSetting } from './types';
+import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem } from './types';
 import { parseLogFile } from './parser';
 import { cn, r, rgbToHex, linkify } from './utils';
 import { Toggle } from './components/Toggle';
@@ -81,12 +81,14 @@ const Tooltip = ({
   children, 
   content, 
   position = 'top',
-  className
+  className,
+  unstyled = false
 }: { 
   children: React.ReactNode; 
   content: React.ReactNode; 
   position?: 'top' | 'right' | 'bottom' | 'left';
   className?: string;
+  unstyled?: boolean;
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0, opacity: 0 });
@@ -167,7 +169,7 @@ const Tooltip = ({
         onFocus={() => setIsVisible(true)}
         onMouseLeave={() => setIsVisible(false)}
         onBlur={() => setIsVisible(false)}
-        className="inline-flex cursor-help"
+        className={cn("inline-flex", !unstyled && "cursor-help")}
       >
         {children}
       </div>
@@ -181,13 +183,92 @@ const Tooltip = ({
             transition: 'opacity 0.2s',
             visibility: coords.opacity === 0 ? 'hidden' : 'visible'
           }}
-          className={cn("fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-xl p-3 text-[11px] leading-relaxed text-white/60 shadow-2xl pointer-events-none w-56 font-normal text-left", className)}
+          className={unstyled ? `fixed z-[9999] pointer-events-none ${className || ''}` : cn("fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-xl p-3 text-[11px] leading-relaxed text-white/60 shadow-2xl pointer-events-none w-max max-w-xs font-normal text-left", className)}
         >
           {content}
         </div>,
         document.body
       )}
     </>
+  );
+};
+
+const PortalDropdown = ({ isOpen, onClose, triggerRef, children, position = 'bottom-right' }: { isOpen: boolean, onClose: () => void, triggerRef: React.RefObject<HTMLElement>, children: React.ReactNode, position?: 'bottom-right' | 'right' }) => {
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const updatePosition = useCallback(() => {
+    if (!isOpen || !triggerRef.current || !dropdownRef.current) return;
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const dropdownRect = dropdownRef.current.getBoundingClientRect();
+    
+    let top = triggerRect.top;
+    let left = triggerRect.right + 4;
+
+    if (position === 'bottom-right') {
+      top = triggerRect.bottom + 4;
+      if (top + dropdownRect.height > window.innerHeight - 10) {
+        top = triggerRect.top - dropdownRect.height - 4;
+      }
+      left = triggerRect.right - dropdownRect.width;
+    } else if (position === 'right') {
+      top = triggerRect.top;
+      if (top + dropdownRect.height > window.innerHeight - 10) {
+        top = window.innerHeight - dropdownRect.height - 10;
+      }
+      if (left + dropdownRect.width > window.innerWidth - 10) {
+        left = triggerRect.left - dropdownRect.width - 4;
+      }
+    }
+
+    setCoords({
+      top,
+      left
+    });
+  }, [isOpen, triggerRef, position]);
+
+  useEffect(() => {
+    if (isOpen) {
+      updatePosition();
+      const timer = setTimeout(updatePosition, 0);
+      window.addEventListener('resize', updatePosition);
+      window.addEventListener('scroll', updatePosition, true);
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('resize', updatePosition);
+        window.removeEventListener('scroll', updatePosition, true);
+      };
+    }
+  }, [isOpen, updatePosition]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      // Find the library dropdown ref element by looking through the path
+      const target = e.target as Node;
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(target) &&
+        triggerRef.current && !triggerRef.current.contains(target)
+      ) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isOpen, onClose, triggerRef]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div
+      ref={dropdownRef}
+      style={{ top: coords.top, left: coords.left }}
+      className="fixed z-[9999]"
+      onClick={e => e.stopPropagation()}
+    >
+      {children}
+    </div>,
+    document.body
   );
 };
 
@@ -217,6 +298,8 @@ export default function App() {
   const [fontSize, setFontSize] = useLocalStorage<number>('ccfolia_fontSize', 14, undefined, undefined, rememberSettings);
   const [fontFamily, setFontFamily] = useLocalStorage<string>('ccfolia_fontFamily', 'Noto Sans KR', undefined, undefined, rememberSettings);
   const [theme, setTheme] = useLocalStorage<'dark' | 'light'>('ccfolia_theme', 'dark', undefined, undefined, rememberSettings);
+  const [darkBgColor, setDarkBgColor] = useLocalStorage<string>('ccfolia_darkBgColor', '#212121', undefined, undefined, rememberSettings);
+  const [lightBgColor, setLightBgColor] = useLocalStorage<string>('ccfolia_lightBgColor', '#ffffff', undefined, undefined, rememberSettings);
   const [disableOtherColor, setDisableOtherColor] = useLocalStorage<boolean>('ccfolia_disableOtherColor', true, undefined, undefined, rememberSettings);
   const [isEditingFontSize, setIsEditingFontSize] = useState(false);
   const [renamingChar, setRenamingChar] = useState<string | null>(null);
@@ -236,6 +319,20 @@ export default function App() {
   const [isFontDropdownOpen, setIsFontDropdownOpen] = useState(false);
   const fontDropdownRef = useRef<HTMLDivElement>(null);
 
+  const [splitPoints, setSplitPoints] = useState<Set<string>>(new Set());
+  const [insertedImages, setInsertedImages] = useState<Record<string, { url: string; width?: string; align?: 'left' | 'center' | 'right' }[]>>({});
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [showCopyMenu, setShowCopyMenu] = useState(false);
+  const [initialState, setInitialState] = useState<any>(null);
+  const [sectionNames, setSectionNames] = useState<Record<string, string>>({});
+  const [isLibraryAccordionOpen, setIsLibraryAccordionOpen] = useState(false);
+  const [openLibraryDropdownId, setOpenLibraryDropdownId] = useState<string | null>(null);
+  const [librarySortMode, setLibrarySortMode] = useState<'newest' | 'oldest' | 'alphabetical'>('newest');
+  const [isLibraryEditMode, setIsLibraryEditMode] = useState(false);
+  const [renamingLibraryId, setRenamingLibraryId] = useState<string | null>(null);
+  const [libraryNameInput, setLibraryNameInput] = useState('');
+  const libraryDropdownRef = useRef<HTMLDivElement>(null);
+  
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -245,16 +342,25 @@ export default function App() {
       if (fontDropdownRef.current && !fontDropdownRef.current.contains(target)) {
         setIsFontDropdownOpen(false);
       }
+      if (libraryDropdownRef.current && !libraryDropdownRef.current.contains(target)) {
+        setOpenLibraryDropdownId(null);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-  const [splitPoints, setSplitPoints] = useState<Set<string>>(new Set());
-  const [insertedImages, setInsertedImages] = useState<Record<string, { url: string; width?: string; align?: 'left' | 'center' | 'right' }[]>>({});
-  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
-  const [showCopyMenu, setShowCopyMenu] = useState(false);
-  const [initialState, setInitialState] = useState<any>(null);
-  const [sectionNames, setSectionNames] = useState<Record<string, string>>({});
+  const [characterLibrary, setCharacterLibrary] = useState<CharacterLibraryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('characterLibrary');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('characterLibrary', JSON.stringify(characterLibrary));
+  }, [characterLibrary]);
   
   const [mergeTabs, setMergeTabs] = useLocalStorage<Set<TabFormat>>(
     'ccfolia_mergeTabs',
@@ -332,6 +438,8 @@ export default function App() {
       fontSize,
       fontFamily,
       theme,
+      darkBgColor,
+      lightBgColor,
       disableOtherColor,
       logs,
       insertedImages,
@@ -375,6 +483,8 @@ export default function App() {
     setFontSize(state.fontSize);
     setFontFamily(state.fontFamily);
     setTheme(state.theme);
+    if (state.darkBgColor) setDarkBgColor(state.darkBgColor);
+    if (state.lightBgColor) setLightBgColor(state.lightBgColor);
     setDisableOtherColor(state.disableOtherColor);
     if (state.logs) setLogs(state.logs);
     if (state.insertedImages) setInsertedImages(state.insertedImages);
@@ -398,6 +508,8 @@ export default function App() {
         setFontSize(state.fontSize);
         setFontFamily(state.fontFamily);
         setTheme(state.theme);
+        if (state.darkBgColor) setDarkBgColor(state.darkBgColor);
+        if (state.lightBgColor) setLightBgColor(state.lightBgColor);
         setDisableOtherColor(state.disableOtherColor);
         setLogs(state.logs);
         setInsertedImages(state.insertedImages || {});
@@ -414,6 +526,8 @@ export default function App() {
         setFontSize(14);
         setFontFamily('Noto Sans KR');
         setTheme('dark');
+        setDarkBgColor('#212121');
+        setLightBgColor('#ffffff');
         setDisableOtherColor(true);
         setMergeTabs(new Set(['main', 'secret', 'other']));
         setShowTabNames(new Set(['secret']));
@@ -471,6 +585,71 @@ export default function App() {
       return next;
     });
     setRenamingTab(null);
+  };
+
+  const handleAddToLibrary = () => {
+    const validChars = charOrder
+      .map(id => charSettings[id])
+      .filter(char => char && char.visible && char.imageUrl);
+      
+    if (validChars.length === 0) return;
+    
+    const newLibraryItem: CharacterLibraryItem = {
+      id: `lib_${Date.now()}`,
+      name: pageTitle || originalFileName || 'ccfolia',
+      characters: validChars.map(char => ({
+        name: char.name,
+        color: char.color,
+        imageUrl: char.imageUrl
+      }))
+    };
+    
+    setCharacterLibrary(prev => [...prev, newLibraryItem]);
+  };
+
+  const applyFromLibrary = (libraryItem: CharacterLibraryItem) => {
+    let nextCharSettings = { ...charSettings };
+    let hasChanges = false;
+    
+    libraryItem.characters.forEach(libChar => {
+      Object.keys(nextCharSettings).forEach(charId => {
+        if (nextCharSettings[charId].name === libChar.name) {
+          nextCharSettings[charId] = {
+            ...nextCharSettings[charId],
+            color: libChar.color,
+            imageUrl: libChar.imageUrl
+          };
+          hasChanges = true;
+        }
+      });
+    });
+    
+    if (hasChanges) {
+      setCharSettings(nextCharSettings);
+      saveToHistory({ charSettings: nextCharSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor, logs });
+    }
+  };
+
+  const applyCharacterFromLibrary = (libChar: { name: string; color: string; imageUrl: string }) => {
+    let nextCharSettings = { ...charSettings };
+    let hasChanges = false;
+    
+    Object.keys(nextCharSettings).forEach(charId => {
+      if (nextCharSettings[charId].name === libChar.name) {
+        nextCharSettings[charId] = {
+          ...nextCharSettings[charId],
+          color: libChar.color,
+          imageUrl: libChar.imageUrl
+        };
+        hasChanges = true;
+      }
+    });
+
+    if (hasChanges) {
+      setCharSettings(nextCharSettings);
+      saveToHistory({ charSettings: nextCharSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor, logs });
+    }
+    setOpenLibraryDropdownId(null);
   };
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1519,9 +1698,268 @@ export default function App() {
                 </Section>
 
                 <Section>
+                  <div className="flex items-center justify-between">
+                    <SectionTitle 
+                      icon={Users} 
+                      title={
+                        <div className="flex items-center gap-1.5">
+                          캐릭터 설정 불러오기
+                          <Tooltip content={
+                            <div className="text-[11px] leading-relaxed w-[240px]">
+                              이름이 일치하는 캐릭터에게 등록된 이미지 URL과 지정색을 적용합니다.<br/><br/>
+                              <span className="text-white/60">모든 데이터는 서버가 아니고 현재 브라우저(로컬 스토리지)에만 보관됩니다. 캐시를 지우거나 시크릿 모드를 사용하면 등록된 정보가 삭제됩니다.</span>
+                            </div>
+                          } position="right">
+                            <HelpCircle className="w-3.5 h-3.5 text-white/30 hover:text-white/60 transition-colors cursor-help" />
+                          </Tooltip>
+                        </div>
+                      } 
+                    />
+                  </div>
+                  <div className="bg-white/5 border border-white/5 rounded-xl shadow-sm">
+                    <button
+                      onClick={() => setIsLibraryAccordionOpen(!isLibraryAccordionOpen)}
+                      className="w-full flex items-center justify-between p-3 outline-none hover:bg-white/5 transition-colors"
+                    >
+                      <span className="text-[11px] font-bold text-white/70">로컬 스토리지에서 불러오기</span>
+                        <ChevronDown className={cn("w-4 h-4 opacity-50 transition-transform", isLibraryAccordionOpen && "rotate-180")} />
+                      </button>
+                      {isLibraryAccordionOpen && (
+                        <div className="border-t border-white/5 bg-black/20 flex flex-col rounded-b-xl">
+                          <div className="flex items-center justify-between p-2 pb-2 border-b border-white/5">
+                              <div className="flex items-center gap-2 px-1 text-[9px]">
+                                  <button onClick={() => setLibrarySortMode('newest')} className={cn("transition-colors", librarySortMode === 'newest' ? "text-white font-bold" : "text-white/40 hover:text-white")}>최신순</button>
+                                  <span className="text-white/20">|</span>
+                                  <button onClick={() => setLibrarySortMode('oldest')} className={cn("transition-colors", librarySortMode === 'oldest' ? "text-white font-bold" : "text-white/40 hover:text-white")}>오래된순</button>
+                                  <span className="text-white/20">|</span>
+                                  <button onClick={() => setLibrarySortMode('alphabetical')} className={cn("transition-colors", librarySortMode === 'alphabetical' ? "text-white font-bold" : "text-white/40 hover:text-white")}>가나다순</button>
+                              </div>
+                              <button
+                                  onClick={() => {
+                                      setIsLibraryEditMode(!isLibraryEditMode);
+                                      if (isLibraryEditMode) setRenamingLibraryId(null);
+                                  }}
+                                  className={cn("flex items-center gap-1.5 px-2 py-1 rounded-md text-[9px] font-bold transition-all border border-white/5", 
+                                      isLibraryEditMode ? "bg-white/20 text-white" : "bg-white/5 hover:bg-white/10 text-white/40 hover:text-white")}
+                              >
+                                  <Pencil className="w-3 h-3" />
+                                  {isLibraryEditMode ? "수정 완료" : "수정"}
+                              </button>
+                          </div>
+                          <div className="max-h-[300px] overflow-y-auto flex flex-col">
+                            {(() => {
+                              const sortedLibrary = [...characterLibrary];
+                              if (librarySortMode === 'alphabetical') {
+                                sortedLibrary.sort((a, b) => a.name.localeCompare(b.name));
+                              } else if (librarySortMode === 'oldest') {
+                                sortedLibrary.sort((a, b) => {
+                                  const ta = parseInt(a.id.replace('lib_', '')) || 0;
+                                  const tb = parseInt(b.id.replace('lib_', '')) || 0;
+                                  return ta - tb;
+                                });
+                              } else {
+                                sortedLibrary.sort((a, b) => {
+                                  const ta = parseInt(a.id.replace('lib_', '')) || 0;
+                                  const tb = parseInt(b.id.replace('lib_', '')) || 0;
+                                  return tb - ta;
+                                });
+                              }
+                              
+                              return sortedLibrary.length > 0 ? (
+                                sortedLibrary.map(lib => {
+                                  const libDateMs = parseInt(lib.id.replace('lib_', ''));
+                                  const dateStr = isNaN(libDateMs) ? '' : `${new Date(libDateMs).getFullYear()}.${String(new Date(libDateMs).getMonth() + 1).padStart(2, '0')}.${String(new Date(libDateMs).getDate()).padStart(2, '0')}`;
+                                  
+                                  return (
+                                    <div
+                                      key={lib.id}
+                                      onClick={() => !isLibraryEditMode && applyFromLibrary(lib)}
+                                      className="flex flex-row items-center gap-3 px-3 hover:bg-white/5 cursor-pointer transition-colors border-b border-white/5 last:border-b-0 min-h-[58px] py-2 h-auto box-border relative group/libitem"
+                                    >
+                                      
+                                      <Tooltip unstyled position="right" content={
+                                        lib.characters.length > 0 ? (
+                                          <div className="grid grid-cols-2 gap-[1px] w-[171px] shadow-2xl bg-[#1a1a1a] rounded-lg overflow-hidden border border-white/20 p-[5px]">
+                                            {[...lib.characters]
+                                              .sort((a,b) => a.name.localeCompare(b.name))
+                                              .slice(0,4)
+                                              .map((c, i) => (
+                                                  c.imageUrl ? (
+                                                    <img key={i} src={c.imageUrl} className="w-[80px] h-[80px] object-cover rounded-none" alt="" referrerPolicy="no-referrer" />
+                                                  ) : (
+                                                    <div key={i} className="w-[80px] h-[80px] bg-[#1a1a1a] flex items-center justify-center shrink-0 rounded-none">
+                                                      <User className="w-8 h-8 text-white/20" />
+                                                    </div>
+                                                  )
+                                              ))}
+                                          </div>
+                                        ) : <></>
+                                      }>
+                                        <div className="w-8 h-8 rounded-lg outline-none shrink-0 border border-white/5 bg-[#1a1a1a] flex items-center justify-center relative">
+                                          {lib.characters[0]?.imageUrl ? (
+                                              <img src={lib.characters[0].imageUrl} className="w-full h-full object-cover rounded-lg" alt="" referrerPolicy="no-referrer" />
+                                            ) : (
+                                              <User className="w-4 h-4 text-white/20" />
+                                          )}
+                                        </div>
+                                      </Tooltip>
+                                      
+                                      <div className="flex-1 min-w-0 flex flex-col justify-center h-full">
+                                        {renamingLibraryId === lib.id ? (
+                                          <input 
+                                            value={libraryNameInput}
+                                            onChange={e => setLibraryNameInput(e.target.value)}
+                                            onKeyDown={e => {
+                                               if (e.key === 'Enter') {
+                                                   setCharacterLibrary(prev => prev.map(l => l.id === lib.id ? {...l, name: libraryNameInput} : l));
+                                                   setRenamingLibraryId(null);
+                                               }
+                                               if (e.key === 'Escape') {
+                                                   setRenamingLibraryId(null);
+                                               }
+                                            }}
+                                            onClick={e => e.stopPropagation()}
+                                            autoFocus
+                                            className="w-full text-[11px] font-bold px-1 h-[18px] border border-[#e6005c] rounded outline-none bg-black/20 text-white"
+                                          />
+                                        ) : (
+                                          <div className="flex items-end gap-2 w-full h-[18px]">
+                                            <div className="text-[11px] font-bold text-white/90 truncate leading-tight flex-1">{lib.name}</div>
+                                            {dateStr && <span className="text-[9px] text-white/30 shrink-0 font-normal mb-[1px]">{dateStr}</span>}
+                                          </div>
+                                        )}
+                                        <div className="text-[9px] mt-1.5 leading-[1.3] w-full flex flex-wrap gap-x-[3px] gap-y-1">
+                                          {lib.characters.map((c, idx) => (
+                                            <span key={idx} className="inline-flex items-center">
+                                              <span className="inline-block w-1.5 h-1.5 rounded-full mr-1 shrink-0" style={{ backgroundColor: c.color || '#ffffff' }} />
+                                              <span className="text-white/60">{c.name}</span>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="flex items-center justify-end shrink-0 h-full gap-1.5 pl-1">
+                                        {isLibraryEditMode ? (
+                                          <div className="flex items-center justify-end gap-1.5 w-full">
+                                            {renamingLibraryId === lib.id ? (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setCharacterLibrary(prev => prev.map(l => l.id === lib.id ? {...l, name: libraryNameInput} : l));
+                                                  setRenamingLibraryId(null);
+                                                }}
+                                                className="w-[26px] h-[26px] flex items-center justify-center rounded-md bg-[#e6005c]/20 hover:bg-[#e6005c]/30 border border-[#e6005c]/30 transition-colors"
+                                              >
+                                                <Check className="w-3.5 h-3.5 text-[#e6005c]" />
+                                              </button>
+                                            ) : (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setRenamingLibraryId(lib.id);
+                                                  setLibraryNameInput(lib.name);
+                                                }}
+                                                className="w-[26px] h-[26px] flex items-center justify-center rounded-md bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                                              >
+                                                <Pencil className="w-3 h-3 text-white/60" />
+                                              </button>
+                                            )}
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (confirm('등록된 항목을 삭제하시겠습니까?')) {
+                                                  setCharacterLibrary(prev => prev.filter(l => l.id !== lib.id));
+                                                }
+                                              }}
+                                              className="w-[26px] h-[26px] flex items-center justify-center rounded-md bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 transition-colors"
+                                            >
+                                              <Trash2 className="w-3 h-3 text-red-400" />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center justify-end w-full">
+                                            <div className="relative">
+                                              <button
+                                                ref={openLibraryDropdownId === lib.id ? libraryDropdownRef : null}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setOpenLibraryDropdownId(openLibraryDropdownId === lib.id ? null : lib.id);
+                                                }}
+                                                className="shrink-0 flex items-center justify-center outline-none relative z-10 w-7 h-7 rounded-md bg-white/5 hover:bg-white/10 transition-colors border border-white/5"
+                                              >
+                                                <User className="w-3.5 h-3.5 text-white/60" />
+                                              </button>
+                                     
+                                              <PortalDropdown
+                                                isOpen={openLibraryDropdownId === lib.id}
+                                                onClose={() => setOpenLibraryDropdownId(null)}
+                                                triggerRef={libraryDropdownRef}
+                                                position="right"
+                                              >
+                                                <div
+                                                  className="w-48 bg-[#222] border border-white/10 rounded-xl shadow-2xl overflow-hidden pointer-events-auto"
+                                                >
+                                                  <div className="max-h-[30vh] overflow-y-auto p-1 custom-scrollbar">
+                                                    {lib.characters.map((c, i) => (
+                                                      <button
+                                                        key={i}
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          applyCharacterFromLibrary(c);
+                                                          setOpenLibraryDropdownId(null);
+                                                        }}
+                                                        className="relative w-full text-left pl-4 pr-3 py-2 text-[11px] rounded-lg transition-colors text-white/60 hover:bg-white/5 hover:text-white flex items-center gap-2 outline-none group overflow-hidden"
+                                                      >
+                                                        <div className="absolute left-0 top-0 bottom-0 w-[6px]" style={{ backgroundColor: c.color || '#fff' }} />
+                                                        <div className="w-[28px] h-[28px] rounded-md overflow-hidden bg-black/40 border border-white/5 shrink-0 flex items-center justify-center z-10">
+                                                          {c.imageUrl ? (
+                                                            <img src={c.imageUrl} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
+                                                          ) : (
+                                                            <User className="w-4 h-4 text-white/20" />
+                                                          )}
+                                                        </div>
+                                                        <span className="truncate flex-1 font-medium group-hover:text-white transition-colors z-10 relative">{c.name}</span>
+                                                      </button>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              </PortalDropdown>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <div className="text-center py-4 text-white/30 text-[10px]">등록된 도감이 없습니다.</div>
+                              );
+                            })()}
+                          </div>
+                          
+                          <div className="p-2 border-t border-white/5">
+                            <button
+                              onClick={handleAddToLibrary}
+                              className="w-full flex flex-col items-center justify-center p-3 border border-dashed border-white/20 rounded-xl hover:border-white/40 hover:bg-[#e6005c]/10 transition-colors text-white/60 hover:text-white group"
+                            >
+                              <div className="flex items-center gap-2 font-bold text-[11px] mb-1 group-hover:text-[#e6005c] transition-colors">
+                                <Plus className="w-3.5 h-3.5" />
+                                현재 설정을 등록
+                              </div>
+                              <span className="text-[9px] text-white/40 text-center max-w-[90%]">
+                                토글이 켜져 있고, 이미지 URL이 설정된 캐릭터만 등록됩니다.
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                </Section>
+
+                <Section>
                   <SectionTitle 
-                    icon={Users} 
-                    title="캐릭터 설정" 
+                    icon={List} 
+                    title="캐릭터 목록" 
                     rightElement={
                       <button 
                         onClick={() => setCharSortMode(charSortMode === 'appearance' ? 'alphabetical' : 'appearance')}
@@ -1649,10 +2087,44 @@ export default function App() {
                 className="space-y-6"
               >
                 <Section>
-                  <SectionTitle icon={Layout} title="테마 설정" />
+                  <SectionTitle 
+                    icon={Layout} 
+                    title="테마 설정" 
+                    rightElement={
+                      <div className="flex gap-1.5 items-center">
+                        {theme === 'dark' ? (
+                          <>
+                            <button 
+                              onClick={() => { setDarkBgColor('#212121'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor: '#212121', lightBgColor, disableOtherColor }); }}
+                              className={cn("w-[22px] h-[22px] rounded border transition-colors", darkBgColor === '#212121' ? "border-[#e6005c]" : "border-white/20 hover:border-white/40")}
+                              style={{ backgroundColor: '#212121' }}
+                            />
+                            <button 
+                              onClick={() => { setDarkBgColor('#121212'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor: '#121212', lightBgColor, disableOtherColor }); }}
+                              className={cn("w-[22px] h-[22px] rounded border transition-colors", darkBgColor === '#121212' ? "border-[#e6005c]" : "border-white/20 hover:border-white/40")}
+                              style={{ backgroundColor: '#121212' }}
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <button 
+                              onClick={() => { setLightBgColor('#ffffff'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor: '#ffffff', disableOtherColor }); }}
+                              className={cn("w-[22px] h-[22px] rounded border transition-colors shadow-sm", lightBgColor === '#ffffff' ? "border-[#e6005c]" : "border-white/20 hover:border-white/40")}
+                              style={{ backgroundColor: '#ffffff' }}
+                            />
+                            <button 
+                              onClick={() => { setLightBgColor('#f8f9fa'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor: '#f8f9fa', disableOtherColor }); }}
+                              className={cn("w-[22px] h-[22px] rounded border transition-colors shadow-sm", lightBgColor === '#f8f9fa' ? "border-[#e6005c]" : "border-white/20 hover:border-white/40")}
+                              style={{ backgroundColor: '#f8f9fa' }}
+                            />
+                          </>
+                        )}
+                      </div>
+                    }
+                  />
                   <div className="grid grid-cols-2 gap-2">
                     <button 
-                      onClick={() => { setTheme('dark'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme: 'dark', disableOtherColor }); }}
+                      onClick={() => { setTheme('dark'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme: 'dark', darkBgColor, lightBgColor, disableOtherColor }); }}
                       className={`py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                         theme === 'dark' 
                           ? 'bg-[#e6005c] border-[#e6005c] text-white' 
@@ -1662,7 +2134,7 @@ export default function App() {
                       다크 모드
                     </button>
                     <button 
-                      onClick={() => { setTheme('light'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme: 'light', disableOtherColor }); }}
+                      onClick={() => { setTheme('light'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme: 'light', darkBgColor, lightBgColor, disableOtherColor }); }}
                       className={`py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                         theme === 'light' 
                           ? 'bg-white border-white text-stone-900' 
@@ -1759,7 +2231,7 @@ export default function App() {
                 <Section>
                   <SectionTitle icon={Palette} title="CSS 출력 형식" />
                   <div className="grid grid-cols-2 gap-2">
-                    <Tooltip position="top" content={
+                    <Tooltip position="top" className="text-center" content={
                       <>HTML 상단에 스타일 시트를 포함합니다. <span className="text-[#e6005c] font-medium">(권장)</span></>
                     }>
                       <button 
@@ -1773,7 +2245,7 @@ export default function App() {
                         내부 스타일
                       </button>
                     </Tooltip>
-                    <Tooltip position="top" content={
+                    <Tooltip position="top" className="text-center" content={
                       <>각 태그에 직접 스타일을 부여합니다.<br />(티스토리 기본 스킨 사용 시)</>
                     }>
                       <button 
@@ -2117,18 +2589,16 @@ export default function App() {
         {/* Preview Area */}
         <div 
           ref={previewContainerRef}
-          className={cn(
-            "flex-1 overflow-y-auto custom-scrollbar relative min-w-0 transition-colors",
-            theme === 'dark' ? "bg-[#313131]" : "bg-white"
-          )}
+          className="flex-1 overflow-y-auto custom-scrollbar relative min-w-0 transition-colors"
+          style={{ backgroundColor: theme === 'dark' ? darkBgColor : lightBgColor }}
         >
           <div className="w-full min-w-0 min-h-full flex flex-col">
             {logs.length > 0 ? (
               <div className="relative group/preview">
-                <div className={cn(
-                  "min-h-screen relative transition-colors",
-                  theme === 'dark' ? "bg-[#313131]" : "bg-white"
-                )}>
+                <div 
+                  className="min-h-screen relative transition-colors"
+                  style={{ backgroundColor: theme === 'dark' ? darkBgColor : lightBgColor }}
+                >
                   {/* Top Section Name Input */}
                   <div id="section-0" className="max-w-[800px] mx-auto px-4 pt-2 font-sans relative">
                     <div className="flex items-end justify-between max-w-full">
@@ -2158,7 +2628,7 @@ export default function App() {
                     maxWidth: '800px', 
                     margin: '0 auto', 
                     padding: '0 0 40px 0',
-                    backgroundColor: theme === 'dark' ? '#313131' : '#FFFFFF',
+                    backgroundColor: theme === 'dark' ? darkBgColor : lightBgColor,
                     color: theme === 'dark' ? '#EEEEEE' : '#333333',
                     fontFamily: fontFamily !== '(폰트 적용X)' ? (fonts.find(f => f.name === fontFamily)?.value || 'sans-serif') : undefined,
                     fontSize: `${fontSize}px`
