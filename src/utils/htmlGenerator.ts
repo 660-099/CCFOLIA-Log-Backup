@@ -17,6 +17,8 @@ export const generateFinalHtmlStr = (
   tabSettings: Record<string, TabSetting>,
   cssFormat: 'inline' | 'internal',
   theme: 'dark' | 'light',
+  darkBgColor: string,
+  lightBgColor: string,
   fontSize: number,
   fontFamily: string,
   disableOtherColor: boolean,
@@ -29,7 +31,7 @@ export const generateFinalHtmlStr = (
   fontValue: string
 ) => {
   const isDark = theme === 'dark';
-  const bgColor = isDark ? '#313131' : '#ffffff';
+  const bgColor = isDark ? darkBgColor : lightBgColor;
   const textColor = isDark ? '#EEEEEE' : '#1a1a1a';
   const otherTextColor = isDark ? '#AAAAAA' : '#757575';
   const borderColor = isDark ? '#444' : '#e5e5e5';

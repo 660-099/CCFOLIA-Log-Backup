@@ -26,6 +26,7 @@ import {
   Trash2,
   Plus,
   Type,
+  Scaling,
   Pencil,
   Undo2,
   Redo2,
@@ -1083,6 +1084,8 @@ export default function App() {
       tabSettings,
       cssFormat,
       theme,
+      darkBgColor,
+      lightBgColor,
       fontSize,
       fontFamily,
       disableOtherColor,
@@ -2096,27 +2099,35 @@ export default function App() {
                           <>
                             <button 
                               onClick={() => { setDarkBgColor('#212121'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor: '#212121', lightBgColor, disableOtherColor }); }}
-                              className={cn("w-[22px] h-[22px] rounded border transition-colors", darkBgColor === '#212121' ? "border-[#e6005c]" : "border-white/20 hover:border-white/40")}
+                              className={cn("w-[22px] h-[22px] rounded border transition-colors relative flex items-center justify-center", darkBgColor === '#212121' ? "border-[#e6005c] ring-1 ring-[#e6005c]" : "border-white/20 hover:border-white/40")}
                               style={{ backgroundColor: '#212121' }}
-                            />
+                            >
+                              {darkBgColor === '#212121' && <div className="w-1.5 h-1.5 rounded-full bg-[#e6005c]" />}
+                            </button>
                             <button 
                               onClick={() => { setDarkBgColor('#121212'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor: '#121212', lightBgColor, disableOtherColor }); }}
-                              className={cn("w-[22px] h-[22px] rounded border transition-colors", darkBgColor === '#121212' ? "border-[#e6005c]" : "border-white/20 hover:border-white/40")}
+                              className={cn("w-[22px] h-[22px] rounded border transition-colors relative flex items-center justify-center", darkBgColor === '#121212' ? "border-[#e6005c] ring-1 ring-[#e6005c]" : "border-white/20 hover:border-white/40")}
                               style={{ backgroundColor: '#121212' }}
-                            />
+                            >
+                              {darkBgColor === '#121212' && <div className="w-1.5 h-1.5 rounded-full bg-[#e6005c]" />}
+                            </button>
                           </>
                         ) : (
                           <>
                             <button 
                               onClick={() => { setLightBgColor('#ffffff'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor: '#ffffff', disableOtherColor }); }}
-                              className={cn("w-[22px] h-[22px] rounded border transition-colors shadow-sm", lightBgColor === '#ffffff' ? "border-[#e6005c]" : "border-white/20 hover:border-white/40")}
+                              className={cn("w-[22px] h-[22px] rounded border transition-colors shadow-sm relative flex items-center justify-center", lightBgColor === '#ffffff' ? "border-[#e6005c] ring-1 ring-[#e6005c]" : "border-black/10 hover:border-black/30")}
                               style={{ backgroundColor: '#ffffff' }}
-                            />
+                            >
+                              {lightBgColor === '#ffffff' && <div className="w-1.5 h-1.5 rounded-full bg-[#e6005c]" />}
+                            </button>
                             <button 
                               onClick={() => { setLightBgColor('#f8f9fa'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor: '#f8f9fa', disableOtherColor }); }}
-                              className={cn("w-[22px] h-[22px] rounded border transition-colors shadow-sm", lightBgColor === '#f8f9fa' ? "border-[#e6005c]" : "border-white/20 hover:border-white/40")}
+                              className={cn("w-[22px] h-[22px] rounded border transition-colors shadow-sm relative flex items-center justify-center", lightBgColor === '#f8f9fa' ? "border-[#e6005c] ring-1 ring-[#e6005c]" : "border-black/10 hover:border-black/30")}
                               style={{ backgroundColor: '#f8f9fa' }}
-                            />
+                            >
+                              {lightBgColor === '#f8f9fa' && <div className="w-1.5 h-1.5 rounded-full bg-[#e6005c]" />}
+                            </button>
                           </>
                         )}
                       </div>
@@ -2185,7 +2196,7 @@ export default function App() {
 
                 <Section>
                   <SectionTitle 
-                    icon={Type} 
+                    icon={Scaling} 
                     title="전체 크기 조절"
                     rightElement={
                       isEditingFontSize ? (
@@ -2211,7 +2222,7 @@ export default function App() {
                       )
                     }
                   />
-                  <div className="pt-1 pb-4">
+                  <div className="pt-0.5 pb-2">
                     <input 
                       type="range" 
                       min="10" 
@@ -2333,7 +2344,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.1.2</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.0</span>
           </div>
         </div>
       </aside>
@@ -2589,15 +2600,19 @@ export default function App() {
         {/* Preview Area */}
         <div 
           ref={previewContainerRef}
-          className="flex-1 overflow-y-auto custom-scrollbar relative min-w-0 transition-colors"
-          style={{ backgroundColor: theme === 'dark' ? darkBgColor : lightBgColor }}
+          className={cn(
+            "flex-1 overflow-y-auto custom-scrollbar relative min-w-0 transition-colors",
+            theme === 'dark' ? "bg-[#252525]" : "bg-stone-50"
+          )}
         >
           <div className="w-full min-w-0 min-h-full flex flex-col">
             {logs.length > 0 ? (
               <div className="relative group/preview">
                 <div 
-                  className="min-h-screen relative transition-colors"
-                  style={{ backgroundColor: theme === 'dark' ? darkBgColor : lightBgColor }}
+                  className={cn(
+                    "min-h-screen relative transition-colors",
+                    theme === 'dark' ? "bg-[#252525]" : "bg-stone-50"
+                  )}
                 >
                   {/* Top Section Name Input */}
                   <div id="section-0" className="max-w-[800px] mx-auto px-4 pt-2 font-sans relative">
