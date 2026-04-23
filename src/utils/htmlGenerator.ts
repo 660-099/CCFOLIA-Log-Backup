@@ -111,41 +111,22 @@ export const generateFinalHtmlStr = (
     filterBarScript = `
       <script>
         document.addEventListener('DOMContentLoaded', () => {
-          const tabChecks = document.querySelectorAll('input[data-type="tab"]');
-          const charChecks = document.querySelectorAll('input[data-type="char"]');
-          const allTabsToggle = document.getElementById('toggle-all-tabs');
-          const allCharsToggle = document.getElementById('toggle-all-chars');
-          const logItems = document.querySelectorAll('.ccfolia-log-entry');
-
-          function updateLogs() {
-            const activeTabs = new Set(Array.from(tabChecks).filter(c => c.checked).map(c => c.value));
-            const activeChars = new Set(Array.from(charChecks).filter(c => c.checked).map(c => c.value));
-            
-            logItems.forEach(item => {
-              const tabId = item.getAttribute('data-tab');
-              const charId = item.getAttribute('data-char');
-              const match = activeTabs.has(tabId) && (!charId || activeChars.has(charId));
-              item.style.display = match ? '' : 'none';
+          const qs = s => Array.from(document.querySelectorAll(s)), id = i => document.getElementById(i);
+          const tC = qs('input[data-type="tab"]'), cC = qs('input[data-type="char"]');
+          const aT = id('toggle-all-tabs'), aC = id('toggle-all-chars'), items = qs('.ccfolia-log-entry');
+          const update = () => {
+            const aTbs = new Set(tC.filter(c => c.checked).map(c => c.value));
+            const aChs = new Set(cC.filter(c => c.checked).map(c => c.value));
+            items.forEach(i => {
+              const { tab, char } = i.dataset;
+              i.style.display = aTbs.has(tab) && (!char || aChs.has(char)) ? '' : 'none';
             });
-            
-            allTabsToggle.checked = Array.from(tabChecks).every(c => c.checked);
-            allCharsToggle.checked = Array.from(charChecks).every(c => c.checked);
-          }
-
-          tabChecks.forEach(c => c.addEventListener('change', updateLogs));
-          charChecks.forEach(c => c.addEventListener('change', updateLogs));
-          
-          allTabsToggle.addEventListener('change', (e) => {
-            const checked = e.target.checked;
-            tabChecks.forEach(c => c.checked = checked);
-            updateLogs();
-          });
-          
-          allCharsToggle.addEventListener('change', (e) => {
-            const checked = e.target.checked;
-            charChecks.forEach(c => c.checked = checked);
-            updateLogs();
-          });
+            aT.checked = tC.every(c => c.checked);
+            aC.checked = cC.every(c => c.checked);
+          };
+          [...tC, ...cC].forEach(c => c.addEventListener('change', update));
+          aT.addEventListener('change', e => { tC.forEach(c => c.checked = e.target.checked); update(); });
+          aC.addEventListener('change', e => { cC.forEach(c => c.checked = e.target.checked); update(); });
         });
       </script>
     `;
@@ -167,60 +148,44 @@ export const generateFinalHtmlStr = (
     }
     
     .log-item { position: relative; margin-bottom: 2px; }
+    .log-item.mb-0 { margin-bottom: 0 !important; }
+    .log-item.mb-16 { margin-bottom: 16px !important; }
+    .log-item.mt-0 { margin-top: 0 !important; }
+    .log-item.mt-16 { margin-top: 16px !important; }
+    .log-item div { margin-bottom: 0 !important; }
 
-    .tab-name-block {
-      margin: ${s(12)}px ${s(15.6)}px ${s(4)}px ${s(15.6)}px;
-      display: flex;
-    }
-    .tab-name-badge {
-      padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold;
-    }
+    .tab-name-block { margin: ${s(12)}px ${s(15.6)}px ${s(4)}px; display: flex; }
+    .tab-name-badge { padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; }
 
-    .main-row { 
-      display: flex; gap: ${s(12)}px; padding: ${s(12)}px ${s(15.6)}px; align-items: flex-start;
-    }
+    .main-row, .secret-row, .command-box, .narration-row { padding: ${s(12)}px ${s(15.6)}px; }
+    .main-row, .secret-row { display: flex; gap: ${s(12)}px; align-items: flex-start; }
+    .secret-row { margin: ${s(4)}px ${s(15.6)}px; border-radius: 4px; }
+
     .main-avatar { 
       width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; 
-      background-color: ${avatarPlaceholder}; border-radius: 4px;
-      object-fit: contain;
+      background-color: ${avatarPlaceholder}; border-radius: 4px; object-fit: contain;
     }
     .main-body { flex-grow: 1; line-height: 1.5; }
-    .main-name { font-weight: bold; font-size: 0.93em; margin-bottom: 2px; display: block; }
-    .main-content { font-size: 1em; color: ${textColor}; white-space: pre-wrap; word-break: break-all; }
+    .main-name { font-weight: bold; font-size: 0.96em; margin-bottom: 2px; display: block; }
+    .main-content, .other-content { font-size: 1em; white-space: pre-wrap; word-break: break-all; }
+    .main-content { color: ${textColor}; }
 
-    .other-row { 
-      padding: ${s(4)}px ${s(15.6)}px; 
-      display: flex; gap: ${s(8)}px; align-items: baseline;
-    }
-    .other-name { font-weight: bold; flex-shrink: 0; font-size: 0.93em; }
-    .other-content { font-size: 1em; color: ${otherTextColor}; white-space: pre-wrap; word-break: break-all; }
+    .other-row { padding: ${s(4)}px ${s(15.6)}px; display: flex; gap: ${s(8)}px; align-items: baseline; }
+    .other-name { font-weight: bold; flex-shrink: 0; font-size: 0.96em; }
+    .other-content { color: ${otherTextColor}; }
 
     .info-row { 
-      padding: ${s(15.6)}px ${s(19.2)}px; 
-      background: ${infoBg};
-      border-left: 4px solid ${borderColor};
-      margin: ${s(8)}px ${s(15.6)}px;
-      border-radius: 4px;
+      padding: ${s(15.6)}px ${s(19.2)}px; background: ${infoBg};
+      border-left: 4px solid ${borderColor}; margin: ${s(8)}px ${s(15.6)}px; border-radius: 4px;
     }
     
     .command-box { 
-      background: ${commandBg}; 
-      border: 1px solid ${borderColor}; 
-      padding: ${s(12)}px ${s(15.6)}px; 
-      border-radius: 8px; 
-      margin: ${s(8)}px ${s(15.6)}px; 
+      background: ${commandBg}; border: 1px solid ${borderColor}; 
+      border-radius: 8px; margin: ${s(8)}px ${s(15.6)}px; 
     }
     .command-text { font-family: 'NanumGothicCodingLigature', monospace; color: ${textColor}; font-weight: bold; line-height: 1.6; }
 
-    .secret-row {
-      display: flex; gap: ${s(12)}px; padding: ${s(12)}px ${s(15.6)}px; 
-      align-items: flex-start; margin: ${s(4)}px ${s(15.6)}px; border-radius: 4px;
-    }
-
-    .narration-row {
-      padding: ${s(12)}px ${s(15.6)}px;
-      text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic;
-    }
+    .narration-row { text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic; }
   `;
 
   const isInline = cssFormat === 'inline';
@@ -285,7 +250,8 @@ export const generateFinalHtmlStr = (
         return match.replace(/(?:<br\s*\/?>|\n)+/gi, ' ');
       });
     }
-    let finalHtmlContent = linkify(displayContent);
+    let finalHtmlContent = linkify(displayContent)
+      .replace(/<div style="margin-bottom: 0;">/gi, '<div>');
     if (log.name === 'system') {
       finalHtmlContent = finalHtmlContent.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
         const charIds = Object.keys(charSettings).filter(id => charSettings[id].name === p1.trim());
@@ -324,7 +290,7 @@ export const generateFinalHtmlStr = (
     if (isInline) {
       const avatarStyle = `width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; background-color: ${hideAvatar ? 'transparent' : avatarPlaceholder}; border-radius: 4px; object-fit: contain;`;
       const bodyStyle = `flex-grow: 1; line-height: 1.5;`;
-      const nameStyle = `font-weight: bold; color: ${color}; font-size: ${nameSize}px; margin-bottom: 2px; display: block;`;
+      const nameStyle = `font-weight: bold; color: ${color}; font-size: 0.96em; margin-bottom: 2px; display: block;`;
       const contentStyle = `font-size: 1em; color: ${textColor}; white-space: pre-wrap; word-break: break-all;`;
       const otherContentStyle = `font-size: 1em; color: ${otherTextColor}; white-space: pre-wrap; word-break: break-all;`;
       
@@ -355,7 +321,7 @@ export const generateFinalHtmlStr = (
         html += `<div style="padding: ${s(12)}px ${s(15.6)}px; text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic;">${finalHtmlContent}</div>`;
       } else if (format === 'other') {
         html += `<div style="padding: ${s(4)}px ${s(15.6)}px; display: flex; gap: ${s(8)}px; align-items: baseline;">
-          ${!isCont ? `<span style="font-weight: bold; flex-shrink: 0; font-size: 0.93em; color: ${otherNameColor};">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}
+          ${!isCont ? `<span style="font-weight: bold; flex-shrink: 0; font-size: 0.96em; color: ${otherNameColor};">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}
           <span style="${otherContentStyle}">${finalHtmlContent}</span>
         </div>`;
       } else if (format === 'info') {
@@ -413,15 +379,18 @@ export const generateFinalHtmlStr = (
       const isSectionStart = !prevVisibleLog || hasImageBefore;
       const isSectionEnd = !nextVisibleLog || isNextSameTab === false || hasImageAfter;
 
-      let itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? '0' : '2px') : (isCont ? '0' : '2px');
-      let itemMarginTop = '0';
+      let mb = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? 'mb-0' : '') : (isCont ? 'mb-0' : '');
+      let mt = '';
 
       if (isNarration) {
-        itemMarginTop = isPrevNarration ? '0' : '16px';
-        itemMarginBottom = isNextNarration ? '0' : '16px';
+        mt = isPrevNarration ? 'mt-0' : 'mt-16';
+        mb = isNextNarration ? 'mb-0' : 'mb-16';
       }
 
-      html += `<div data-tab="${log.tabId}" data-char="${log.charId}" class="log-item ccfolia-log-entry" style="margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
+      const cl = [mb, mt].filter(Boolean).join(' ');
+      const clStr = `log-item ccfolia-log-entry${cl ? ` ${cl}` : ''}`;
+
+      html += `<div data-tab="${log.tabId}" data-char="${log.charId}" class="${clStr}">`;
 
       if (log.isCommand) {
         const nameHtml = log.name !== 'system' ? `<span class="command-text" style="color: ${color}; font-weight: bold;">[ ${log.name} ]</span> ` : '';
@@ -436,53 +405,38 @@ export const generateFinalHtmlStr = (
       } else if (isNarration) {
         html += `<div class="narration-row">${finalHtmlContent}</div>`;
       } else if (format === 'other') {
-        html += `<div class="other-row">
-          ${!isCont ? `<span class="other-name" style="color: ${otherNameColor}">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}
-          <span class="other-content">${finalHtmlContent}</span>
-        </div>`;
+        html += `<div class="other-row">${!isCont ? `<span class="other-name" style="color: ${otherNameColor}">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}<span class="other-content">${finalHtmlContent}</span></div>`;
       } else if (format === 'info') {
-        const infoMargin = shouldMergeStyle ? `0 ${s(15.6)}px` : `${s(8)}px ${s(15.6)}px`;
-        const infoRadius = shouldMergeStyle 
-          ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
-          : '4px';
-        const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : '';
-        const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : '';
-        const borderTopStyle = infoBorderTop ? `border-top: ${infoBorderTop}; ` : '';
-        const borderBottomStyle = infoBorderBottom ? `border-bottom: ${infoBorderBottom}; ` : '';
+        const tZ = isPrevSameTab && !isSectionStart, bZ = isNextSameTab && !isSectionEnd;
+        const rad = shouldMergeStyle ? `${tZ ? 0 : 4}px ${tZ ? 0 : 4}px ${bZ ? 0 : 4}px ${bZ ? 0 : 4}px` : '4px';
+        const st = [
+          shouldMergeStyle ? `margin: 0 ${s(15.6)}px;` : '',
+          rad !== '4px' ? `border-radius: ${rad};` : '',
+          shouldMergeStyle && tZ ? 'border-top: none;' : '',
+          shouldMergeStyle && bZ ? 'border-bottom: none;' : ''
+        ].filter(Boolean).join(' ');
 
-        html += `<div class="info-row" style="margin: ${infoMargin}; border-radius: ${infoRadius}; ${borderTopStyle}${borderBottomStyle}">
-          ${!isCont ? `<span class="main-name" style="color: ${color}; display: block;">${log.name}</span>` : ''}
-          <div class="main-content">${finalHtmlContent}</div>
-        </div>`;
+        html += `<div class="info-row"${st ? ` style="${st}"` : ''}>${!isCont ? `<span class="main-name" style="color: ${color}; display: block;">${log.name}</span>` : ''}<div class="main-content">${finalHtmlContent}</div></div>`;
       } else if (format === 'secret') {
         const tabColor = tabSet?.color || '#ffd400';
         const secretBg = getSecretBg(tabColor);
-        const avatarHtml = img ? `<img src="${img}" class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}" />` : `<div class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}"></div>`;
-        const secretMargin = shouldMergeStyle ? `0 ${s(15.6)}px` : `${s(4)}px ${s(15.6)}px`;
-        const secretRadius = shouldMergeStyle 
-          ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
-          : '4px';
-        const secretBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : '';
-        const borderTopStyle = secretBorderTop ? ` border-top: ${secretBorderTop};` : '';
+        const avSt = hideAvatar ? 'background-color: transparent;' : '';
+        const avatarHtml = img ? `<img src="${img}" class="main-avatar"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="main-avatar"${avSt ? ` style="${avSt}"` : ''}></div>`;
+        const tZ = isPrevSameTab && !isSectionStart, bZ = isNextSameTab && !isSectionEnd;
+        const rad = shouldMergeStyle ? `${tZ ? 0 : 4}px ${tZ ? 0 : 4}px ${bZ ? 0 : 4}px ${bZ ? 0 : 4}px` : '4px';
+        const st = [
+          `background: ${secretBg};`,
+          `border-left: 4px solid ${tabColor};`,
+          shouldMergeStyle ? `margin: 0 ${s(15.6)}px;` : '',
+          rad !== '4px' ? `border-radius: ${rad};` : '',
+          shouldMergeStyle && tZ ? 'border-top: none;' : ''
+        ].filter(Boolean).join(' ');
 
-        html += `
-          <div class="secret-row" style="background: ${secretBg}; border-left: 4px solid ${tabColor}; margin: ${secretMargin}; border-radius: ${secretRadius};${borderTopStyle}">
-            ${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
-            <div class="main-body">
-              ${!isCont ? `<span class="main-name" style="color: ${color}; display: block;">${log.name}</span>` : ''}
-              <div class="main-content">${finalHtmlContent}</div>
-            </div>
-          </div>`;
+        html += `<div class="secret-row" style="${st}">${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}<div class="main-body">${!isCont ? `<span class="main-name" style="color: ${color}; display: block;">${log.name}</span>` : ''}<div class="main-content">${finalHtmlContent}</div></div></div>`;
       } else {
-        const avatarHtml = img ? `<img src="${img}" class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}" />` : `<div class="main-avatar" style="${hideAvatar ? 'background-color: transparent;' : ''}"></div>`;
-        html += `
-          <div class="main-row">
-            ${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
-            <div class="main-body">
-              ${!isCont ? `<span class="main-name" style="color: ${color}; display: block;">${log.name}</span>` : ''}
-              <div class="main-content">${finalHtmlContent}</div>
-            </div>
-          </div>`;
+        const avSt = hideAvatar ? 'background-color: transparent;' : '';
+        const avatarHtml = img ? `<img src="${img}" class="main-avatar"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="main-avatar"${avSt ? ` style="${avSt}"` : ''}></div>`;
+        html += `<div class="main-row">${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}<div class="main-body">${!isCont ? `<span class="main-name" style="color: ${color}; display: block;">${log.name}</span>` : ''}<div class="main-content">${finalHtmlContent}</div></div></div>`;
       }
       html += `</div>`;
     }
