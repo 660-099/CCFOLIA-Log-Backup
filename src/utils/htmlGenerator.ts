@@ -154,6 +154,7 @@ export const generateFinalHtmlStr = (
   const css = `
     ${fontImport}
     ${filterBarCSS}
+    .log-main-container { background-color: ${bgColor}; margin: 0; padding: 0; }
     .log-container * { box-sizing: border-box; min-width: 0; }
     .log-container { 
       width: 100%; max-width: 800px; margin: 0 auto; 
@@ -518,9 +519,11 @@ export const generateFinalHtmlStr = (
         .log-container * { box-sizing: border-box; min-width: 0; }
       </style>` : `<style>${css}</style>`}
     </head>
-    <body style="margin: 0; background-color: ${bgColor};">
-      ${filterBarHtml}
-      ${isInline ? `<div class="log-container" style="width: 100%; max-width: 800px; margin: 0 auto; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: 1.6; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden;">\n${html}\n</div>` : `<div class="log-container">\n${html}\n</div>`}
+    <body>
+      <div class="log-main-container"${isInline ? ` style="background-color: ${bgColor}; margin: 0; padding: 0;"` : ''}>
+        ${filterBarHtml}
+        ${isInline ? `<div class="log-container" style="width: 100%; max-width: 800px; margin: 0 auto; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: 1.6; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden;">\n${html}\n</div>` : `<div class="log-container">\n${html}\n</div>`}
+      </div>
       ${filterBarScript}
     </body>
     </html>
