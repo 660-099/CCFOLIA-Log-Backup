@@ -1325,8 +1325,8 @@ export default function App() {
               >
                 <Section>
                   <SectionTitle icon={MessageSquare} title="로그 업로드" />
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
+                  <label 
+                    htmlFor="main-log-upload"
                     className="w-full h-[50px] px-3 flex items-center justify-between border-2 border-dashed border-white/5 rounded-xl hover:border-[#e6005c] hover:bg-pink-500/5 transition-all group cursor-pointer"
                   >
                     <div className="flex items-center gap-3 overflow-hidden">
@@ -1351,12 +1351,13 @@ export default function App() {
                     {originalFileName ? (
                       <button
                         onClick={(e) => {
+                          e.preventDefault();
                           e.stopPropagation();
                           setLogs([]);
                           setOriginalFileName('');
                           if (fileInputRef.current) fileInputRef.current.value = '';
                         }}
-                        className="p-1 hover:bg-white/10 rounded-lg transition-colors shrink-0 flex items-center justify-center w-6 h-6"
+                        className="p-1 hover:bg-white/10 rounded-lg transition-colors shrink-0 flex items-center justify-center w-6 h-6 z-10 relative"
                         title="업로드 취소"
                       >
                         <X className="w-3.5 h-3.5 text-white/60 hover:text-white" />
@@ -1364,8 +1365,8 @@ export default function App() {
                     ) : (
                       <div className="w-6 h-6 shrink-0" />
                     )}
-                  </div>
-                  <input type="file" ref={fileInputRef} onChange={handleLogUpload} accept=".html" className="hidden" />
+                  </label>
+                  <input type="file" id="main-log-upload" ref={fileInputRef} onChange={handleLogUpload} accept=".html" className="hidden" />
                   <p className="px-1 pt-1 text-[9px] text-white/40 leading-tight flex items-center gap-1">
                     <Info className="w-3 h-3 shrink-0" />
                     <span><a href="https://lispcoc.github.io/ccfolia_log_getter/" target="_blank" rel="noopener noreferrer" className="text-[#e6005c] hover:underline">CCFOLIA Log Getter</a> 추출 파일을 지원합니다.</span>
@@ -3036,12 +3037,12 @@ export default function App() {
                     theme === 'dark' ? "text-white/20" : "text-stone-900/40"
                   )}>CCFOLIA에서 추출한 HTML 파일을 업로드하여 시작하세요</p>
                 </div>
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-8 py-3 bg-[#e6005c] text-white rounded-2xl text-sm font-bold hover:bg-[#ff0066] transition-all shadow-xl shadow-pink-500/20 active:scale-95"
+                <label 
+                  htmlFor="main-log-upload"
+                  className="px-8 py-3 bg-[#e6005c] text-white rounded-2xl text-sm font-bold hover:bg-[#ff0066] transition-all shadow-xl shadow-pink-500/20 active:scale-95 cursor-pointer inline-block"
                 >
                   업로드하기
-                </button>
+                </label>
               </div>
             )}
           </div>
