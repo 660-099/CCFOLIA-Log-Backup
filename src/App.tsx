@@ -199,8 +199,10 @@ const PortalDropdown = ({ isOpen, onClose, triggerRef, children, position = 'bot
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const [isCalculated, setIsCalculated] = useState(false);
+
   const updatePosition = useCallback(() => {
-    if (!isOpen || !triggerRef.current || !dropdownRef.current) return;
+    if (!triggerRef.current || !dropdownRef.current) return;
     const triggerRect = triggerRef.current.getBoundingClientRect();
     const dropdownRect = dropdownRef.current.getBoundingClientRect();
     
@@ -227,7 +229,8 @@ const PortalDropdown = ({ isOpen, onClose, triggerRef, children, position = 'bot
       top,
       left
     });
-  }, [isOpen, triggerRef, position]);
+    setIsCalculated(true);
+  }, [triggerRef, position]);
 
   useEffect(() => {
     if (isOpen) {
@@ -240,6 +243,8 @@ const PortalDropdown = ({ isOpen, onClose, triggerRef, children, position = 'bot
         window.removeEventListener('resize', updatePosition);
         window.removeEventListener('scroll', updatePosition, true);
       };
+    } else {
+      setIsCalculated(false);
     }
   }, [isOpen, updatePosition]);
 
@@ -259,12 +264,19 @@ const PortalDropdown = ({ isOpen, onClose, triggerRef, children, position = 'bot
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [isOpen, onClose, triggerRef]);
 
+  // Instead of completely unmounting, we keep it mounted but hidden initially, 
+  // or return null only when isOpen is entirely false and animation not needed.
   if (!isOpen) return null;
 
   return createPortal(
     <div
       ref={dropdownRef}
-      style={{ top: coords.top, left: coords.left }}
+      style={{ 
+        top: coords.top, 
+        left: coords.left,
+        visibility: isCalculated ? 'visible' : 'hidden',
+        opacity: isCalculated ? 1 : 0
+      }}
       className="fixed z-[9999]"
       onClick={e => e.stopPropagation()}
     >
@@ -303,7 +315,7 @@ export default function App() {
   const [darkBgColor, setDarkBgColor] = useLocalStorage<string>('ccfolia_darkBgColor', '#212121', undefined, undefined, rememberSettings);
   const [lightBgColor, setLightBgColor] = useLocalStorage<string>('ccfolia_lightBgColor', '#ffffff', undefined, undefined, rememberSettings);
   const [disableOtherColor, setDisableOtherColor] = useLocalStorage<boolean>('ccfolia_disableOtherColor', true, undefined, undefined, rememberSettings);
-  const [isFilterBarEnabled, setIsFilterBarEnabled] = useLocalStorage<boolean>('ccfolia_filterBarEnabled', false, undefined, undefined, rememberSettings);
+  const [filterBarMode, setFilterBarMode] = useLocalStorage<'none' | 'floating' | 'fixed'>('ccfolia_filterBarMode', 'none', undefined, undefined, rememberSettings);
   const [isEditingFontSize, setIsEditingFontSize] = useState(false);
   const [renamingChar, setRenamingChar] = useState<string | null>(null);
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
@@ -321,6 +333,10 @@ export default function App() {
   const narrationDropdownRef = useRef<HTMLDivElement>(null);
   const [isFontDropdownOpen, setIsFontDropdownOpen] = useState(false);
   const fontDropdownRef = useRef<HTMLDivElement>(null);
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
+  const [hoverImgRect, setHoverImgRect] = useState<DOMRect | null>(null);
+  const [hoverImgUrl, setHoverImgUrl] = useState<string | null>(null);
 
   const [splitPoints, setSplitPoints] = useState<Set<string>>(new Set());
   const [insertedImages, setInsertedImages] = useState<Record<string, { url: string; width?: string; align?: 'left' | 'center' | 'right' }[]>>({});
@@ -346,6 +362,9 @@ export default function App() {
       }
       if (fontDropdownRef.current && !fontDropdownRef.current.contains(target)) {
         setIsFontDropdownOpen(false);
+      }
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(target)) {
+        setIsFilterDropdownOpen(false);
       }
       if (libraryDropdownRef.current && !libraryDropdownRef.current.contains(target)) {
         setOpenLibraryDropdownId(null);
@@ -446,7 +465,7 @@ export default function App() {
       darkBgColor,
       lightBgColor,
       disableOtherColor,
-      isFilterBarEnabled,
+      filterBarMode,
       logs,
       insertedImages,
       splitPoints: Array.from(splitPoints),
@@ -492,7 +511,11 @@ export default function App() {
     if (state.darkBgColor) setDarkBgColor(state.darkBgColor);
     if (state.lightBgColor) setLightBgColor(state.lightBgColor);
     setDisableOtherColor(state.disableOtherColor);
-    if (state.isFilterBarEnabled !== undefined) setIsFilterBarEnabled(state.isFilterBarEnabled);
+    if (state.filterBarMode !== undefined) {
+      setFilterBarMode(state.filterBarMode);
+    } else if (state.isFilterBarEnabled !== undefined) {
+      setFilterBarMode(state.isFilterBarEnabled ? 'floating' : 'none');
+    }
     if (state.logs) setLogs(state.logs);
     if (state.insertedImages) setInsertedImages(state.insertedImages);
     if (state.splitPoints) setSplitPoints(new Set(state.splitPoints));
@@ -1093,7 +1116,7 @@ export default function App() {
       theme,
       darkBgColor,
       lightBgColor,
-      isFilterBarEnabled,
+      filterBarMode,
       fontSize,
       fontFamily,
       disableOtherColor,
@@ -2097,16 +2120,20 @@ export default function App() {
                             className="flex-1 min-w-0 text-[10px] px-2 py-1.5 bg-black/20 border border-white/5 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors"
                           />
                           
-                          <div className="group/charimg relative w-7 h-7 rounded-lg bg-black/20 border border-white/5 shrink-0 flex items-center justify-center ml-auto">
+                          <div 
+                            className="group/charimg relative w-7 h-7 rounded-lg bg-black/20 border border-white/5 shrink-0 flex items-center justify-center ml-auto"
+                            onMouseEnter={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setHoverImgRect(rect);
+                              setHoverImgUrl(char.imageUrl);
+                            }}
+                            onMouseLeave={() => {
+                              setHoverImgRect(null);
+                              setHoverImgUrl(null);
+                            }}
+                          >
                             {char.imageUrl ? (
-                              <>
-                                <img src={char.imageUrl} alt="" referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain rounded-lg" />
-                                <div className="absolute right-full mr-3 top-1/2 -translate-y-1/2 z-[100] hidden group-hover/charimg:block pointer-events-none">
-                                  <div className="bg-[#1a1a1a] p-1.5 rounded-xl border border-white/20 shadow-2xl overflow-hidden min-w-[128px] min-h-[128px] flex items-center justify-center">
-                                    <img src={char.imageUrl} alt="" referrerPolicy="no-referrer" className="w-32 h-32 object-contain rounded-lg block" />
-                                  </div>
-                                </div>
-                              </>
+                              <img src={char.imageUrl} alt="" referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain rounded-lg" />
                             ) : (
                               <ImageIcon className="w-3.5 h-3.5 text-white/10" />
                             )}
@@ -2286,7 +2313,49 @@ export default function App() {
                 <Section>
                   <SectionTitle icon={Palette} title="CSS 출력 형식" />
                   
-                  <div className="grid grid-cols-2 gap-2 mb-2">
+                  <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm relative h-11 mb-2" ref={filterDropdownRef}>
+                    <span className="text-[11px] font-bold text-white/70">로그 필터 컨트롤러</span>
+                    <div className="relative">
+                      <button
+                        onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
+                        className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/80 px-2 py-1 outline-none hover:border-white/20 transition-colors"
+                      >
+                        <span className="max-w-[100px] truncate">
+                          {filterBarMode === 'none' ? '사용 안 함' : filterBarMode === 'floating' ? '플로팅 버튼' : '상단 고정 바'}
+                        </span>
+                        <ChevronDown className="w-3 h-3 opacity-50" />
+                      </button>
+                      
+                      {isFilterDropdownOpen && (
+                        <div className="absolute right-0 top-full mt-1 w-32 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                          <div className="p-1">
+                            {([
+                              { value: 'none', label: '사용 안 함' },
+                              { value: 'floating', label: '플로팅 버튼' },
+                              { value: 'fixed', label: '상단 고정 바' }
+                            ] as const).map(opt => (
+                              <button
+                                key={opt.value}
+                                onClick={() => {
+                                  setFilterBarMode(opt.value);
+                                  saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor, disableOtherColor, filterBarMode: opt.value });
+                                  setIsFilterDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
+                                  filterBarMode === opt.value ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
+                                )}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2">
                     <Tooltip position="top" className="text-center" content={
                       <>HTML 상단에 스타일 시트를 포함합니다. <span className="text-[#e6005c] font-medium">(권장)</span></>
                     }>
@@ -2315,17 +2384,6 @@ export default function App() {
                         인라인 스타일
                       </button>
                     </Tooltip>
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 mt-2">
-                    <span className="text-[11px] font-bold text-white/70">로그 필터 컨트롤러</span>
-                    <Toggle 
-                      enabled={isFilterBarEnabled}
-                      onChange={(enabled) => {
-                        setIsFilterBarEnabled(enabled);
-                        saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor, disableOtherColor, isFilterBarEnabled: enabled });
-                      }}
-                    />
                   </div>
                 </Section>
               </motion.div>
@@ -2400,7 +2458,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.1</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.2</span>
           </div>
         </div>
       </aside>
@@ -2902,6 +2960,22 @@ export default function App() {
                     </div>
                     {/* Spacer for visibility (Preview only) */}
                     <div className="w-full shrink-0" style={{ height: '60px' }} />
+
+                    {/* Portal Hover Image Tooltip */}
+                    {hoverImgRect && hoverImgUrl && (
+                      <div 
+                        className="fixed z-[9999] pointer-events-none"
+                        style={{
+                          left: `${hoverImgRect.left - 138}px`, // 128 (width) + 10 (spacing)
+                          top: `${hoverImgRect.top + hoverImgRect.height / 2 - 70}px`, // Center vertically (140 / 2)
+                        }}
+                      >
+                        <div className="bg-[#1a1a1a] p-1.5 rounded-xl border border-white/20 shadow-2xl overflow-hidden flex items-center justify-center">
+                          <img src={hoverImgUrl} alt="" referrerPolicy="no-referrer" className="w-32 h-32 object-contain rounded-lg block" />
+                        </div>
+                      </div>
+                    )}
+                    
                   </div>
                 </div>
 

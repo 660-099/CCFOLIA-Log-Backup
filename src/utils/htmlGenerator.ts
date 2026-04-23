@@ -19,7 +19,7 @@ export const generateFinalHtmlStr = (
   theme: 'dark' | 'light',
   darkBgColor: string,
   lightBgColor: string,
-  isFilterBarEnabled: boolean,
+  filterBarMode: 'none' | 'floating' | 'fixed',
   fontSize: number,
   fontFamily: string,
   disableOtherColor: boolean,
@@ -58,7 +58,7 @@ export const generateFinalHtmlStr = (
   const activeTabs = new Map<string, { id: string, name: string }>();
   const activeChars = new Map<string, { id: string, name: string, color: string }>();
 
-  if (isFilterBarEnabled) {
+  if (filterBarMode !== 'none') {
     filteredLogs.forEach(log => {
       // Find actual character settings color if available
       const charColor = charSettings[log.charId]?.color || log.color;
@@ -71,56 +71,102 @@ export const generateFinalHtmlStr = (
   let filterBarCSS = '';
   let filterBarScript = '';
 
-  if (isFilterBarEnabled) {
+  if (filterBarMode !== 'none') {
     const tabBtns = Array.from(activeTabs.values()).map(t => 
-      `<label class="filter-item"><input type="checkbox" checked value="${t.id}" data-type="tab"><span>${t.name}</span></label>`
+      `<label class="i"><input type="checkbox" checked value="${t.id}" data-type="tab"><span class="c"></span>${t.name}</label>`
     ).join('');
     
     let charsArray = Array.from(activeChars.values());
-    if (narrationCharacter && !activeChars.has(narrationCharacter)) {
-      charsArray.push({
-        id: narrationCharacter,
-        name: '나레이션',
-        color: charSettings[narrationCharacter]?.color || '#000000'
-      });
-    }
-
-    const narrationChar = charsArray.find(c => c.id === narrationCharacter);
-    const otherChars = charsArray.filter(c => c.id !== narrationCharacter);
-    
-    if (narrationChar) {
-      narrationChar.name = '나레이션';
-      charsArray = [narrationChar, ...otherChars];
+    if (narrationCharacter) {
+      charsArray = [
+        {
+          id: '__NARRATION__',
+          name: '나레이션',
+          color: charSettings[narrationCharacter]?.color || '#000000'
+        },
+        ...charsArray
+      ];
     }
 
     const charBtns = charsArray.map(c => 
-      `<label class="filter-item"><input type="checkbox" checked value="${c.id}" data-type="char"><span>${c.name}</span></label>`
+      `<label class="i"><input type="checkbox" checked value="${c.id}" data-type="char"><span class="c"></span>${c.name}</label>`
     ).join('');
 
+    const isFixed = filterBarMode === 'fixed';
+
+    let filterMenuStyles = '';
+    if (isFixed) {
+      filterMenuStyles = `
+        #f-menu {
+          background: ${bgColor}; 
+          border-bottom: 1px solid ${borderColor}; 
+          padding: 15px 20px; 
+          margin: 0 auto 20px auto;
+          max-width: 800px;
+          width: 100%;
+        }
+        #f-menu .g { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+        #f-menu .g:last-child { margin-bottom: 0; }
+        #f-menu .t { font-size: 9px; font-weight: bold; color: ${isDark ? '#555' : '#888'}; letter-spacing: 1.2px; text-transform: uppercase; margin-right: 5px; margin-bottom: 0; display: block; }
+        #f-menu .all { width: auto; border: none; padding-bottom: 0; margin-bottom: 0; padding-right: 10px; border-right: 1px solid ${borderColor}; display: inline-flex !important; }
+        #f-menu .i { display: inline-flex !important; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; color: ${isDark ? '#999' : '#666'}; }
+      `;
+    } else {
+      filterMenuStyles = `
+        #f-btn {
+          position: fixed !important; top: 20px; right: 20px;
+          width: 40px; height: 40px; background: ${isDark ? '#1a1a1a' : '#f5f5f5'}; 
+          border: 1.5px solid ${borderColor}; border-radius: 6px;
+          cursor: pointer; z-index: 1000001;
+          display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px;
+        }
+        #f-btn span { display: block; width: 20px; height: 1.5px; background: ${isDark ? '#888' : '#666'}; }
+        #f-menu {
+          position: fixed !important; top: 65px; right: 20px;
+          width: 180px; max-height: 70vh; 
+          background: ${isDark ? 'rgba(30, 30, 30, 0.98)' : 'rgba(255, 255, 255, 0.98)'}; border: 1px solid ${borderColor}; 
+          border-radius: 6px; padding: 15px; 
+          display: none; overflow-y: auto; z-index: 1000000;
+          box-shadow: -5px 5px 25px rgba(0,0,0,0.5);
+        }
+        #f-menu::-webkit-scrollbar { width: 4px; }
+        #f-menu::-webkit-scrollbar-thumb { background: ${borderColor}; border-radius: 10px; }
+        #f-menu .g { margin-bottom: 20px; }
+        #f-menu .t { font-size: 9px; font-weight: bold; color: ${isDark ? '#555' : '#888'}; letter-spacing: 1.2px; margin-bottom: 10px; display: block; text-transform: uppercase; }
+        #f-menu .i { display: flex !important; align-items: flex-start; gap: 10px; padding: 5px 0; cursor: pointer; font-size: 12px; color: ${isDark ? '#999' : '#666'}; }
+        #f-menu .all { font-weight: bold; color: ${textColor}; border-bottom: 1px solid ${borderColor}; padding-bottom: 8px; width: 100%; margin-bottom: 6px; }
+      `;
+    }
+
     filterBarCSS = `
-      .log-filter-container { max-width: 800px; margin: 16px auto; padding: 12px 16px; background: ${isDark ? '#2a2a2a' : '#f5f5f5'}; border-radius: 6px; border: 1px solid ${borderColor}; font-family: inherit; font-size: 12px; color: ${textColor}; }
-      .filter-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-      .filter-divider { height: 1px; background: ${borderColor}; margin: 8px 0; opacity: 0.5; width: 100%; }
-      .filter-label { font-size: 10px; font-weight: bold; min-width: 40px; opacity: 0.4; letter-spacing: 0.5px; }
-      .filter-item { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
-      .filter-item input { margin: 0; cursor: pointer; accent-color: ${isDark ? '#ffffff' : '#333333'}; }
-      .filter-item:has(input:not(:checked)) { opacity: 0.4; filter: grayscale(100%); }
-      .filter-item:has(input:not(:checked)) span { color: ${isDark ? '#666' : '#999'}; text-decoration: line-through; }
-      .filter-item-all { font-weight: bold; }
+      #filter-root { position: relative; z-index: 1000000; font-family: inherit; }
+      #filter-root * { box-sizing: border-box; }
+      ${filterMenuStyles}
+      #f-menu .i input { display: none; }
+      #f-menu .c { width: 12px; height: 12px; border: 1px solid ${borderColor}; border-radius: 2px; background: ${isDark ? '#111' : '#eee'}; flex-shrink: 0; margin-top: ${isFixed ? '0' : '3px'}; position: relative; }
+      #f-menu .i input:checked + .c { background: #aaa; border-color: #aaa; }
+      #f-menu .i input:checked + .c::after {
+        content: ''; position: absolute; left: 3px; top: 1px; width: 3px; height: 6px;
+        border: solid ${isDark ? '#111' : '#fff'}; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg);
+      }
+      #f-menu .i:hover { color: ${textColor}; }
+      #f-menu .i:has(input:not(:checked)) { opacity: 0.55; text-decoration: line-through; color: ${isDark ? '#888' : '#aaa'}; }
     `;
 
     filterBarHtml = `
-      <div class="log-filter-container">
-        <div class="filter-row">
-          <span class="filter-label">TABS</span>
-          <label class="filter-item filter-item-all"><input type="checkbox" checked id="toggle-all-tabs"><span>[All]</span></label>
-          ${tabBtns}
-        </div>
-        <div class="filter-divider"></div>
-        <div class="filter-row">
-          <span class="filter-label">CHARS</span>
-          <label class="filter-item filter-item-all"><input type="checkbox" checked id="toggle-all-chars"><span>[All]</span></label>
-          ${charBtns}
+      <div id="filter-root">
+        ${!isFixed ? `<div id="f-btn"><span></span><span></span><span></span></div>` : ''}
+        <div id="f-menu">
+          <div class="g">
+            <span class="t">TABS</span>
+            <label class="i all"><input type="checkbox" checked id="aT"><span class="c"></span>All</label>
+            ${tabBtns}
+          </div>
+          <div class="g" style="margin-bottom: 0;">
+            <span class="t">CHARS</span>
+            <label class="i all"><input type="checkbox" checked id="aC"><span class="c"></span>All</label>
+            ${charBtns}
+          </div>
         </div>
       </div>
     `;
@@ -130,13 +176,42 @@ export const generateFinalHtmlStr = (
         document.addEventListener('DOMContentLoaded', () => {
           const qs = s => Array.from(document.querySelectorAll(s)), id = i => document.getElementById(i);
           const tC = qs('input[data-type="tab"]'), cC = qs('input[data-type="char"]');
-          const aT = id('toggle-all-tabs'), aC = id('toggle-all-chars'), items = qs('.ccfolia-log-entry');
+          const aT = id('aT'), aC = id('aC'), items = qs('.ccfolia-log-entry');
+          
+          ${!isFixed ? `
+          const b = id('f-btn'), m = id('f-menu');
+          document.body.appendChild(b); document.body.appendChild(m);
+          b.onclick = (e) => { e.stopPropagation(); m.style.display = (m.style.display === 'block') ? 'none' : 'block'; };
+          document.addEventListener('click', (e) => { if (!m.contains(e.target) && e.target !== b) m.style.display = 'none'; });
+          ` : ''}
+          
           const update = () => {
             const hTbs = new Set(tC.filter(c => !c.checked).map(c => c.value));
             const hChs = new Set(cC.filter(c => !c.checked).map(c => c.value));
+            
             items.forEach(i => {
-              const { tab, char } = i.dataset;
-              i.style.display = (tab && hTbs.has(tab)) || (char && hChs.has(char)) ? 'none' : '';
+              const { tab, char, isMainTab, isNarrationCharacter } = i.dataset;
+              
+              if (tab && hTbs.has(tab)) {
+                i.style.display = 'none';
+                return;
+              }
+
+              if (char) {
+                if (isNarrationCharacter === 'true' && isMainTab === 'true') {
+                  if (hChs.has('__NARRATION__')) {
+                    i.style.display = 'none';
+                    return;
+                  }
+                } else {
+                  if (hChs.has(char)) {
+                    i.style.display = 'none';
+                    return;
+                  }
+                }
+              }
+
+              i.style.display = '';
             });
             aT.checked = tC.every(c => c.checked);
             aC.checked = cC.every(c => c.checked);
@@ -290,13 +365,15 @@ export const generateFinalHtmlStr = (
       const tabBg = getSecretBg(tabColor);
       
       if (isInline) {
-        html += `<div data-tab="${log.tabId}" class="ccfolia-log-entry" style="margin: ${s(12)}px ${s(15.6)}px ${s(4)}px ${s(15.6)}px; display: flex;">
+        const isMainTab = format === 'main' ? 'true' : 'false';
+        html += `<div data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="ccfolia-log-entry" style="margin: ${s(12)}px ${s(15.6)}px ${s(4)}px ${s(15.6)}px; display: flex;">
           <div style="background: ${tabBg}; color: ${tabColor}; padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; border: 1px solid ${tabColor}44;">
             ${tabName}
           </div>
         </div>`;
       } else {
-        html += `<div data-tab="${log.tabId}" class="tab-name-block ccfolia-log-entry">
+        const isMainTab = format === 'main' ? 'true' : 'false';
+        html += `<div data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="tab-name-block ccfolia-log-entry">
           <div class="tab-name-badge" style="background: ${tabBg}; color: ${tabColor}; border: 1px solid ${tabColor}44;">
             ${tabName}
           </div>
@@ -322,7 +399,11 @@ export const generateFinalHtmlStr = (
       const isSectionStart = idx === 0 || hasImageBefore;
       const isSectionEnd = isNextSameTab === false || hasImageAfter;
 
-      html += `<div data-tab="${log.tabId}" data-char="${log.charId}" class="ccfolia-log-entry" style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
+      const isMainTab = format === 'main' ? 'true' : 'false';
+      const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
+      const isCommandFlag = log.isCommand ? 'true' : 'false';
+
+      html += `<div data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="ccfolia-log-entry" style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
       
       if (log.isCommand) {
         const nameHtml = log.name !== 'system' ? `<span style="color: ${color}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold;">[ ${log.name} ]</span>` : '';
@@ -406,8 +487,12 @@ export const generateFinalHtmlStr = (
 
       const cl = [mb, mt].filter(Boolean).join(' ');
       const clStr = `log-item ccfolia-log-entry${cl ? ` ${cl}` : ''}`;
+      
+      const isMainTab = format === 'main' ? 'true' : 'false';
+      const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
+      const isCommandFlag = log.isCommand ? 'true' : 'false';
 
-      html += `<div data-tab="${log.tabId}" data-char="${log.charId}" class="${clStr}">`;
+      html += `<div data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="${clStr}">`;
 
       if (log.isCommand) {
         const nameHtml = log.name !== 'system' ? `<span class="command-text" style="color: ${color}; font-weight: bold;">[ ${log.name} ]</span> ` : '';
@@ -469,7 +554,8 @@ export const generateFinalHtmlStr = (
         const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
         const width = typeof imgData === 'string' ? undefined : imgData.width;
         const widthStyle = width ? `width: ${width}px;` : 'max-width: 100%;';
-        html += `<div data-tab="${log.tabId}" class="ccfolia-log-entry" style="display: flex; justify-content: ${justify}; margin: 10px ${s(15.6)}px;">
+        const isMainTab = format === 'main' ? 'true' : 'false';
+        html += `<div data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="ccfolia-log-entry" style="display: flex; justify-content: ${justify}; margin: 10px ${s(15.6)}px;">
           <img src="${url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
         </div>`;
       });
