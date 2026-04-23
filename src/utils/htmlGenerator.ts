@@ -76,7 +76,24 @@ export const generateFinalHtmlStr = (
       `<label class="filter-item"><input type="checkbox" checked value="${t.id}" data-type="tab"><span>${t.name}</span></label>`
     ).join('');
     
-    const charBtns = Array.from(activeChars.values()).map(c => 
+    let charsArray = Array.from(activeChars.values());
+    if (narrationCharacter && !activeChars.has(narrationCharacter)) {
+      charsArray.push({
+        id: narrationCharacter,
+        name: '나레이션',
+        color: charSettings[narrationCharacter]?.color || '#000000'
+      });
+    }
+
+    const narrationChar = charsArray.find(c => c.id === narrationCharacter);
+    const otherChars = charsArray.filter(c => c.id !== narrationCharacter);
+    
+    if (narrationChar) {
+      narrationChar.name = '나레이션';
+      charsArray = [narrationChar, ...otherChars];
+    }
+
+    const charBtns = charsArray.map(c => 
       `<label class="filter-item"><input type="checkbox" checked value="${c.id}" data-type="char"><span>${c.name}</span></label>`
     ).join('');
 
@@ -115,11 +132,11 @@ export const generateFinalHtmlStr = (
           const tC = qs('input[data-type="tab"]'), cC = qs('input[data-type="char"]');
           const aT = id('toggle-all-tabs'), aC = id('toggle-all-chars'), items = qs('.ccfolia-log-entry');
           const update = () => {
-            const aTbs = new Set(tC.filter(c => c.checked).map(c => c.value));
-            const aChs = new Set(cC.filter(c => c.checked).map(c => c.value));
+            const hTbs = new Set(tC.filter(c => !c.checked).map(c => c.value));
+            const hChs = new Set(cC.filter(c => !c.checked).map(c => c.value));
             items.forEach(i => {
               const { tab, char } = i.dataset;
-              i.style.display = aTbs.has(tab) && (!char || aChs.has(char)) ? '' : 'none';
+              i.style.display = (tab && hTbs.has(tab)) || (char && hChs.has(char)) ? 'none' : '';
             });
             aT.checked = tC.every(c => c.checked);
             aC.checked = cC.every(c => c.checked);

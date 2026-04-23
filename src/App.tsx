@@ -2400,7 +2400,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.0</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.1</span>
           </div>
         </div>
       </aside>
