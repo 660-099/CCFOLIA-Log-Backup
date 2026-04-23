@@ -2322,7 +2322,7 @@ export default function App() {
                         className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/80 px-2 py-1 outline-none hover:border-white/20 transition-colors"
                       >
                         <span className="max-w-[100px] truncate">
-                          {filterBarMode === 'none' ? '사용 안 함' : filterBarMode === 'floating' ? '플로팅 버튼' : '상단 고정 바'}
+                          {filterBarMode === 'none' ? '사용 안 함' : filterBarMode === 'floating' ? '플로팅 버튼' : '본문 헤더 고정'}
                         </span>
                         <ChevronDown className="w-3 h-3 opacity-50" />
                       </button>
@@ -2332,8 +2332,8 @@ export default function App() {
                           <div className="p-1">
                             {([
                               { value: 'none', label: '사용 안 함' },
-                              { value: 'floating', label: '플로팅 버튼' },
-                              { value: 'fixed', label: '상단 고정 바' }
+                              { value: 'fixed', label: '본문 헤더 고정' },
+                              { value: 'floating', label: '플로팅 버튼' }
                             ] as const).map(opt => (
                               <button
                                 key={opt.value}
