@@ -2718,19 +2718,14 @@ export default function App() {
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 mt-2 w-72 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
+                      className="absolute right-0 mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
                     >
-                      <div className="px-3 py-2 mb-1">
-                        <p className="text-[11px] font-bold text-white mb-1">저장할 데이터 선택</p>
-                        <p className="text-[9px] text-white/40 leading-tight">선택한 항목만 프로젝트 JSON 파일에 포함됩니다.</p>
-                      </div>
-
                       <div className="space-y-0.5">
                         <div className="px-3 py-1"><p className="text-[9px] font-bold text-white/30 uppercase tracking-widest">설정 (Settings)</p></div>
                         {[
-                          { id: 'tabs', label: '탭', desc: '이름, 개수, 모아보기, 타 탭 색상 감추기 등' },
-                          { id: 'chars', label: '캐릭터', desc: '이름, 썸네일, 통일 컬러, 빈 아바타, 나레이션' },
-                          { id: 'design', label: '디자인', desc: '테마, 폰트, 로그 필터 컨트롤러 모드 등' },
+                          { id: 'tabs', label: '탭' },
+                          { id: 'chars', label: '캐릭터' },
+                          { id: 'design', label: '디자인' },
                         ].map((item) => (
                           <label key={item.id} className="flex items-center gap-2.5 p-1.5 px-3 hover:bg-white/5 rounded-lg transition-colors cursor-pointer group">
                             <input 
@@ -2740,15 +2735,12 @@ export default function App() {
                               className="hidden"
                             />
                             <div className={cn(
-                              "w-3.5 h-3.5 rounded-sm flex items-center justify-center border transition-colors shrink-0 mt-0.5",
+                              "w-3.5 h-3.5 rounded-sm flex items-center justify-center border transition-colors shrink-0",
                               (saveOptions as any)[item.id] ? "bg-[#e6005c] border-[#e6005c]" : "bg-white/5 border-white/20 group-hover:border-white/40"
                             )}>
                               {(saveOptions as any)[item.id] && <Check className="w-2.5 h-2.5 text-white" />}
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[11px] font-bold text-white truncate">{item.label}</p>
-                              <p className="text-[9px] text-white/40 truncate mt-0.5">{item.desc}</p>
-                            </div>
+                            <span className="text-[11px] font-bold text-white flex-1">{item.label}</span>
                           </label>
                         ))}
                       </div>
@@ -2756,9 +2748,9 @@ export default function App() {
                       <div className="space-y-0.5 mt-2">
                         <div className="px-3 py-1"><p className="text-[9px] font-bold text-white/30 uppercase tracking-widest">편집 (Edits)</p></div>
                         {[
-                          { id: 'splits', label: '섹션 분할', desc: '구분선 및 섹션 정보' },
-                          { id: 'images', label: '이미지 삽입', desc: '로그 내 삽입된 이미지' },
-                          { id: 'edits', label: '대사 수정', desc: '수정되거나 삭제된 로그 내역' },
+                          { id: 'splits', label: '섹션 이름 및 분할 위치' },
+                          { id: 'images', label: '이미지 삽입' },
+                          { id: 'edits', label: '대사 수정 내역' },
                         ].map((item) => (
                           <label key={item.id} className="flex items-center gap-2.5 p-1.5 px-3 hover:bg-white/5 rounded-lg transition-colors cursor-pointer group">
                             <input 
@@ -2768,15 +2760,12 @@ export default function App() {
                               className="hidden"
                             />
                             <div className={cn(
-                              "w-3.5 h-3.5 rounded-sm flex items-center justify-center border transition-colors shrink-0 mt-0.5",
+                              "w-3.5 h-3.5 rounded-sm flex items-center justify-center border transition-colors shrink-0",
                               (saveOptions as any)[item.id] ? "bg-[#e6005c] border-[#e6005c]" : "bg-white/5 border-white/20 group-hover:border-white/40"
                             )}>
                               {(saveOptions as any)[item.id] && <Check className="w-2.5 h-2.5 text-white" />}
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[11px] font-bold text-white truncate">{item.label}</p>
-                              <p className="text-[9px] text-white/40 truncate mt-0.5">{item.desc}</p>
-                            </div>
+                            <span className="text-[11px] font-bold text-white flex-1">{item.label}</span>
                           </label>
                         ))}
                       </div>
@@ -2788,7 +2777,7 @@ export default function App() {
                         className="w-full flex items-center justify-center gap-2 p-2.5 bg-[#e6005c] hover:bg-[#ff0066] rounded-xl text-white transition-all text-[11px] font-bold shadow-lg shadow-pink-500/20 mt-1"
                       >
                         <FileJson className="w-3.5 h-3.5" />
-                        선택 항목 JSON 저장
+                        JSON 저장
                       </button>
                     </motion.div>
                   </>
