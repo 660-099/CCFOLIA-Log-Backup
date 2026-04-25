@@ -46,6 +46,7 @@ import {
   ExternalLink,
   ArrowUpDown,
   ChevronDown,
+  ChevronUp,
   Search,
   List,
   Info
@@ -1014,21 +1015,35 @@ export default function App() {
     }
   };
 
-  const displayItems = useMemo(() => {
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+
+  const { displayItems, searchMatchIndices } = useMemo(() => {
     if (!searchQuery) {
-      return mergedLogs.map((log, index) => ({ log, isMatched: true, originalIndex: index }));
+      return {
+        displayItems: mergedLogs.map((log, index) => ({ log, isMatched: false, originalIndex: index })),
+        searchMatchIndices: []
+      };
     }
     const lowerQuery = searchQuery.toLowerCase();
-    return mergedLogs.map((log, index) => {
+    const indices: number[] = [];
+    const items = mergedLogs.map((log, index) => {
       const isMatched = log.content.toLowerCase().includes(lowerQuery) || log.name.toLowerCase().includes(lowerQuery);
-      const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
-      const isSplit = splitPoints.has(stableId);
-      if (isMatched || isSplit) {
-        return { log, isMatched, originalIndex: index };
+      if (isMatched) {
+        indices.push(index);
       }
-      return null;
-    }).filter(Boolean) as { log: any, isMatched: boolean, originalIndex: number }[];
-  }, [mergedLogs, searchQuery, splitPoints]);
+      return { log, isMatched, originalIndex: index };
+    });
+    return { displayItems: items, searchMatchIndices: indices };
+  }, [mergedLogs, searchQuery]);
+
+  useEffect(() => {
+    if (searchQuery) {
+      setCurrentMatchIndex(searchMatchIndices.length > 0 ? 0 : -1);
+    } else {
+      setCurrentMatchIndex(-1);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
 
   const rowVirtualizer = useVirtualizer({
     count: displayItems.length,
@@ -1037,6 +1052,15 @@ export default function App() {
     overscan: 10,
     scrollMargin: listOffset,
   });
+
+  useEffect(() => {
+    if (searchMatchIndices.length > 0 && currentMatchIndex >= 0 && currentMatchIndex < searchMatchIndices.length) {
+      setTimeout(() => {
+        rowVirtualizer.scrollToIndex(searchMatchIndices[currentMatchIndex], { align: 'center' });
+      }, 50);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMatchIndex, searchMatchIndices]);
 
   const sortedCharOrder = useMemo(() => {
     if (charSortMode === 'appearance') return charOrder;
@@ -2553,9 +2577,46 @@ export default function App() {
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (e.shiftKey) {
+                            setCurrentMatchIndex(prev => prev > 0 ? prev - 1 : searchMatchIndices.length - 1);
+                          } else {
+                            setCurrentMatchIndex(prev => prev < searchMatchIndices.length - 1 ? prev + 1 : 0);
+                          }
+                        }
+                      }}
                       placeholder="로그 검색..."
                       className="bg-transparent border-none outline-none text-xs text-white ml-2 w-full placeholder:text-white/30"
                     />
+                    {searchQuery && searchMatchIndices.length > 0 && (
+                      <div className="flex items-center gap-1 mr-1">
+                        <span className="text-[10px] text-white/50 whitespace-nowrap">
+                          {currentMatchIndex + 1} / {searchMatchIndices.length}
+                        </span>
+                        <div className="flex items-center">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCurrentMatchIndex(prev => prev > 0 ? prev - 1 : searchMatchIndices.length - 1);
+                            }}
+                            className="p-1 hover:bg-white/20 rounded-md text-white/50 hover:text-white transition-colors"
+                          >
+                            <ChevronUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCurrentMatchIndex(prev => prev < searchMatchIndices.length - 1 ? prev + 1 : 0);
+                            }}
+                            className="p-1 hover:bg-white/20 rounded-md text-white/50 hover:text-white transition-colors"
+                          >
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <button 
                       onClick={(e) => { 
                         e.stopPropagation(); 
@@ -2573,7 +2634,7 @@ export default function App() {
             
             <div className={cn("hidden xl:block h-4 w-px shrink-0", "bg-white/10")} />
             <p className={cn("hidden xl:block text-[11px] font-bold truncate", "text-white/30")}>
-              총 <span className={cn("text-white/60", searchQuery && "text-[#e6005c]")}>{searchQuery ? displayItems.filter(item => item.isMatched).length : logs.length}</span>개의 로그 항목
+              총 <span className={cn("text-white/60", searchQuery && "text-[#e6005c]")}>{searchQuery ? searchMatchIndices.length : logs.length}</span>개의 로그 항목
             </p>
           </div>
 
@@ -3023,7 +3084,9 @@ export default function App() {
                           >
                             <LogItem 
                               idx={globalIdx}
-                              isMatched={isMatched}
+                              isHighlighted={isMatched}
+                              isCurrentMatch={currentMatchIndex >= 0 && searchMatchIndices[currentMatchIndex] === idx}
+                              searchQuery={searchQuery}
                               stableId={stableId}
                               log={log}
                               tabSet={tabSettings[log.tabId]}
