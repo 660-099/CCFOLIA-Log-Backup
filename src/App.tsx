@@ -338,6 +338,16 @@ export default function App() {
   const [hoverImgRect, setHoverImgRect] = useState<DOMRect | null>(null);
   const [hoverImgUrl, setHoverImgUrl] = useState<string | null>(null);
 
+  const [showSaveMenu, setShowSaveMenu] = useState(false);
+  const [saveOptions, setSaveOptions] = useState({
+    tabs: true,
+    chars: true,
+    design: true,
+    splits: true,
+    images: true,
+    edits: true
+  });
+
   const [splitPoints, setSplitPoints] = useState<Set<string>>(new Set());
   const [insertedImages, setInsertedImages] = useState<Record<string, { url: string; width?: string; align?: 'left' | 'center' | 'right' }[]>>({});
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -790,6 +800,7 @@ export default function App() {
       if (json.fontSize) setFontSize(json.fontSize);
       if (json.fontFamily) setFontFamily(json.fontFamily);
       if (json.theme) setTheme(json.theme);
+      if (json.filterBarMode !== undefined) setFilterBarMode(json.filterBarMode);
       if (json.disableOtherColor !== undefined) setDisableOtherColor(json.disableOtherColor);
       
       if (json.splitPoints) setSplitPoints(new Set(json.splitPoints));
@@ -811,28 +822,47 @@ export default function App() {
   };
 
   const exportProject = () => {
-    const data = { 
+    const data: any = { 
       originalFileName,
-      charSettings, 
-      charOrder, 
-      tabSettings, 
-      tabOrder,
-      pageTitle,
-      cssFormat, 
-      fontSize, 
-      fontFamily, 
-      theme, 
-      disableOtherColor,
-      splitPoints: Array.from(splitPoints),
-      sectionNames,
-      insertedImages,
-      mergeTabs: Array.from(mergeTabs),
-      showTabNames: Array.from(showTabNames),
-      mergeTabStyles: Array.from(mergeTabStyles),
-      hideEmptyAvatars,
-      narrationCharacter,
-      logs // Included so edit/delete status can be restored
+      pageTitle
     };
+    
+    if (saveOptions.chars) {
+      data.charSettings = charSettings;
+      data.charOrder = charOrder;
+      data.narrationCharacter = narrationCharacter;
+      data.hideEmptyAvatars = hideEmptyAvatars;
+    }
+    
+    if (saveOptions.tabs) {
+      data.tabSettings = tabSettings;
+      data.tabOrder = tabOrder;
+      data.mergeTabs = Array.from(mergeTabs);
+      data.showTabNames = Array.from(showTabNames);
+      data.mergeTabStyles = Array.from(mergeTabStyles);
+      data.disableOtherColor = disableOtherColor;
+    }
+    
+    if (saveOptions.design) {
+      data.cssFormat = cssFormat;
+      data.fontSize = fontSize;
+      data.fontFamily = fontFamily;
+      data.theme = theme;
+      data.filterBarMode = filterBarMode;
+    }
+    
+    if (saveOptions.splits) {
+      data.splitPoints = Array.from(splitPoints);
+      data.sectionNames = sectionNames;
+    }
+    
+    if (saveOptions.images) {
+      data.insertedImages = insertedImages;
+    }
+    
+    if (saveOptions.edits) {
+      data.logs = logs;
+    }
     
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1818,22 +1848,47 @@ export default function App() {
                                     >
                                       
                                       <Tooltip unstyled position="right" content={
-                                        lib.characters.length > 0 ? (
-                                          <div className="grid grid-cols-2 gap-[1px] w-[171px] shadow-2xl bg-[#1a1a1a] rounded-lg overflow-hidden border border-white/20 p-[5px]">
-                                            {[...lib.characters]
-                                              .sort((a,b) => a.name.localeCompare(b.name))
-                                              .slice(0,4)
-                                              .map((c, i) => (
-                                                  c.imageUrl ? (
-                                                    <img key={i} src={c.imageUrl} className="w-[80px] h-[80px] object-cover rounded-none" alt="" referrerPolicy="no-referrer" />
-                                                  ) : (
-                                                    <div key={i} className="w-[80px] h-[80px] bg-[#1a1a1a] flex items-center justify-center shrink-0 rounded-none">
-                                                      <User className="w-8 h-8 text-white/20" />
-                                                    </div>
-                                                  )
-                                              ))}
-                                          </div>
-                                        ) : <></>
+                                        lib.characters.length > 0 ? (() => {
+                                          const count = Math.min(lib.characters.length, 9);
+                                          let containerWidthClass = 'w-[130px]';
+                                          let gridColsClass = 'grid-cols-1';
+                                          let thumbSizeClass = 'w-[120px] h-[120px]';
+                                          let userIconSize = 'w-12 h-12';
+                                          
+                                          if (count === 2) {
+                                            containerWidthClass = 'w-[174px]';
+                                            gridColsClass = 'grid-cols-2';
+                                            thumbSizeClass = 'w-[80px] h-[80px]';
+                                            userIconSize = 'w-8 h-8';
+                                          } else if (count >= 3 && count <= 4) {
+                                            containerWidthClass = 'w-[174px]';
+                                            gridColsClass = 'grid-cols-2';
+                                            thumbSizeClass = 'w-[80px] h-[80px]';
+                                            userIconSize = 'w-8 h-8';
+                                          } else if (count >= 5 && count <= 9) {
+                                            containerWidthClass = 'w-[198px]';
+                                            gridColsClass = 'grid-cols-3';
+                                            thumbSizeClass = 'w-[60px] h-[60px]';
+                                            userIconSize = 'w-6 h-6';
+                                          }
+
+                                          return (
+                                            <div className={cn("grid gap-1 shadow-2xl bg-[#1a1a1a] rounded-lg overflow-hidden border border-white/20 p-[5px]", gridColsClass, containerWidthClass)}>
+                                              {[...lib.characters]
+                                                .sort((a,b) => a.name.localeCompare(b.name))
+                                                .slice(0, 9)
+                                                .map((c, i) => (
+                                                    c.imageUrl ? (
+                                                      <img key={i} src={c.imageUrl} className={cn("object-cover rounded-md", thumbSizeClass)} alt="" referrerPolicy="no-referrer" />
+                                                    ) : (
+                                                      <div key={i} className={cn("bg-black/20 flex items-center justify-center shrink-0 rounded-md", thumbSizeClass)}>
+                                                        <User className={cn("text-white/20", userIconSize)} />
+                                                      </div>
+                                                    )
+                                                ))}
+                                            </div>
+                                          );
+                                        })() : <></>
                                       }>
                                         <div className="w-8 h-8 rounded-lg outline-none shrink-0 border border-white/5 bg-[#1a1a1a] flex items-center justify-center relative">
                                           {lib.characters[0]?.imageUrl ? (
@@ -2332,8 +2387,8 @@ export default function App() {
                           <div className="p-1">
                             {([
                               { value: 'none', label: '사용 안 함' },
-                              { value: 'fixed', label: '본문 헤더 고정' },
-                              { value: 'floating', label: '플로팅 버튼' }
+                              { value: 'floating', label: '플로팅 버튼' },
+                              { value: 'fixed', label: '본문 헤더 고정' }
                             ] as const).map(opt => (
                               <button
                                 key={opt.value}
@@ -2357,7 +2412,7 @@ export default function App() {
                   </div>
                   
                   <div className="grid grid-cols-2 gap-2">
-                    <Tooltip position="top" className="text-center" content={
+                    <Tooltip position="bottom" className="text-center" content={
                       <>HTML 상단에 스타일 시트를 포함합니다. <span className="text-[#e6005c] font-medium">(권장)</span></>
                     }>
                       <button 
@@ -2371,8 +2426,8 @@ export default function App() {
                         내부 스타일
                       </button>
                     </Tooltip>
-                    <Tooltip position="top" className="text-center" content={
-                      <>각 태그에 직접 스타일을 부여합니다.<br />(티스토리 기본 스킨 사용 시)</>
+                    <Tooltip position="bottom" className="text-center" content={
+                      <>각 태그에 직접 스타일을 부여합니다.<br />(티스토리 기본 스킨 사용 시 권장)</>
                     }>
                       <button 
                         onClick={() => { setCssFormat('inline'); saveToHistory({ charSettings, tabSettings, cssFormat: 'inline', fontSize, fontFamily, theme, disableOtherColor }); }}
@@ -2459,7 +2514,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.2</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.3</span>
           </div>
         </div>
       </aside>
@@ -2581,17 +2636,104 @@ export default function App() {
                 <Pencil className="w-3.5 h-3.5 text-white/20 group-hover:text-white/40 transition-colors shrink-0" />
               </div>
             )}
-            <button 
-              onClick={exportProject}
-              className={cn(
-                "flex items-center justify-center gap-2 px-3 xl:px-4 py-2 border rounded-xl transition-all text-[11px] font-bold shrink-0",
-                "bg-white/5 hover:bg-white/10 border-white/10 text-white/60 hover:text-white"
-              )}
-              title="프로젝트 저장"
-            >
-              <FileJson className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden xl:inline-block truncate">프로젝트 저장</span>
-            </button>
+            <div className="relative">
+              <button 
+                onClick={() => setShowSaveMenu(!showSaveMenu)}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-3 xl:px-4 py-2 border rounded-xl transition-all text-[11px] font-bold shrink-0",
+                  "bg-white/5 hover:bg-white/10 border-white/10 text-white/60 hover:text-white"
+                )}
+                title="프로젝트 저장"
+              >
+                <FileJson className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden xl:inline-block truncate">프로젝트 저장</span>
+              </button>
+
+              <AnimatePresence>
+                {showSaveMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowSaveMenu(false)} />
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 mt-2 w-72 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
+                    >
+                      <div className="px-3 py-2 mb-1">
+                        <p className="text-[11px] font-bold text-white mb-1">저장할 데이터 선택</p>
+                        <p className="text-[9px] text-white/40 leading-tight">선택한 항목만 프로젝트 JSON 파일에 포함됩니다.</p>
+                      </div>
+
+                      <div className="space-y-0.5">
+                        <div className="px-3 py-1"><p className="text-[9px] font-bold text-white/30 uppercase tracking-widest">설정 (Settings)</p></div>
+                        {[
+                          { id: 'tabs', label: '탭', desc: '이름, 개수, 모아보기, 타 탭 색상 감추기 등' },
+                          { id: 'chars', label: '캐릭터', desc: '이름, 썸네일, 통일 컬러, 빈 아바타, 나레이션' },
+                          { id: 'design', label: '디자인', desc: '테마, 폰트, 로그 필터 컨트롤러 모드 등' },
+                        ].map((item) => (
+                          <label key={item.id} className="flex items-center gap-2.5 p-1.5 px-3 hover:bg-white/5 rounded-lg transition-colors cursor-pointer group">
+                            <input 
+                              type="checkbox"
+                              checked={(saveOptions as any)[item.id]}
+                              onChange={(e) => setSaveOptions(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                              className="hidden"
+                            />
+                            <div className={cn(
+                              "w-3.5 h-3.5 rounded-sm flex items-center justify-center border transition-colors shrink-0 mt-0.5",
+                              (saveOptions as any)[item.id] ? "bg-[#e6005c] border-[#e6005c]" : "bg-white/5 border-white/20 group-hover:border-white/40"
+                            )}>
+                              {(saveOptions as any)[item.id] && <Check className="w-2.5 h-2.5 text-white" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-bold text-white truncate">{item.label}</p>
+                              <p className="text-[9px] text-white/40 truncate mt-0.5">{item.desc}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="space-y-0.5 mt-2">
+                        <div className="px-3 py-1"><p className="text-[9px] font-bold text-white/30 uppercase tracking-widest">편집 (Edits)</p></div>
+                        {[
+                          { id: 'splits', label: '섹션 분할', desc: '구분선 및 섹션 정보' },
+                          { id: 'images', label: '이미지 삽입', desc: '로그 내 삽입된 이미지' },
+                          { id: 'edits', label: '대사 수정', desc: '수정되거나 삭제된 로그 내역' },
+                        ].map((item) => (
+                          <label key={item.id} className="flex items-center gap-2.5 p-1.5 px-3 hover:bg-white/5 rounded-lg transition-colors cursor-pointer group">
+                            <input 
+                              type="checkbox"
+                              checked={(saveOptions as any)[item.id]}
+                              onChange={(e) => setSaveOptions(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                              className="hidden"
+                            />
+                            <div className={cn(
+                              "w-3.5 h-3.5 rounded-sm flex items-center justify-center border transition-colors shrink-0 mt-0.5",
+                              (saveOptions as any)[item.id] ? "bg-[#e6005c] border-[#e6005c]" : "bg-white/5 border-white/20 group-hover:border-white/40"
+                            )}>
+                              {(saveOptions as any)[item.id] && <Check className="w-2.5 h-2.5 text-white" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-bold text-white truncate">{item.label}</p>
+                              <p className="text-[9px] text-white/40 truncate mt-0.5">{item.desc}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="h-px bg-white/5 my-2" />
+                      
+                      <button 
+                        onClick={() => { exportProject(); setShowSaveMenu(false); }}
+                        className="w-full flex items-center justify-center gap-2 p-2.5 bg-[#e6005c] hover:bg-[#ff0066] rounded-xl text-white transition-all text-[11px] font-bold shadow-lg shadow-pink-500/20 mt-1"
+                      >
+                        <FileJson className="w-3.5 h-3.5" />
+                        선택 항목 JSON 저장
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
 
             <div className="relative">
               <button 
