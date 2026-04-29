@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, Dispatch, SetStateAction } from 'react';
 
 export function useLocalStorage<T>(
   key: string,
@@ -6,7 +6,7 @@ export function useLocalStorage<T>(
   parser?: (val: string) => T,
   stringifier?: (val: T) => string,
   isEnabled: boolean = true
-): [T, React.Dispatch<React.SetStateAction<T>>] {
+): [T, Dispatch<SetStateAction<T>>] {
   const [storedValue, setStoredValue] = useState<T>(() => {
     if (!isEnabled) return initialValue;
     try {

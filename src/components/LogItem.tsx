@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { Pencil, Trash2, Plus, X, Image as ImageIcon } from 'lucide-react';
-import { cn, r, linkify } from '../utils';
+import { cn, r, linkifyAndFormat } from '../utils';
 import { LogImage } from './LogImage';
 import { LogAvatar } from './LogAvatar';
 import { SectionNameEditor } from './SectionNameEditor';
+import { BoundaryEditor } from './BoundaryEditor';
 
 export const LogItem = React.memo(({ 
   log, 
@@ -18,23 +19,20 @@ export const LogItem = React.memo(({
   theme, 
   disableOtherColor, 
   fontSize, 
-  insertedImages, 
-  splitPoints, 
-  sectionNames,
-  imageInputIdx,
-  onToggleSplit, 
-  onRenameSection,
-  onInsertImage, 
-  onAddImageUrl,
-  onDeleteImage,
-  onUpdateImageWidth,
-  onUpdateImageAlign,
+  insertedBlocks,
+  startBlocks,
+  imageInputLoc,
+  onAddBlock,
+  onUpdateBlock,
+  onRemoveBlock,
+  onToggleImageInput,
   onEditLog,
   onDeleteLog,
   splitPointsArray,
   isPrevSameTab,
   isNextSameTab,
-  isPrevSplit,
+  isNextContinuation,
+  isPrevBlock,
   mergeTabStyles,
   showTabNames,
   hideEmptyAvatars,
@@ -47,6 +45,115 @@ export const LogItem = React.memo(({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(log.content.replace(/<br\s*\/?>/gi, '\n'));
 
+  // Define how blocks are rendered
+  const renderBlocks = (blocks: any[], logId: string, isTopLevel: boolean = false) => {
+    return (
+      <>
+        <BoundaryEditor 
+          id={logId}
+          theme={theme}
+          onToggleSplit={() => onAddBlock(logId, 0, 'split')}
+          onInsertImage={() => onToggleImageInput(logId, 0)}
+          allowSplit={!isTopLevel}
+          isTopLevel={isTopLevel}
+        />
+        {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === 0 && (
+          <div className={cn(
+            "mx-4 my-2 p-4 border border-dashed rounded-xl flex flex-col gap-3",
+            theme === 'dark' ? "bg-white/5 border-white/20" : "bg-stone-50 border-stone-200 shadow-sm"
+          )}>
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                placeholder="https://..." 
+                className={cn("flex-1 border rounded-lg px-3 py-2 text-[11px]", theme === 'dark' ? "bg-black/40 text-white" : "bg-white text-stone-900")}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onAddBlock(logId, 0, 'image', { url: e.currentTarget.value });
+                }}
+              />
+              <button 
+                onClick={(e) => {
+                  const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                  onAddBlock(logId, 0, 'image', { url: input.value });
+                }}
+                className="px-4 py-2 bg-[#e6005c] text-white rounded-lg text-[11px]"
+              >
+                추가
+              </button>
+            </div>
+          </div>
+        )}
+
+        {blocks.map((block, i) => (
+          <React.Fragment key={block.id}>
+            {block.type === 'image' && (
+              <LogImage 
+                url={block.url} 
+                width={block.width}
+                align={block.align}
+                onDelete={() => onRemoveBlock(logId, block.id)} 
+                onUpdateWidth={(w: string) => onUpdateBlock(logId, block.id, { width: w })}
+                onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateBlock(logId, block.id, { align: a })}
+                paddingSize={0}
+              />
+            )}
+            {block.type === 'split' && (
+              <div id={`section-${block.id}`} className="mt-1 mb-1 px-4 font-sans relative">
+                <div className="flex items-end justify-between max-w-full">
+                  <div className="bg-[#e6005c] rounded-t-lg px-4 py-1 flex items-center shadow-lg max-w-sm gap-2">
+                    <SectionNameEditor 
+                      initialName={block.name || ''}
+                      defaultName={`섹션`}
+                      onSave={(name) => onUpdateBlock(logId, block.id, { name })}
+                    />
+                    <button onClick={() => onRemoveBlock(logId, block.id)} className="text-white/60 hover:text-white p-1 ml-2">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+                <div className="h-px bg-[#e6005c] w-full" />
+              </div>
+            )}
+            
+            <BoundaryEditor 
+              id={logId}
+              theme={theme}
+              onToggleSplit={() => onAddBlock(logId, i + 1, 'split')}
+              onInsertImage={() => onToggleImageInput(logId, i + 1)}
+              allowSplit={true}
+            />
+            {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === i + 1 && (
+              <div className={cn(
+                "mx-4 my-2 p-4 border border-dashed rounded-xl flex flex-col gap-3",
+                theme === 'dark' ? "bg-white/5 border-white/20" : "bg-stone-50 border-stone-200 shadow-sm"
+              )}>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="https://..." 
+                    className={cn("flex-1 border rounded-lg px-3 py-2 text-[11px]", theme === 'dark' ? "bg-black/40 text-white" : "bg-white text-stone-900")}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') onAddBlock(logId, i + 1, 'image', { url: e.currentTarget.value });
+                    }}
+                  />
+                  <button 
+                    onClick={(e) => {
+                      const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                      onAddBlock(logId, i + 1, 'image', { url: input.value });
+                    }}
+                    className="px-4 py-2 bg-[#e6005c] text-white rounded-lg text-[11px]"
+                  >
+                    추가
+                  </button>
+                </div>
+              </div>
+            )}
+          </React.Fragment>
+        ))}
+      </>
+    );
+  };
+
   const format = tabSet?.format || 'main';
   const color = char.color || log.color;
   const otherNameColor = disableOtherColor ? (theme === 'dark' ? '#AAAAAA' : '#444444') : color;
@@ -57,14 +164,9 @@ export const LogItem = React.memo(({
 
   let displayContent = log.content;
   if (log.isCommand) {
-    displayContent = displayContent.replace(/^(?:<[^>]+>|\s)*(?:<br\s*\/?>|\n)+(?:<[^>]+>|\s)*/gi, (match: string) => {
-      return match.replace(/(?:<br\s*\/?>|\n)+/gi, '');
-    });
-    displayContent = displayContent.replace(/\](?:<[^>]+>|\s)*(?:<br\s*\/?>|\n)+(?:<[^>]+>|\s)*/gi, (match: string) => {
-      return match.replace(/(?:<br\s*\/?>|\n)+/gi, ' ');
-    });
+    displayContent = displayContent.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/(?:\r\n|\r|\n)+/g, ' ');
   }
-  let finalHtmlContent = linkify(displayContent);
+  let finalHtmlContent = linkifyAndFormat(displayContent, format === 'other' ? '4px' : '.8em');
   if (log.name === 'system') {
     finalHtmlContent = finalHtmlContent.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
       const char = charSettings[p1.trim()];
@@ -110,16 +212,26 @@ export const LogItem = React.memo(({
   const paddingSize = Math.round(12 * scale);
   const nameSize = Math.round(13 * scale);
 
-  const isSplit = splitPoints.has(stableId);
+  const currentBlocks = insertedBlocks[stableId] || [];
+  const hasBlockAfter = currentBlocks.length > 0;
+  
+  const isSplit = hasBlockAfter && currentBlocks.some((b: any) => b.type === 'split');
   const shouldMergeStyle = mergeTabStyles.has(format) && (isPrevSameTab || isNextSameTab);
   
-  const isSectionStart = idx === 0 || isPrevSplit || !!insertedImages[stableId];
-  const isSectionEnd = idx === mergedLogsCount - 1 || isSplit || !!insertedImages[stableId];
+  const isSectionStart = idx === 0 || isPrevBlock;
+  const isSectionEnd = idx === mergedLogsCount - 1 || hasBlockAfter;
+  
+  const mergeWithPrev = log.isContinuation || (shouldMergeStyle && isPrevSameTab && !isSectionStart);
+  const mergeWithNext = isNextContinuation || (shouldMergeStyle && isNextSameTab && !isSectionEnd);
 
-  const shouldShowIndex = showTabNames.has(format) && (!isPrevSameTab || isPrevSplit);
+  const shouldShowIndex = showTabNames.has(format) && (!isPrevSameTab || isPrevBlock);
   
   let itemMarginTop = '0';
-  let itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !insertedImages[stableId] ? '0' : '2px') : (log.isContinuation ? '0' : '2px');
+  let itemMarginBottom = mergeWithNext ? '0' : '2px';
+
+  if (format === 'other') {
+    itemMarginBottom = '0';
+  }
 
   if (isNarration) {
     itemMarginTop = isPrevNarration ? '0' : '10px';
@@ -145,8 +257,8 @@ export const LogItem = React.memo(({
           : (theme === 'dark' ? "bg-[#e6005c]/10" : "bg-[#e6005c]/5")
       )
     )}>
-      <>
-        <div className="absolute top-2 right-4 flex gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity z-20">
+      {idx === 0 && renderBlocks(startBlocks, '__start__', true)}
+      <div className="absolute top-2 right-4 flex gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity z-20">
           <button 
             onClick={() => { setIsEditing(true); setEditContent(log.content.replace(/<br\s*\/?>/gi, '\n')); }} 
             className="p-1 bg-stone-800/80 text-white/60 hover:text-white rounded border border-white/10 shadow-lg backdrop-blur-sm"
@@ -215,66 +327,69 @@ export const LogItem = React.memo(({
             <div style={{ 
               background: isSecret ? getSecretBg(tabColor) : 'rgba(0,0,0,0.1)',
               border: `1px solid ${theme === 'dark' ? '#444' : '#DDD'}`,
-              padding: `${paddingSize}px ${r(paddingSize * 1.3)}px`,
+              padding: `${r(paddingSize * 0.8)}px ${r(paddingSize * 1.3)}px`,
               borderRadius: '8px',
-              margin: `8px ${r(paddingSize * 1.3)}px`
+              margin: `8px ${r(paddingSize * 1.3)}px`,
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap'
             }}>
               {log.name !== 'system' && <span style={{ color, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace" }}>[ <span dangerouslySetInnerHTML={{ __html: safeHtmlName }} /> ]</span>}
-              <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#333333', fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
+              <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#333333', fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', lineHeight: 1.6, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
             </div>
           ) : isNarration ? (
             <div style={{ 
-              padding: `${paddingSize}px ${r(paddingSize * 1.3)}px`, 
+              padding: `${r(isPrevNarration ? paddingSize * 0.25 : paddingSize * 0.75)}px ${r(paddingSize * 1.3)}px ${r(isNextNarration ? paddingSize * 0.25 : paddingSize * 0.75)}px ${r(paddingSize * 1.3)}px`, 
               textAlign: 'center',
               color: theme === 'dark' ? '#EEEEEE' : '#333333',
               lineHeight: 1.6,
               fontWeight: 'bold',
               fontStyle: 'italic'
             }}>
-              <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
+              <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
             </div>
           ) : format === 'other' ? (
-            <div style={{ padding: `${r(paddingSize / 3)}px ${r(paddingSize * 1.3)}px`, display: 'flex', gap: `${r(gapSize / 1.5)}px`, alignItems: 'baseline' }}>
-              {!log.isContinuation && (
-                <div className="relative inline-block flex-shrink-0">
-                  <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px` }} className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName }} />
-                </div>
-              )}
-              <span style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', marginLeft: log.isContinuation ? `${r(nameSize * 4)}px` : '0', lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
+            <div style={{ padding: `2px ${r(paddingSize * 1.3)}px`, display: 'flex', gap: `${r(gapSize / 1.5)}px`, alignItems: 'baseline' }}>
+              <div className="relative inline-block flex-shrink-0" style={{ opacity: log.isContinuation ? 0 : 1, pointerEvents: log.isContinuation ? 'none' : 'auto', userSelect: log.isContinuation ? 'none' : 'auto' }}>
+                <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px` }} className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName }} />
+              </div>
+              <div style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
             </div>
           ) : format === 'info' ? (
             <div style={{ 
-              padding: `${r(paddingSize * 1.3)}px ${r(paddingSize * 1.6)}px`, 
+              padding: `${log.isContinuation ? '0.4em' : r(paddingSize * 1.3) + 'px'} ${r(paddingSize * 1.6)}px ${isNextContinuation ? '0.4em' : r(mergeWithNext ? 4 : paddingSize * 1.3) + 'px'} ${r(paddingSize * 1.6)}px`, 
               background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', 
               borderLeft: `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`, 
-              margin: shouldMergeStyle ? `0 ${r(paddingSize * 1.3)}px` : `8px ${r(paddingSize * 1.3)}px`, 
-              borderRadius: shouldMergeStyle 
-                ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+              margin: mergeWithPrev || mergeWithNext ? (mergeWithPrev && mergeWithNext ? `0 ${r(paddingSize * 1.3)}px` : (mergeWithPrev ? `0 ${r(paddingSize * 1.3)}px 8px ${r(paddingSize * 1.3)}px` : `8px ${r(paddingSize * 1.3)}px 0 ${r(paddingSize * 1.3)}px`)) : `8px ${r(paddingSize * 1.3)}px`, 
+              borderRadius: mergeWithPrev || mergeWithNext
+                ? `${mergeWithPrev ? '0' : '4px'} ${mergeWithPrev ? '0' : '4px'} ${mergeWithNext ? '0' : '4px'} ${mergeWithNext ? '0' : '4px'}`
                 : '4px',
-              borderTop: (shouldMergeStyle && isPrevSameTab && !isSectionStart) ? 'none' : undefined,
-              borderBottom: (shouldMergeStyle && isNextSameTab && !isSectionEnd) ? 'none' : undefined
+              borderTop: mergeWithPrev ? 'none' : undefined,
+              borderBottom: mergeWithNext ? 'none' : undefined
             }}>
               {!log.isContinuation && (
                 <div className="relative inline-block mb-1">
                   <span style={{ fontWeight: 'bold', color, display: 'block' }} className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName }} />
                 </div>
               )}
-              <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', lineHeight: 1.6 }} />
+              <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} />
             </div>
           ) : (
             <div style={{ 
               display: 'flex', 
               gap: `${gapSize}px`, 
-              padding: log.isContinuation ? `6px ${r(paddingSize * 1.3)}px ${paddingSize}px ${r(paddingSize * 1.3)}px` : `${paddingSize}px ${r(paddingSize * 1.3)}px`, 
+              padding: `${log.isContinuation ? '0.4em' : paddingSize + 'px'} ${r(paddingSize * 1.3)}px ${isNextContinuation ? '0.4em' : (mergeWithNext ? 4 : paddingSize) + 'px'} ${r(paddingSize * 1.3)}px`, 
               alignItems: 'flex-start',
               background: isSecret ? getSecretBg(tabColor) : 'transparent',
               borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
-              margin: shouldMergeStyle ? (isSecret ? `0 ${r(paddingSize * 1.3)}px` : '0') : (isSecret ? `4px ${r(paddingSize * 1.3)}px` : '0'),
-              borderRadius: shouldMergeStyle && isSecret
-                ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+              margin: isSecret 
+                ? `${mergeWithPrev ? '0' : '4px'} ${r(paddingSize * 1.3)}px ${mergeWithNext ? '0' : '4px'} ${r(paddingSize * 1.3)}px` 
+                : '0',
+              borderRadius: (mergeWithPrev || mergeWithNext) && isSecret
+                ? `${mergeWithPrev ? '0' : '4px'} ${mergeWithPrev ? '0' : '4px'} ${mergeWithNext ? '0' : '4px'} ${mergeWithNext ? '0' : '4px'}`
                 : (isSecret ? '4px' : '0'),
-              borderTop: shouldMergeStyle && isPrevSameTab && isSecret && !isSectionStart ? 'none' : undefined,
-              borderBottom: shouldMergeStyle && isNextSameTab && isSecret && !isSectionEnd ? 'none' : undefined
+              borderTop: mergeWithPrev && isSecret ? 'none' : undefined,
+              borderBottom: mergeWithNext && isSecret ? 'none' : undefined
             }}>
               {log.isContinuation ? (
                 <div style={{ width: `${avatarSize}px`, flexShrink: 0 }} />
@@ -290,110 +405,14 @@ export const LogItem = React.memo(({
                     <span className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName }} />
                   </div>
                 )}
-                <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333' }} />
+                <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} />
               </div>
             </div>
           )}
         </div>
-        )}
-
-        {insertedImages[stableId] && insertedImages[stableId].map((imgData: any, i: number) => (
-          <LogImage 
-            key={i} 
-            url={typeof imgData === 'string' ? imgData : imgData.url} 
-            width={typeof imgData === 'string' ? undefined : imgData.width}
-            align={typeof imgData === 'string' ? 'center' : imgData.align}
-            onDelete={() => onDeleteImage(stableId, i)} 
-            onUpdateWidth={(w: string) => onUpdateImageWidth(stableId, i, w)}
-            onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateImageAlign(stableId, i, a)}
-            paddingSize={paddingSize} 
-          />
-        ))}
-
-        {imageInputIdx === stableId && (
-          <div className={cn(
-            "mx-4 my-2 p-4 border border-dashed rounded-xl flex flex-col gap-3",
-            theme === 'dark' ? "bg-white/5 border-white/20" : "bg-stone-50 border-stone-200 shadow-sm"
-          )}>
-            <div className="flex items-center gap-2">
-              <ImageIcon className={cn("w-4 h-4", theme === 'dark' ? "text-white/40" : "text-stone-400")} />
-              <span className={cn("text-[11px] font-bold", theme === 'dark' ? "text-white/60" : "text-stone-600")}>이미지 URL 삽입</span>
-            </div>
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                placeholder="https://..." 
-                className={cn(
-                  "flex-1 border rounded-lg px-3 py-2 text-[11px] outline-none focus:border-[#e6005c]/50",
-                  theme === 'dark' ? "bg-black/40 border-white/10 text-white" : "bg-white border-stone-200 text-stone-900"
-                )}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    onAddImageUrl(stableId, e.currentTarget.value);
-                    e.currentTarget.value = '';
-                  }
-                }}
-              />
-              <button 
-                onClick={(e) => {
-                  const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-                  onAddImageUrl(stableId, input.value);
-                  input.value = '';
-                }}
-                className="px-4 py-2 bg-[#e6005c] text-white rounded-lg text-[11px] font-bold hover:bg-[#ff0066] transition-colors"
-              >
-                추가
-              </button>
-            </div>
-          </div>
-        )}
-      </>
-
-      <div className={cn("split-trigger font-sans", "mt-4")}>
-        <button 
-          onClick={() => onToggleSplit(stableId)}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all shadow-lg",
-            isSplit 
-              ? "bg-[#e6005c] text-white" 
-              : theme === 'dark' ? "bg-white/90 text-stone-900 hover:bg-white" : "bg-stone-900 text-white hover:bg-stone-800"
-          )}
-        >
-          {isSplit ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-          {isSplit ? "분할 해제" : "여기서 분할"}
-        </button>
-        <button 
-          onClick={() => onInsertImage(stableId)}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all shadow-lg",
-            imageInputIdx === stableId ? "bg-emerald-600 text-white" : (theme === 'dark' ? "bg-white/90 text-stone-900 hover:bg-white" : "bg-stone-900 text-white hover:bg-stone-800")
-          )}
-        >
-          <ImageIcon className="w-3 h-3" />
-          이미지 삽입
-        </button>
-      </div>
-      
-      {isSplit && (
-        <div id={`section-${stableId}`} className="mt-1 mb-1 px-4 font-sans relative">
-          <div className="flex items-end justify-between max-w-full">
-            <div className="bg-[#e6005c] rounded-t-lg px-4 py-1 flex items-center shadow-lg max-w-sm">
-              <SectionNameEditor 
-                initialName={sectionNames[stableId] || ''}
-                defaultName={`섹션 ${splitPointsArray.indexOf(idx) + 2}`}
-                onSave={(name) => onRenameSection(stableId, name)}
-              />
-            </div>
-            <div className={cn(
-              "text-[10px] font-bold mb-1",
-              theme === 'dark' ? "text-white/40" : "text-stone-400"
-            )}>
-              {getSectionRange()}번 블록
-            </div>
-          </div>
-          <div className="h-px bg-[#e6005c] w-full" />
-        </div>
       )}
+
+      {renderBlocks(insertedBlocks, stableId)}
     </div>
   );
 });

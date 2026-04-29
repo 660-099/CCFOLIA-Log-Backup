@@ -1,5 +1,5 @@
 import { LogEntry, CharSetting, TabSetting } from '../types';
-import { cn, r, linkify } from '../utils';
+import { cn, r, linkifyAndFormat } from '../utils';
 import DOMPurify from 'dompurify';
 import { fonts } from '../constants';
 
@@ -25,7 +25,7 @@ export const generateFinalHtmlStr = (
   disableOtherColor: boolean,
   hideEmptyAvatars: boolean,
   narrationCharacter: string | null,
-  insertedImages: Record<string, any[]>,
+  insertedBlocks: Record<string, any[]>,
   mergeTabStyles: Set<string>,
   showTabNames: Set<string>,
   pageTitle: string,
@@ -241,9 +241,9 @@ export const generateFinalHtmlStr = (
     
     .log-item { position: relative; margin-bottom: 2px; }
     .log-item.mb-0 { margin-bottom: 0 !important; }
-    .log-item.mb-16 { margin-bottom: 16px !important; }
+    .log-item.mb-10 { margin-bottom: 10px !important; }
     .log-item.mt-0 { margin-top: 0 !important; }
-    .log-item.mt-16 { margin-top: 16px !important; }
+    .log-item.mt-10 { margin-top: 10px !important; }
     .log-item div { margin-bottom: 0 !important; }
 
     .tab-name-block { margin: ${s(12)}px ${s(15.6)}px ${s(4)}px; display: flex; }
@@ -257,7 +257,7 @@ export const generateFinalHtmlStr = (
       width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; 
       background-color: ${avatarPlaceholder}; border-radius: 4px; object-fit: contain;
     }
-    .main-body { flex-grow: 1; line-height: 1.5; }
+    .main-body { flex-grow: 1; line-height: 1.6; }
     .main-name { font-weight: bold; font-size: 0.96em; margin-bottom: 2px; display: block; }
     .main-content, .other-content { font-size: 1em; white-space: pre-wrap; word-break: break-all; }
     .main-content { color: ${textColor}; }
@@ -283,97 +283,134 @@ export const generateFinalHtmlStr = (
   const isInline = cssFormat === 'inline';
   let html = '';
 
-  filteredLogs.forEach((log, idx) => {
-    const globalIdx = mergedLogs.findIndex(l => l.id === log.id);
+  const firstVisible = mergedLogs.find(l => {
+    const ts = tabSettings[l.tabId];
+    const cs = charSettings[l.charId];
+    return ts?.visible && (cs?.visible !== false);
+  });
+  const isStartExported = filteredLogs.length === 0 || filteredLogs[0] === firstVisible;
+
+  // Extract images from blocks for the exporter
+  const insertedImages: Record<string, any[]> = {};
+  Object.entries(insertedBlocks || {}).forEach(([id, blocks]) => {
+    blocks.forEach((b: any) => {
+      if (b.type === 'image') {
+        if (!insertedImages[id]) insertedImages[id] = [];
+        insertedImages[id].push({ url: b.url, width: b.width, align: b.align });
+      }
+    });
+  });
+
+  if (isStartExported && insertedBlocks && insertedBlocks['__start__']) {
+    insertedBlocks['__start__'].forEach((block: any) => {
+      if (block.type === 'image') {
+        const url = typeof block === 'string' ? block : block.url;
+        if (!url || (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('data:image/'))) return;
+        
+        const align = (typeof block === 'string' ? 'center' : block.align) || 'center';
+        const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
+        const width = typeof block === 'string' ? undefined : block.width;
+        const widthStyle = width ? `width: ${width}px;` : 'max-width: 100%;';
+        html += `<div class="ccfolia-log-entry" style="display: flex; justify-content: ${justify}; margin: 10px ${s(15.6)}px;">
+          <img src="${url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+        </div>`;
+      }
+    });
+  }
+
+  const chunks: { logs: LogEntry[], stableId: string, blocksAfter: any[], isHidden: boolean }[] = [];
+  
+  const isValidUrl = (url: string) => {
+    if (!url) return false;
+    return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image/');
+  };
+
+  filteredLogs.forEach((log) => {
+    const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
+    const currentBlocks = (insertedBlocks[stableId] || []).filter(b => b.type === 'split' || (b.type === 'image' && isValidUrl(b.url)));
+    
+    if (log.isContinuation && chunks.length > 0 && !log.isHiddenContent) {
+      chunks[chunks.length - 1].logs.push(log);
+      chunks[chunks.length - 1].stableId = stableId;
+      chunks[chunks.length - 1].blocksAfter = currentBlocks;
+    } else {
+      chunks.push({ logs: [log], stableId, blocksAfter: currentBlocks, isHidden: log.isHiddenContent || false });
+    }
+  });
+
+  chunks.forEach((chunk, chunkIdx) => {
+    const log = chunk.logs[0];
+    const { logs: groupedLogs, blocksAfter, isHidden, stableId } = chunk;
+
     const tabSet = tabSettings[log.tabId];
     const format = tabSet?.format || 'main';
     const char = charSettings[log.charId];
     const color = char?.color || log.color;
     const otherNameColor = disableOtherColor ? otherTextColor : color;
     const img = char?.imageUrl;
-    const isCont = log.isContinuation;
     const hideAvatar = hideEmptyAvatars;
 
-    const isValidUrl = (url: string) => {
-      if (!url) return false;
-      return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image/');
-    };
-
-    const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
-    const currentImages = (insertedImages[stableId] || []).filter(imgData => {
-      const url = typeof imgData === 'string' ? imgData : imgData.url;
-      return isValidUrl(url);
-    });
-    const prevStableId = idx > 0 ? (filteredLogs[idx-1].id.startsWith('merged:') ? filteredLogs[idx-1].id.split(',').pop()! : filteredLogs[idx-1].id) : '';
-    const prevImages = idx > 0 ? (insertedImages[prevStableId] || []).filter(imgData => {
-      const url = typeof imgData === 'string' ? imgData : imgData.url;
-      return isValidUrl(url);
-    }) : [];
-
-    let prevIndex = idx - 1;
-    while (prevIndex >= 0 && filteredLogs[prevIndex].isHiddenContent) {
-      prevIndex--;
+    const prevChunk = chunkIdx > 0 ? chunks[chunkIdx - 1] : null;
+    let nextVisibleChunkIdx = chunkIdx + 1;
+    while (nextVisibleChunkIdx < chunks.length && chunks[nextVisibleChunkIdx].isHidden) {
+      nextVisibleChunkIdx++;
     }
-    const prevVisibleLog = prevIndex >= 0 ? filteredLogs[prevIndex] : null;
+    const nextVisibleChunk = nextVisibleChunkIdx < chunks.length ? chunks[nextVisibleChunkIdx] : null;
 
-    let nextIndex = idx + 1;
-    while (nextIndex < filteredLogs.length && filteredLogs[nextIndex].isHiddenContent) {
-      nextIndex++;
+    let prevVisibleChunkIdx = chunkIdx - 1;
+    while (prevVisibleChunkIdx >= 0 && chunks[prevVisibleChunkIdx].isHidden) {
+      prevVisibleChunkIdx--;
     }
-    const nextVisibleLog = nextIndex < filteredLogs.length ? filteredLogs[nextIndex] : null;
+    const prevVisibleChunk = prevVisibleChunkIdx >= 0 ? chunks[prevVisibleChunkIdx] : null;
 
-    const isPrevSameTab = prevVisibleLog ? prevVisibleLog.tab === log.tab : false;
-    const isNextSameTab = nextVisibleLog ? nextVisibleLog.tab === log.tab : false;
+    const isPrevSameTab = prevVisibleChunk ? prevVisibleChunk.logs[0].tab === log.tab : false;
+    const isNextSameTab = nextVisibleChunk ? nextVisibleChunk.logs[0].tab === log.tab : false;
+    
+    const hasBlockAfter = blocksAfter.length > 0;
+    const isFilterEnabled = filterBarMode !== 'none';
+    const hasBlockBefore = prevChunk ? prevChunk.blocksAfter.length > 0 : false;
     
     const shouldMergeStyle = mergeTabStyles.has(format) && (isPrevSameTab || isNextSameTab);
-    const hasImageAfter = currentImages.length > 0;
-    const hasImageBefore = prevImages.length > 0 || (prevIndex >= 0 && filteredLogs[prevIndex].id !== (idx > 0 ? filteredLogs[idx-1].id : '') && insertedImages[(filteredLogs[idx-1].id.startsWith('merged:') ? filteredLogs[idx-1].id.split(',').pop()! : filteredLogs[idx-1].id)]?.length > 0);
 
     const isNarration = log.charId === narrationCharacter && format === 'main';
-    const isPrevNarration = prevVisibleLog ? prevVisibleLog.charId === narrationCharacter && (tabSettings[prevVisibleLog.tabId]?.format || 'main') === 'main' : false;
-    const isNextNarration = nextVisibleLog ? nextVisibleLog.charId === narrationCharacter && (tabSettings[nextVisibleLog.tabId]?.format || 'main') === 'main' : false;
+    const isPrevNarration = prevVisibleChunk ? prevVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[prevVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' : false;
+    const isNextNarration = nextVisibleChunk ? nextVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' : false;
 
-    let displayContent = log.content;
-    if (log.isCommand) {
-      displayContent = displayContent.replace(/^(?:<[^>]+>|\s)*(?:<br\s*\/?>|\n)+(?:<[^>]+>|\s)*/gi, (match: string) => {
-        return match.replace(/(?:<br\s*\/?>|\n)+/gi, '');
-      });
-      displayContent = displayContent.replace(/\](?:<[^>]+>|\s)*(?:<br\s*\/?>|\n)+(?:<[^>]+>|\s)*/gi, (match: string) => {
-        return match.replace(/(?:<br\s*\/?>|\n)+/gi, ' ');
-      });
-    }
-    let finalHtmlContent = linkify(displayContent)
-      .replace(/<div style="margin-bottom: 0;">/gi, '<div>');
-    if (log.name === 'system') {
-      finalHtmlContent = finalHtmlContent.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
-        const charIds = Object.keys(charSettings).filter(id => charSettings[id].name === p1.trim());
-        const matchedChar = charIds.length > 0 ? charSettings[charIds[0]] : null;
-        if (matchedChar) {
-          return `<span style="color: ${matchedChar.color};">${match}</span>`;
-        }
-        return match;
-      });
-    }
-    
-    finalHtmlContent = DOMPurify.sanitize(finalHtmlContent, { ADD_ATTR: ['target'] });
+    // Combine all contents in this chunk
+    let finalHtmlContent = groupedLogs.map((l, i) => {
+      let content = l.content;
+      if (l.isCommand) {
+        content = content.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/(?:\r\n|\r|\n)+/g, ' ');
+      }
+      let html = linkifyAndFormat(content, format === 'other' ? '4px' : '0.8em');
+      if (l.name === 'system') {
+        html = html.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
+          const charIds = Object.keys(charSettings).filter(id => charSettings[id].name === p1.trim());
+          const matchedChar = charIds.length > 0 ? charSettings[charIds[0]] : null;
+          return matchedChar ? `<span style="color: ${matchedChar.color};">${match}</span>` : match;
+        });
+      }
+      return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
+    }).join(`<div style="margin-top: ${format === 'other' ? '4px' : '0.8em'};"></div>`);
 
-    if (!log.isHiddenContent) {
+    if (!isHidden) {
       if (showTabNames.has(format) && !isPrevSameTab) {
         const tabName = log.tab;
       const isSecret = format === 'secret';
       const tabColor = tabSet?.color || '#ffd400';
       const tabBg = getSecretBg(tabColor);
       
+      const isMainTab = format === 'main' ? 'true' : 'false';
       if (isInline) {
-        const isMainTab = format === 'main' ? 'true' : 'false';
-        html += `<div data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="ccfolia-log-entry" style="margin: ${s(12)}px ${s(15.6)}px ${s(4)}px ${s(15.6)}px; display: flex;">
+        const fAttrs = isFilterEnabled ? ` data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="ccfolia-log-entry"` : '';
+        html += `<div${fAttrs} style="margin: ${s(12)}px ${s(15.6)}px ${s(4)}px ${s(15.6)}px; display: flex;">
           <div style="background: ${tabBg}; color: ${tabColor}; padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; border: 1px solid ${tabColor}44;">
             ${tabName}
           </div>
         </div>`;
       } else {
-        const isMainTab = format === 'main' ? 'true' : 'false';
-        html += `<div data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="tab-name-block ccfolia-log-entry">
+        const fAttrs = isFilterEnabled ? ` data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="tab-name-block ccfolia-log-entry"` : ` class="tab-name-block"`;
+        html += `<div${fAttrs}>
           <div class="tab-name-badge" style="background: ${tabBg}; color: ${tabColor}; border: 1px solid ${tabColor}44;">
             ${tabName}
           </div>
@@ -383,27 +420,34 @@ export const generateFinalHtmlStr = (
 
     if (isInline) {
       const avatarStyle = `width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; background-color: ${hideAvatar ? 'transparent' : avatarPlaceholder}; border-radius: 4px; object-fit: contain;`;
-      const bodyStyle = `flex-grow: 1; line-height: 1.5;`;
+      const bodyStyle = `flex-grow: 1; line-height: 1.6;`;
       const nameStyle = `font-weight: bold; color: ${color}; font-size: 0.96em; margin-bottom: 2px; display: block;`;
       const contentStyle = `font-size: 1em; color: ${textColor}; white-space: pre-wrap; word-break: break-all;`;
       const otherContentStyle = `font-size: 1em; color: ${otherTextColor}; white-space: pre-wrap; word-break: break-all;`;
       
-      let itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? '0' : '2px') : (isCont ? '0' : '2px');
+      let itemMarginBottom = shouldMergeStyle ? (isNextSameTab && !hasBlockAfter ? '0' : '2px') : '2px';
       let itemMarginTop = '0';
       
+      if (format === 'other') {
+        itemMarginBottom = '0';
+      }
+      
       if (isNarration) {
-        itemMarginTop = isPrevNarration ? '0' : '16px';
-        itemMarginBottom = isNextNarration ? '0' : '16px';
+        itemMarginTop = isPrevNarration ? '0' : '10px';
+        itemMarginBottom = isNextNarration ? '0' : '10px';
       }
 
-      const isSectionStart = idx === 0 || hasImageBefore;
-      const isSectionEnd = isNextSameTab === false || hasImageAfter;
+      const isSectionStart = chunkIdx === 0 || hasBlockBefore;
+      const isSectionEnd = isNextSameTab === false || hasBlockAfter;
 
       const isMainTab = format === 'main' ? 'true' : 'false';
       const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
       const isCommandFlag = log.isCommand ? 'true' : 'false';
+      const fullFilterAttrs = isFilterEnabled 
+        ? ` data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="ccfolia-log-entry"`
+        : '';
 
-      html += `<div data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="ccfolia-log-entry" style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
+      html += `<div${fullFilterAttrs} style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
       
       if (log.isCommand) {
         const nameHtml = log.name !== 'system' ? `<span style="color: ${color}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold;">[ ${log.name} ]</span>` : '';
@@ -411,19 +455,19 @@ export const generateFinalHtmlStr = (
         if (format === 'secret') {
           const tabColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(tabColor);
-          html += `<div style="background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${s(12)}px ${s(15.6)}px; border-radius: 8px; margin: ${s(8)}px ${s(15.6)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
+          html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${s(12)}px ${s(15.6)}px; border-radius: 8px; margin: ${s(8)}px ${s(15.6)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
         } else {
-          html += `<div style="background: ${commandBg}; border: 1px solid ${borderColor}; padding: ${s(12)}px ${s(15.6)}px; border-radius: 8px; margin: ${s(8)}px ${s(15.6)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
+          html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${commandBg}; border: 1px solid ${borderColor}; padding: ${s(12)}px ${s(15.6)}px; border-radius: 8px; margin: ${s(8)}px ${s(15.6)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
         }
       } else if (isNarration) {
-        html += `<div style="padding: ${s(12)}px ${s(15.6)}px; text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic;">${finalHtmlContent}</div>`;
+        html += `<div style="padding: ${s(9)}px ${s(15.6)}px; text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic;">${finalHtmlContent}</div>`;
       } else if (format === 'other') {
-        html += `<div style="padding: ${s(4)}px ${s(15.6)}px; display: flex; gap: ${s(8)}px; align-items: baseline;">
-          ${!isCont ? `<span style="font-weight: bold; flex-shrink: 0; font-size: 0.96em; color: ${otherNameColor};">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}
-          <span style="${otherContentStyle}">${finalHtmlContent}</span>
+        html += `<div style="padding: ${s(2)}px ${s(15.6)}px; display: flex; gap: ${s(8)}px; align-items: baseline;">
+          <span style="font-weight: bold; flex-shrink: 0; font-size: 0.96em; color: ${otherNameColor};">${log.name}</span>
+          <div style="${otherContentStyle}">${finalHtmlContent}</div>
         </div>`;
       } else if (format === 'info') {
-        const infoMargin = shouldMergeStyle ? `0 ${s(15.6)}px` : `${s(8)}px ${s(15.6)}px`;
+        const infoMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(8)}px ${s(15.6)}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : s(8)}px ${s(15.6)}px`;
         const infoRadius = shouldMergeStyle 
           ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
           : '4px';
@@ -431,14 +475,14 @@ export const generateFinalHtmlStr = (
         const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : '';
 
         html += `<div style="padding: ${s(15.6)}px ${s(19.2)}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: ${infoMargin}; border-radius: ${infoRadius}; ${infoBorderTop ? `border-top: ${infoBorderTop}; ` : ''}${infoBorderBottom ? `border-bottom: ${infoBorderBottom}; ` : ''}">
-          ${!isCont ? `<span style="${nameStyle}">${log.name}</span>` : ''}
+          <span style="${nameStyle}">${log.name}</span>
           <div style="${contentStyle}">${finalHtmlContent}</div>
         </div>`;
       } else if (format === 'secret') {
         const tabColor = tabSet?.color || '#ffd400';
         const secretBg = getSecretBg(tabColor);
         const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
-        const secretMargin = shouldMergeStyle ? `0 ${s(15.6)}px` : `${s(4)}px ${s(15.6)}px`;
+        const secretMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(4)}px ${s(15.6)}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : s(4)}px ${s(15.6)}px`;
         const secretRadius = shouldMergeStyle 
           ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
           : '4px';
@@ -450,9 +494,9 @@ export const generateFinalHtmlStr = (
 
         html += `
           <div style="display: flex; gap: ${s(12)}px; padding: ${s(12)}px ${s(15.6)}px; align-items: flex-start; background: ${secretBg}; border-left: 4px solid ${tabColor}; margin: ${secretMargin}; border-radius: ${secretRadius}; ${borderTopStyle}${borderBottomStyle}">
-            ${!isCont ? imgTag : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}
+            ${imgTag}
             <div style="${bodyStyle}">
-              ${!isCont ? `<span style="${nameStyle}">${log.name}</span>` : ''}
+              <span style="${nameStyle}">${log.name}</span>
               <div style="${contentStyle}">${finalHtmlContent}</div>
             </div>
           </div>`;
@@ -461,38 +505,40 @@ export const generateFinalHtmlStr = (
           ? `<img src="${img}" style="${avatarStyle}" />` 
           : `<div style="${avatarStyle}"></div>`;
         
-        const contAvatarHtml = `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`;
-
         html += `
           <div style="display: flex; gap: ${s(12)}px; padding: ${s(12)}px ${s(15.6)}px; align-items: flex-start;">
-            ${!isCont ? avatarHtml : contAvatarHtml}
+            ${avatarHtml}
             <div style="${bodyStyle}">
-              ${!isCont ? `<span style="${nameStyle}">${log.name}</span>` : ''}
+              <span style="${nameStyle}">${log.name}</span>
               <div style="${contentStyle}">${finalHtmlContent}</div>
             </div>
           </div>`;
       }
       html += `</div>`;
     } else {
-      const isSectionStart = !prevVisibleLog || hasImageBefore;
-      const isSectionEnd = !nextVisibleLog || isNextSameTab === false || hasImageAfter;
+      const isSectionStart = !prevVisibleChunk || hasBlockBefore;
+      const isSectionEnd = !nextVisibleChunk || isNextSameTab === false || hasBlockAfter;
 
-      let mb = shouldMergeStyle ? (isNextSameTab && !hasImageAfter ? 'mb-0' : '') : (isCont ? 'mb-0' : '');
+      let mb = shouldMergeStyle ? (isNextSameTab && !hasBlockAfter ? 'mb-0' : '') : '';
       let mt = '';
 
       if (isNarration) {
-        mt = isPrevNarration ? 'mt-0' : 'mt-16';
-        mb = isNextNarration ? 'mb-0' : 'mb-16';
+        mt = isPrevNarration ? 'mt-0' : 'mt-10';
+        mb = isNextNarration ? 'mb-0' : 'mb-10';
       }
 
       const cl = [mb, mt].filter(Boolean).join(' ');
-      const clStr = `log-item ccfolia-log-entry${cl ? ` ${cl}` : ''}`;
+      const clStr = `log-item${cl ? ` ${cl}` : ''}`;
       
       const isMainTab = format === 'main' ? 'true' : 'false';
       const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
       const isCommandFlag = log.isCommand ? 'true' : 'false';
+      
+      const fullFilterAttrs = isFilterEnabled
+        ? ` data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="${clStr} ccfolia-log-entry"`
+        : ` class="${clStr}"`;
 
-      html += `<div data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="${clStr}">`;
+      html += `<div${fullFilterAttrs}>`;
 
       if (log.isCommand) {
         const nameHtml = log.name !== 'system' ? `<span class="command-text" style="color: ${color}; font-weight: bold;">[ ${log.name} ]</span> ` : '';
@@ -500,14 +546,14 @@ export const generateFinalHtmlStr = (
         if (format === 'secret') {
           const tabColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(tabColor);
-          html += `<div class="command-box" style="background: ${secretBg};">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
+          html += `<div class="command-box" style="display: flex; align-items: center; flex-wrap: wrap; background: ${secretBg}; border: 1px solid ${borderColor}; margin: ${s(8)}px ${s(15.6)}px; border-radius: 8px; padding-top: ${s(12)}px; padding-bottom: ${s(shouldMergeStyle && isNextSameTab ? 6 : 12)}px;">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
         } else {
-          html += `<div class="command-box">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
+          html += `<div class="command-box" style="display: flex; align-items: center; flex-wrap: wrap; padding-top: ${s(12)}px; padding-bottom: ${s(shouldMergeStyle && isNextSameTab ? 6 : 12)}px;">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
         }
       } else if (isNarration) {
-        html += `<div class="narration-row">${finalHtmlContent}</div>`;
+        html += `<div class="narration-row" style="padding-top: ${s(isPrevNarration ? 3 : 9)}px; padding-bottom: ${s(isNextNarration ? 3 : 9)}px; padding-left: ${s(15.6)}px; padding-right: ${s(15.6)}px;">${finalHtmlContent}</div>`;
       } else if (format === 'other') {
-        html += `<div class="other-row">${!isCont ? `<span class="other-name" style="color: ${otherNameColor}">${log.name}</span>` : `<span style="width: 50px; flex-shrink: 0;"></span>`}<span class="other-content">${finalHtmlContent}</span></div>`;
+        html += `<div class="other-row" style="padding-top: ${s(2)}px; padding-bottom: ${s(2)}px;"><span class="other-name" style="color: ${otherNameColor}">${log.name}</span><div class="other-content">${finalHtmlContent}</div></div>`;
       } else if (format === 'info') {
         const tZ = isPrevSameTab && !isSectionStart, bZ = isNextSameTab && !isSectionEnd;
         const rad = shouldMergeStyle ? `${tZ ? 0 : 4}px ${tZ ? 0 : 4}px ${bZ ? 0 : 4}px ${bZ ? 0 : 4}px` : '4px';
@@ -515,10 +561,11 @@ export const generateFinalHtmlStr = (
           shouldMergeStyle ? `margin: 0 ${s(15.6)}px;` : '',
           rad !== '4px' ? `border-radius: ${rad};` : '',
           shouldMergeStyle && tZ ? 'border-top: none;' : '',
-          shouldMergeStyle && bZ ? 'border-bottom: none;' : ''
+          shouldMergeStyle && bZ ? 'border-bottom: none;' : '',
+          `padding-top: ${s(15.6)}px; padding-bottom: ${s(shouldMergeStyle && isNextSameTab ? 4 : 15.6)}px;`
         ].filter(Boolean).join(' ');
 
-        html += `<div class="info-row"${st ? ` style="${st}"` : ''}>${!isCont ? `<span class="main-name" style="color: ${color}; display: block;">${log.name}</span>` : ''}<div class="main-content">${finalHtmlContent}</div></div>`;
+        html += `<div class="info-row"${st ? ` style="${st}"` : ''}><span class="main-name" style="color: ${color}; display: block;">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div>`;
       } else if (format === 'secret') {
         const tabColor = tabSet?.color || '#ffd400';
         const secretBg = getSecretBg(tabColor);
@@ -531,33 +578,34 @@ export const generateFinalHtmlStr = (
           `border-left: 4px solid ${tabColor};`,
           shouldMergeStyle ? `margin: 0 ${s(15.6)}px;` : '',
           rad !== '4px' ? `border-radius: ${rad};` : '',
-          shouldMergeStyle && tZ ? 'border-top: none;' : ''
+          shouldMergeStyle && tZ ? 'border-top: none;' : '',
+          `padding-top: ${s(12)}px; padding-bottom: ${s(shouldMergeStyle && isNextSameTab ? 6 : 12)}px;`
         ].filter(Boolean).join(' ');
 
-        html += `<div class="secret-row" style="${st}">${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}<div class="main-body">${!isCont ? `<span class="main-name" style="color: ${color}; display: block;">${log.name}</span>` : ''}<div class="main-content">${finalHtmlContent}</div></div></div>`;
+        html += `<div class="secret-row" style="${st}">${avatarHtml}<div class="main-body"><span class="main-name" style="color: ${color}; display: block;">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div></div>`;
       } else {
         const avSt = hideAvatar ? 'background-color: transparent;' : '';
         const avatarHtml = img ? `<img src="${img}" class="main-avatar"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="main-avatar"${avSt ? ` style="${avSt}"` : ''}></div>`;
-        html += `<div class="main-row">${!isCont ? avatarHtml : `<div style="width: ${avatarSize}px; flex-shrink: 0;"></div>`}<div class="main-body">${!isCont ? `<span class="main-name" style="color: ${color}; display: block;">${log.name}</span>` : ''}<div class="main-content">${finalHtmlContent}</div></div></div>`;
+        html += `<div class="main-row" style="padding-top: ${s(12)}px; padding-bottom: ${s(shouldMergeStyle && isNextSameTab ? 6 : 12)}px;">${avatarHtml}<div class="main-body"><span class="main-name" style="color: ${color}; display: block;">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div></div>`;
       }
       html += `</div>`;
     }
     } 
     
-    const currentStableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
-    if (insertedImages[currentStableId]) {
-      insertedImages[currentStableId].forEach(imgData => {
-        const url = typeof imgData === 'string' ? imgData : imgData.url;
-        if (!isValidUrl(url)) return;
-        
-        const align = (typeof imgData === 'string' ? 'center' : imgData.align) || 'center';
-        const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
-        const width = typeof imgData === 'string' ? undefined : imgData.width;
-        const widthStyle = width ? `width: ${width}px;` : 'max-width: 100%;';
-        const isMainTab = format === 'main' ? 'true' : 'false';
-        html += `<div data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="ccfolia-log-entry" style="display: flex; justify-content: ${justify}; margin: 10px ${s(15.6)}px;">
-          <img src="${url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
-        </div>`;
+    if (blocksAfter && blocksAfter.length > 0) {
+      blocksAfter.forEach((block: any) => {
+        if (block.type === 'image' && isValidUrl(block.url)) {
+          const align = block.align || 'center';
+          const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
+          const widthStyle = block.width ? `width: ${block.width}px;` : 'max-width: 100%;';
+          const isMainTab = format === 'main' ? 'true' : 'false';
+          const imgAttrs = isFilterEnabled 
+            ? ` data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="ccfolia-log-entry"`
+            : '';
+          html += `<div${imgAttrs} style="display: flex; justify-content: ${justify}; margin: 10px ${s(15.6)}px;">
+            <img src="${block.url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+          </div>`;
+        }
       });
     }
   });

@@ -56,7 +56,8 @@ import { twMerge } from 'tailwind-merge';
 import { clsx, type ClassValue } from 'clsx';
 import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem } from './types';
 import { parseLogFile } from './parser';
-import { cn, r, rgbToHex, linkify } from './utils';
+import { cn, r, rgbToHex } from './utils';
+import { InsertedBlock, migrateToInsertedBlocks, extractOldFormat } from './utils/migration';
 import { Toggle } from './components/Toggle';
 import { LogItem } from './components/LogItem';
 import { SectionNameEditor } from './components/SectionNameEditor';
@@ -349,12 +350,15 @@ export default function App() {
     edits: true
   });
 
-  const [splitPoints, setSplitPoints] = useState<Set<string>>(new Set());
-  const [insertedImages, setInsertedImages] = useState<Record<string, { url: string; width?: string; align?: 'left' | 'center' | 'right' }[]>>({});
+  const [insertedBlocks, setInsertedBlocks] = useState<Record<string, InsertedBlock[]>>({});
+  const [imageInputLoc, setImageInputLoc] = useState<{ logId: string; insertIndex: number } | null>(null);
+
+  const { insertedImages, splitPoints: splitPointsArr, sectionNames } = useMemo(() => extractOldFormat(insertedBlocks), [insertedBlocks]);
+  const splitPoints = useMemo(() => new Set(splitPointsArr), [splitPointsArr]);
+
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [showCopyMenu, setShowCopyMenu] = useState(false);
   const [initialState, setInitialState] = useState<any>(null);
-  const [sectionNames, setSectionNames] = useState<Record<string, string>>({});
   const [isLibraryAccordionOpen, setIsLibraryAccordionOpen] = useState(false);
   const [openLibraryDropdownId, setOpenLibraryDropdownId] = useState<string | null>(null);
   const [hoverLibraryDropdownId, setHoverLibraryDropdownId] = useState<string | null>(null);
@@ -478,9 +482,7 @@ export default function App() {
       disableOtherColor,
       filterBarMode,
       logs,
-      insertedImages,
-      splitPoints: Array.from(splitPoints),
-      sectionNames,
+      insertedBlocks,
       mergeTabs: Array.from(mergeTabs),
       showTabNames: Array.from(showTabNames),
       mergeTabStyles: Array.from(mergeTabStyles),
@@ -528,9 +530,11 @@ export default function App() {
       setFilterBarMode(state.isFilterBarEnabled ? 'floating' : 'none');
     }
     if (state.logs) setLogs(state.logs);
-    if (state.insertedImages) setInsertedImages(state.insertedImages);
-    if (state.splitPoints) setSplitPoints(new Set(state.splitPoints));
-    if (state.sectionNames) setSectionNames(state.sectionNames);
+    if (state.insertedBlocks) {
+      setInsertedBlocks(state.insertedBlocks);
+    } else if (state.insertedImages || state.splitPoints) {
+      setInsertedBlocks(migrateToInsertedBlocks(state.insertedImages, state.splitPoints, state.sectionNames));
+    }
     if (state.mergeTabs) setMergeTabs(new Set(state.mergeTabs));
     if (state.showTabNames) setShowTabNames(new Set(state.showTabNames));
     if (state.mergeTabStyles) setMergeTabStyles(new Set(state.mergeTabStyles));
@@ -553,9 +557,11 @@ export default function App() {
         if (state.lightBgColor) setLightBgColor(state.lightBgColor);
         setDisableOtherColor(state.disableOtherColor);
         setLogs(state.logs);
-        setInsertedImages(state.insertedImages || {});
-        setSplitPoints(new Set(state.splitPoints || []));
-        setSectionNames(state.sectionNames || {});
+        if (state.insertedBlocks) {
+          setInsertedBlocks(state.insertedBlocks || {});
+        } else {
+          setInsertedBlocks(migrateToInsertedBlocks(state.insertedImages, state.splitPoints, state.sectionNames));
+        }
         setMergeTabs(new Set(state.mergeTabs || ['main', 'secret', 'other']));
         setShowTabNames(new Set(state.showTabNames || ['secret']));
         setMergeTabStyles(new Set(state.mergeTabStyles || ['secret']));
@@ -570,7 +576,6 @@ export default function App() {
         setDarkBgColor('#212121');
         setLightBgColor('#ffffff');
         setDisableOtherColor(true);
-        setIsFilterBarEnabled(false);
         setMergeTabs(new Set(['main', 'secret', 'other']));
         setShowTabNames(new Set(['secret']));
         setMergeTabStyles(new Set(['secret']));
@@ -721,9 +726,7 @@ export default function App() {
     setExtractedColors(colorsFound);
     setTabSettings(newTabs);
     setTabOrder(newTabOrder);
-    setInsertedImages({});
-    setSplitPoints(new Set());
-    setSectionNames({});
+    setInsertedBlocks({});
     setMergeTabs(new Set(['main', 'secret', 'other']));
     setMergeTabStyles(new Set(['secret']));
     setShowTabNames(new Set(['secret']));
@@ -804,9 +807,11 @@ export default function App() {
       if (json.filterBarMode !== undefined) setFilterBarMode(json.filterBarMode);
       if (json.disableOtherColor !== undefined) setDisableOtherColor(json.disableOtherColor);
       
-      if (json.splitPoints) setSplitPoints(new Set(json.splitPoints));
-      if (json.sectionNames) setSectionNames(json.sectionNames);
-      if (json.insertedImages) setInsertedImages(json.insertedImages);
+      if (json.insertedBlocks) {
+        setInsertedBlocks(json.insertedBlocks);
+      } else if (json.splitPoints || json.insertedImages) {
+        setInsertedBlocks(migrateToInsertedBlocks(json.insertedImages, json.splitPoints, json.sectionNames));
+      }
       
       if (json.mergeTabs) setMergeTabs(new Set(json.mergeTabs));
       if (json.showTabNames) setShowTabNames(new Set(json.showTabNames));
@@ -852,13 +857,16 @@ export default function App() {
       data.filterBarMode = filterBarMode;
     }
     
-    if (saveOptions.splits) {
-      data.splitPoints = Array.from(splitPoints);
-      data.sectionNames = sectionNames;
-    }
-    
-    if (saveOptions.images) {
-      data.insertedImages = insertedImages;
+    if (saveOptions.splits || saveOptions.images) {
+      data.insertedBlocks = insertedBlocks;
+      // Legacy export support just in case
+      if (saveOptions.splits) {
+        data.splitPoints = Array.from(splitPoints);
+        data.sectionNames = sectionNames;
+      }
+      if (saveOptions.images) {
+        data.insertedImages = insertedImages;
+      }
     }
     
     if (saveOptions.edits) {
@@ -885,12 +893,11 @@ export default function App() {
     if (logs.length === 0) return [];
     
     const result: LogEntry[] = [];
-    let currentMerged: LogEntry | null = null;
-    let mergedIds: string[] = [];
+    let prevVisibleLog: LogEntry | null = null;
 
     const visibleLogs = logs.map(log => {
       const isVisibleContent = tabSettings[log.tabId]?.visible && charSettings[log.charId]?.visible !== false;
-      const hasImage = insertedImages[log.id] && insertedImages[log.id].length > 0;
+      const hasImage = insertedBlocks[log.id]?.some((b: any) => b.type === 'image');
       
       if (isVisibleContent) {
         return { ...log, isHiddenContent: false };
@@ -904,38 +911,33 @@ export default function App() {
       const tabSet = tabSettings[log.tabId];
       const format = tabSet?.format || 'main';
       
-      const currentStableId = currentMerged ? (currentMerged.id.startsWith('merged:') ? currentMerged.id.split(',').pop()! : currentMerged.id) : null;
-      const hasSplitPoint = currentStableId ? splitPoints.has(currentStableId) : false;
+      const prevStableId = prevVisibleLog ? (prevVisibleLog.id.startsWith('merged:') ? prevVisibleLog.id.split(',').pop()! : prevVisibleLog.id) : '';
+      const prevHasBlock = prevVisibleLog && !!insertedBlocks[prevStableId]?.length;
 
-      const shouldMerge = !log.isHiddenContent && 
-                          !currentMerged?.isHiddenContent &&
-                          mergeTabs.has(format) && 
-                          currentMerged && 
-                          currentMerged.name === log.name && 
-                          currentMerged.tab === log.tab && 
-                          !log.isCommand && 
-                          !currentMerged.isCommand &&
-                          !hasSplitPoint;
-
-      if (shouldMerge && currentMerged) {
-        currentMerged.content += `\n${log.content}`;
-        mergedIds.push(log.id);
-        currentMerged.id = `merged:${mergedIds.join(',')}`;
-      } else {
-        if (currentMerged) {
-          result.push(currentMerged);
+      let isContinuation = false;
+      if (prevVisibleLog) {
+        const prevFormat = tabSettings[prevVisibleLog.tabId]?.format || 'main';
+        const isPrevHidden = prevVisibleLog.isHiddenContent;
+        if (!log.isHiddenContent && 
+            !isPrevHidden &&
+            mergeTabs.has(format) && 
+            mergeTabs.has(prevFormat) &&
+            prevVisibleLog.name === log.name && 
+            prevVisibleLog.tab === log.tab && 
+            !log.isCommand && 
+            !prevVisibleLog.isCommand &&
+            !prevHasBlock) {
+          isContinuation = true;
         }
-        currentMerged = { ...log, isContinuation: false };
-        mergedIds = [log.id];
       }
+
+      const newLog = { ...log, isContinuation };
+      result.push(newLog);
+      prevVisibleLog = newLog;
     });
 
-    if (currentMerged) {
-      result.push(currentMerged);
-    }
-
     return result;
-  }, [logs, mergeTabs, tabSettings, charSettings, splitPoints]);
+  }, [logs, mergeTabs, tabSettings, charSettings, insertedBlocks]);
 
   useLayoutEffect(() => {
     if (listRef.current) {
@@ -1116,31 +1118,14 @@ export default function App() {
     if (idx !== -1) {
       const stableId = id.startsWith('merged:') ? id.split(',').pop()! : id;
       
-      // Remove associated images for the deleted log (ID-based)
-      const nextImages = { ...insertedImages };
-      if (nextImages[stableId]) {
-        delete nextImages[stableId];
+      const nextBlocks = { ...insertedBlocks };
+      if (nextBlocks[stableId]) {
+        delete nextBlocks[stableId];
       }
-      setInsertedImages(nextImages);
-      
-      // Remove split point if it was on this log
-      const nextSplits = new Set(splitPoints);
-      if (nextSplits.has(stableId)) {
-        nextSplits.delete(stableId);
-      }
-      setSplitPoints(nextSplits);
-
-      // Remove section name if it was on this log
-      const nextNames = { ...sectionNames };
-      if (nextNames[stableId]) {
-        delete nextNames[stableId];
-      }
-      setSectionNames(nextNames);
+      setInsertedBlocks(nextBlocks);
       
       saveToHistory({ 
-        insertedImages: nextImages, 
-        splitPoints: Array.from(nextSplits), 
-        sectionNames: nextNames 
+        insertedBlocks: nextBlocks 
       });
     }
   };
@@ -1176,7 +1161,7 @@ export default function App() {
       disableOtherColor,
       hideEmptyAvatars,
       narrationCharacter,
-      insertedImages,
+      insertedBlocks,
       mergeTabStyles,
       showTabNames,
       pageTitle,
@@ -1239,12 +1224,15 @@ export default function App() {
         tabSettings,
         cssFormat,
         theme,
+        darkBgColor,
+        lightBgColor,
+        filterBarMode,
         fontSize,
         fontFamily,
         disableOtherColor,
         hideEmptyAvatars,
         narrationCharacter,
-        insertedImages,
+        insertedBlocks,
         mergeTabStyles,
         showTabNames,
         pageTitle,
@@ -2538,7 +2526,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.3</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.4</span>
           </div>
         </div>
       </aside>
@@ -2929,9 +2917,9 @@ export default function App() {
                           initialName={sectionNames[0] || ''}
                           defaultName="섹션 1"
                           onSave={(name) => {
-                            const next = { ...sectionNames, [0]: name };
-                            setSectionNames(next);
-                            saveToHistory({ sectionNames: next });
+                            const nextBlocks = migrateToInsertedBlocks(insertedImages, splitPointsArr, { ...sectionNames, [0]: name });
+                            setInsertedBlocks(nextBlocks);
+                            saveToHistory({ insertedBlocks: nextBlocks });
                           }}
                         />
                       </div>
@@ -2996,31 +2984,32 @@ export default function App() {
                         color: #e6005c;
                         opacity: 0.4;
                       }
-                      .split-trigger {
-                        position: absolute;
-                        bottom: -14px;
-                        left: 50%;
-                        transform: translateX(-50%);
+                      .boundary-trigger {
+                        position: relative;
+                        height: 16px;
+                        margin: -8px 0;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        gap: 8px;
                         z-index: 50;
                         opacity: 0;
                         transition: opacity 0.2s;
-                        display: flex;
-                        gap: 8px;
-                        pointer-events: none;
                       }
-                      .log-item-wrapper:hover .split-trigger,
-                      .split-trigger:hover { 
-                        opacity: 1; 
-                        pointer-events: auto;
+                      .boundary-trigger:hover {
+                        opacity: 1;
                       }
-                      .split-trigger::before {
+                      .boundary-trigger::before {
                         content: '';
                         position: absolute;
-                        top: -6px;
-                        left: -6px;
-                        right: -6px;
-                        bottom: -6px;
+                        left: 0;
+                        right: 0;
+                        top: 50%;
+                        height: 1px;
+                        background: rgba(230,0,92,0.4);
+                        transform: translateY(-50%);
                         z-index: -1;
+                        pointer-events: none;
                       }
                       .virtualize-row:hover {
                         z-index: 50 !important;
@@ -3085,64 +3074,53 @@ export default function App() {
                               disableOtherColor={disableOtherColor}
                               fontSize={fontSize}
                               narrationCharacter={narrationCharacter}
-                              insertedImages={insertedImages}
-                              splitPoints={splitPoints}
-                              sectionNames={sectionNames}
-                              imageInputIdx={imageInputIdx}
-                              onToggleSplit={(id: string) => {
-                                const next = new Set(splitPoints);
-                                if (next.has(id)) next.delete(id);
-                                else next.add(id);
-                                setSplitPoints(next);
-                                saveToHistory({ splitPoints: Array.from(next) });
+                              insertedBlocks={insertedBlocks[stableId] || []}
+                              startBlocks={idx === 0 ? (insertedBlocks['__start__'] || []) : []}
+                              imageInputLoc={imageInputLoc}
+                              splitPointsArray={splitPointsArray}
+                              onAddBlock={(id, index, type, data) => {
+                                const next = { ...insertedBlocks };
+                                if (!next[id]) next[id] = [];
+                                next[id] = [...next[id]];
+                                const newBlock: InsertedBlock = type === 'image' 
+                                  ? { id: `img_${Date.now()}_${Math.random().toString(36).substr(2,9)}`, type: 'image', url: data.url, width: '400', align: 'center' }
+                                  : { id: `split_${Date.now()}_${Math.random().toString(36).substr(2,9)}`, type: 'split', name: '' };
+                                next[id].splice(index, 0, newBlock);
+                                setInsertedBlocks(next);
+                                saveToHistory({ insertedBlocks: next });
+                                setImageInputLoc(null);
                               }}
-                              onRenameSection={(id: string, name: string) => {
-                                const next = { ...sectionNames, [id]: name };
-                                setSectionNames(next);
-                                saveToHistory({ sectionNames: next });
-                              }}
-                              onInsertImage={(id: string) => {
-                                setImageInputIdx(id === imageInputIdx ? null : id);
-                              }}
-                              onAddImageUrl={(id: string, url: string) => {
-                                const next = { ...insertedImages };
-                                next[id] = next[id] ? [...next[id], { url, width: '400', align: 'center' }] : [{ url, width: '400', align: 'center' }];
-                                setInsertedImages(next);
-                                saveToHistory({ insertedImages: next });
-                                setImageInputIdx(null);
-                              }}
-                              onDeleteImage={(id: string, imgIdx: number) => {
-                                const next = { ...insertedImages };
-                                next[id] = next[id].filter((_: any, j: number) => j !== imgIdx);
-                                if (next[id].length === 0) delete next[id];
-                                setInsertedImages(next);
-                                saveToHistory({ insertedImages: next });
-                              }}
-                              onUpdateImageWidth={(id: string, imgIdx: number, width: string) => {
-                                const next = { ...insertedImages };
-                                if (next[id] && next[id][imgIdx]) {
-                                  next[id] = [...next[id]];
-                                  next[id][imgIdx] = { ...next[id][imgIdx], width };
-                                  setInsertedImages(next);
-                                  saveToHistory({ insertedImages: next });
+                              onUpdateBlock={(id, blockId, updates) => {
+                                const next = { ...insertedBlocks };
+                                if (next[id]) {
+                                  next[id] = next[id].map(b => b.id === blockId ? { ...b, ...updates } as InsertedBlock : b);
+                                  setInsertedBlocks(next);
+                                  saveToHistory({ insertedBlocks: next });
                                 }
                               }}
-                              onUpdateImageAlign={(id: string, imgIdx: number, align: 'left' | 'center' | 'right') => {
-                                const next = { ...insertedImages };
-                                if (next[id] && next[id][imgIdx]) {
-                                  next[id] = [...next[id]];
-                                  next[id][imgIdx] = { ...next[id][imgIdx], align };
-                                  setInsertedImages(next);
-                                  saveToHistory({ insertedImages: next });
+                              onRemoveBlock={(id, blockId) => {
+                                const next = { ...insertedBlocks };
+                                if (next[id]) {
+                                  next[id] = next[id].filter(b => b.id !== blockId);
+                                  if (next[id].length === 0) delete next[id];
+                                  setInsertedBlocks(next);
+                                  saveToHistory({ insertedBlocks: next });
                                 }
+                              }}
+                              onToggleImageInput={(id, index) => {
+                                setImageInputLoc(
+                                  imageInputLoc?.logId === id && imageInputLoc.insertIndex === index 
+                                    ? null 
+                                    : { logId: id, insertIndex: index }
+                                );
                               }}
                               onEditLog={onEditLog}
                               onDeleteLog={onDeleteLog}
                               mergedLogsCount={mergedLogs.length}
-                              splitPointsArray={splitPointsArray}
                               isPrevSameTab={isPrevSameTab}
                               isNextSameTab={isNextSameTab}
-                              isPrevSplit={idx > 0 && splitPoints.has(mergedLogs[idx - 1].id.startsWith('merged:') ? mergedLogs[idx - 1].id.split(',').pop()! : mergedLogs[idx - 1].id)}
+                              isNextContinuation={idx < mergedLogs.length - 1 && mergedLogs[idx + 1].isContinuation}
+                              isPrevBlock={idx > 0 && !!insertedBlocks[mergedLogs[idx - 1].id.startsWith('merged:') ? mergedLogs[idx - 1].id.split(',').pop()! : mergedLogs[idx - 1].id]?.length}
                               mergeTabStyles={mergeTabStyles}
                               showTabNames={showTabNames}
                               hideEmptyAvatars={hideEmptyAvatars}
