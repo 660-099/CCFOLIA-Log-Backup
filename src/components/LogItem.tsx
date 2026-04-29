@@ -166,7 +166,7 @@ export const LogItem = React.memo(({
   if (log.isCommand) {
     displayContent = displayContent.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/(?:\r\n|\r|\n)+/g, ' ');
   }
-  let finalHtmlContent = linkifyAndFormat(displayContent, format === 'other' ? '4px' : '.8em');
+  let finalHtmlContent = linkifyAndFormat(displayContent);
   if (log.name === 'system') {
     finalHtmlContent = finalHtmlContent.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
       const char = charSettings[p1.trim()];
@@ -234,8 +234,8 @@ export const LogItem = React.memo(({
   }
 
   if (isNarration) {
-    itemMarginTop = isPrevNarration ? '0' : '10px';
-    itemMarginBottom = isNextNarration ? '0' : '10px';
+    itemMarginTop = log.isContinuation ? '0' : '10px';
+    itemMarginBottom = mergeWithNext ? '0' : '10px';
   }
 
   const getSectionRange = () => {
@@ -339,7 +339,7 @@ export const LogItem = React.memo(({
             </div>
           ) : isNarration ? (
             <div style={{ 
-              padding: `${r(isPrevNarration ? paddingSize * 0.25 : paddingSize * 0.75)}px ${r(paddingSize * 1.3)}px ${r(isNextNarration ? paddingSize * 0.25 : paddingSize * 0.75)}px ${r(paddingSize * 1.3)}px`, 
+              padding: `${log.isContinuation ? '0.4em' : r(paddingSize * 0.75) + 'px'} ${r(paddingSize * 1.3)}px ${mergeWithNext ? '0.4em' : r(paddingSize * 0.75) + 'px'} ${r(paddingSize * 1.3)}px`, 
               textAlign: 'center',
               color: theme === 'dark' ? '#EEEEEE' : '#333333',
               lineHeight: 1.6,

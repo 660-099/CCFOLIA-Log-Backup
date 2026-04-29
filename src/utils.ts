@@ -21,22 +21,11 @@ export const rgbToHex = (colorStr: string) => {
   return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 };
 
-export const linkifyAndFormat = (text: string, gap: string = '.8em') => {
+export const linkifyAndFormat = (text: string) => {
   const urlPattern = /(https?:\/\/[^\s<]+)/g;
-  
-  // Clean up any trailing / leading <br> and \n just to be safe
-  const cleaned = text.replace(/^(?:<br\s*\/?>|\n|\s)+|(?:<br\s*\/?>|\n|\s)+$/gi, '');
-  const processed = cleaned.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">$1</a>');
-  
-  // Split by actual line breaks or <br> tags
-  const lines = processed.split(/(?:<br\s*\/?>|\n)/i);
-  if (lines.length <= 1) return processed || text; // return original if empty after trim
-  
-  return lines.map((line, i) => 
-    i === lines.length - 1 
-      ? `<div>${line || '&nbsp;'}</div>` 
-      : `<div style="margin-bottom:${gap}">${line || '&nbsp;'}</div>`
-  ).join('');
+  let processed = text.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">$1</a>');
+  processed = processed.replace(/\n/g, '<br/>');
+  return processed;
 };
 
 export const hexToRgbValues = (hex: string) => {

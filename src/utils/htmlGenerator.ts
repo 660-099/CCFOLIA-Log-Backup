@@ -373,8 +373,8 @@ export const generateFinalHtmlStr = (
     const shouldMergeStyle = mergeTabStyles.has(format) && (isPrevSameTab || isNextSameTab);
 
     const isNarration = log.charId === narrationCharacter && format === 'main';
-    const isPrevNarration = prevVisibleChunk ? prevVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[prevVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' : false;
-    const isNextNarration = nextVisibleChunk ? nextVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' : false;
+    const isPrevNarration = prevVisibleChunk ? (!hasBlockBefore && prevVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[prevVisibleChunk.logs[0].tabId]?.format || 'main') === 'main') : false;
+    const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && nextVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main') : false;
 
     // Combine all contents in this chunk
     let finalHtmlContent = groupedLogs.map((l, i) => {
@@ -382,7 +382,7 @@ export const generateFinalHtmlStr = (
       if (l.isCommand) {
         content = content.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/(?:\r\n|\r|\n)+/g, ' ');
       }
-      let html = linkifyAndFormat(content, format === 'other' ? '4px' : '0.8em');
+      let html = linkifyAndFormat(content);
       if (l.name === 'system') {
         html = html.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
           const charIds = Object.keys(charSettings).filter(id => charSettings[id].name === p1.trim());
