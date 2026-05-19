@@ -27,7 +27,53 @@ body {
   background-color: rgba(150, 150, 150, 0.5);
 }
 
-.react-colorful-custom .react-colorful {
+/* Boundary Editor Updates */
+.boundary-wrapper {
+  position: relative;
   width: 100%;
-  height: 112px;
+  height: 20px;
+  margin: -10px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  opacity: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.boundary-wrapper.is-top-level {
+  margin: 0;
+  height: 24px;
+}
+
+.boundary-wrapper:hover,
+.boundary-wrapper:focus-within {
+  opacity: 1;
+}
+
+.boundary-line {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  height: 2px;
+  background-color: rgba(230, 0, 92, 0.4);
+  border-radius: 999px;
+  pointer-events: none;
+  transition: background-color 0.2s;
+}
+
+.boundary-wrapper:hover .boundary-line {
+  background-color: rgba(230, 0, 92, 0.8);
+}
+
+.boundary-content {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  padding: 0 12px;
+  z-index: 2;
+}
+
+.dark .boundary-wrapper {
+  color: white;
 }

@@ -18,7 +18,7 @@ export const LogImage = React.memo(({ url, width, align = 'center', onDelete, on
       justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start'
     }} className="group/img">
       {hasError ? (
-        <div className="flex flex-col items-center justify-center p-8 bg-red-500/10 border border-red-500/20 rounded-xl gap-2 w-full">
+        <div className="flex flex-col items-center justify-center p-8 mx-4 bg-red-500/10 border border-red-500/20 rounded-xl gap-2 w-[calc(100%-2rem)]">
           <div className="text-red-400/40">
             <ImageIcon className="w-8 h-8" />
           </div>

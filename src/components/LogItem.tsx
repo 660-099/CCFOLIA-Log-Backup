@@ -6,6 +6,7 @@ import { LogImage } from './LogImage';
 import { LogAvatar } from './LogAvatar';
 import { SectionNameEditor } from './SectionNameEditor';
 import { BoundaryEditor } from './BoundaryEditor';
+import { useSettings } from '../contexts/SettingsContext';
 
 export const LogItem = React.memo(({ 
   log, 
@@ -14,11 +15,6 @@ export const LogItem = React.memo(({
   isHighlighted = false,
   isCurrentMatch = false,
   searchQuery = '',
-  tabSet, 
-  char, 
-  theme, 
-  disableOtherColor, 
-  fontSize, 
   insertedBlocks,
   startBlocks,
   imageInputLoc,
@@ -33,15 +29,19 @@ export const LogItem = React.memo(({
   isNextSameTab,
   isNextContinuation,
   isPrevBlock,
-  mergeTabStyles,
-  showTabNames,
-  hideEmptyAvatars,
-  narrationCharacter,
   mergedLogsCount,
   isPrevNarration,
-  isNextNarration,
-  charSettings
+  isNextNarration
 }: any) => {
+  const { 
+    theme, disableOtherColor, fontSize, 
+    mergeTabStyles, showTabNames, hideEmptyAvatars, 
+    narrationCharacter, charSettings, tabSettings 
+  } = useSettings();
+  
+  const tabSet = tabSettings[log.tabId];
+  const char = charSettings[log.charId] || { id: log.charId, name: log.name, color: log.color, visible: true, imageUrl: '' };
+
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(log.content.replace(/<br\s*\/?>/gi, '\n'));
 
@@ -51,7 +51,6 @@ export const LogItem = React.memo(({
       <>
         <BoundaryEditor 
           id={logId}
-          theme={theme}
           onToggleSplit={() => onAddBlock(logId, 0, 'split')}
           onInsertImage={() => onToggleImageInput(logId, 0)}
           allowSplit={!isTopLevel}
@@ -117,7 +116,6 @@ export const LogItem = React.memo(({
             
             <BoundaryEditor 
               id={logId}
-              theme={theme}
               onToggleSplit={() => onAddBlock(logId, i + 1, 'split')}
               onInsertImage={() => onToggleImageInput(logId, i + 1)}
               allowSplit={true}

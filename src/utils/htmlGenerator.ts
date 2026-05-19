@@ -224,9 +224,16 @@ export const generateFinalHtmlStr = (
     `;
   }
 
+  const textResetCSS = `
+    .log-container :is(p, span, a, b, strong, i, em, h1, h2, h3, h4, h5, h6, [class$="-content"], [class$="-name"], .narration-row, .command-text) {
+      background-color: transparent !important;
+    }
+  `;
+
   const css = `
     ${fontImport}
     ${filterBarCSS}
+    ${textResetCSS}
     .log-main-container { background-color: ${bgColor}; margin: 0; padding: 0; }
     .log-container * { box-sizing: border-box; min-width: 0; }
     .log-container { 
@@ -621,6 +628,7 @@ export const generateFinalHtmlStr = (
       ${isInline ? `<style>
         ${fontImport}
         ${filterBarCSS}
+        ${textResetCSS}
         .log-container * { box-sizing: border-box; min-width: 0; }
       </style>` : `<style>${css}</style>`}
     </head>

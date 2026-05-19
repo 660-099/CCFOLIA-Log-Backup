@@ -57,14 +57,15 @@ import { clsx, type ClassValue } from 'clsx';
 import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem } from './types';
 import { parseLogFile } from './parser';
 import { cn, r, rgbToHex } from './utils';
-import { InsertedBlock, migrateToInsertedBlocks, extractOldFormat } from './utils/migration';
+import { extractOldFormat, InsertedBlock, migrateToInsertedBlocks } from './utils/migration';
 import { Toggle } from './components/Toggle';
 import { LogItem } from './components/LogItem';
 import { SectionNameEditor } from './components/SectionNameEditor';
-import { ColorPickerPopup, CharacterNameWithTooltip } from './components/ColorPickerPopup';
+import { CharacterNameWithTooltip, ColorPickerPopup } from './components/ColorPickerPopup';
 import { generateFinalHtmlStr } from './utils/htmlGenerator';
 import { fonts } from './constants';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { SettingsProvider } from './contexts/SettingsContext';
 
 const Section = ({ children, className = '' }: { children: React.ReactNode, className?: string }) => (
   <div className={cn("space-y-4", className)}>
@@ -1047,6 +1048,46 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
+  const onAddBlock = useCallback((id: string, index: number, type: 'split' | 'image', data?: any) => {
+    const next = { ...insertedBlocks };
+    if (!next[id]) next[id] = [];
+    next[id] = [...next[id]];
+    const newBlock: InsertedBlock = type === 'image' 
+      ? { id: `img_${Date.now()}_${Math.random().toString(36).substr(2,9)}`, type: 'image', url: data.url, width: '400', align: 'center' }
+      : { id: `split_${Date.now()}_${Math.random().toString(36).substr(2,9)}`, type: 'split', name: '' };
+    next[id].splice(index, 0, newBlock);
+    setInsertedBlocks(next);
+    saveToHistory({ insertedBlocks: next });
+    setImageInputLoc(null);
+  }, [insertedBlocks, saveToHistory]);
+
+  const onUpdateBlock = useCallback((id: string, blockId: string, updates: Partial<InsertedBlock>) => {
+    const next = { ...insertedBlocks };
+    if (next[id]) {
+      next[id] = next[id].map((b: InsertedBlock) => b.id === blockId ? { ...b, ...updates } as InsertedBlock : b);
+      setInsertedBlocks(next);
+      saveToHistory({ insertedBlocks: next });
+    }
+  }, [insertedBlocks, saveToHistory]);
+
+  const onRemoveBlock = useCallback((id: string, blockId: string) => {
+    const next = { ...insertedBlocks };
+    if (next[id]) {
+      next[id] = next[id].filter((b: InsertedBlock) => b.id !== blockId);
+      if (next[id].length === 0) delete next[id];
+      setInsertedBlocks(next);
+      saveToHistory({ insertedBlocks: next });
+    }
+  }, [insertedBlocks, saveToHistory]);
+
+  const onToggleImageInput = useCallback((id: string, index: number) => {
+    setImageInputLoc(prev => 
+      prev?.logId === id && prev.insertIndex === index 
+        ? null 
+        : { logId: id, insertIndex: index }
+    );
+  }, []);
+
   const rowVirtualizer = useVirtualizer({
     count: displayItems.length,
     getScrollElement: () => previewContainerRef.current,
@@ -1084,7 +1125,7 @@ export default function App() {
     });
   }, [charOrder, charSortMode, charSettings]);
 
-  const onEditLog = (id: string, content: string) => {
+  const onEditLog = useCallback((id: string, content: string) => {
     if (id.startsWith('merged:')) {
       const ids = id.replace('merged:', '').split(',');
       const firstId = ids[0];
@@ -1098,9 +1139,9 @@ export default function App() {
       setLogs(next);
       saveToHistory({ logs: next });
     }
-  };
+  }, [logs, saveToHistory]);
 
-  const onDeleteLog = (id: string) => {
+  const onDeleteLog = useCallback((id: string) => {
     // Find index in mergedLogs before deleting
     const idx = mergedLogs.findIndex(l => l.id === id);
 
@@ -1128,7 +1169,7 @@ export default function App() {
         insertedBlocks: nextBlocks 
       });
     }
-  };
+  }, [logs, mergedLogs, insertedBlocks, saveToHistory]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -1268,7 +1309,20 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-[100dvh] bg-[#121212] font-sans text-stone-200 overflow-hidden">
+    <SettingsProvider settings={{
+      theme,
+      fontSize,
+      fontFamily,
+      cssFormat,
+      disableOtherColor,
+      showTabNames,
+      mergeTabStyles,
+      charSettings,
+      tabSettings,
+      hideEmptyAvatars,
+      narrationCharacter
+    }}>
+      <div className="flex flex-col md:flex-row h-[100dvh] bg-[#121212] font-sans text-stone-200 overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
         <aside className={cn(
@@ -2526,7 +2580,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.4</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.5</span>
           </div>
         </div>
       </aside>
@@ -3067,53 +3121,14 @@ export default function App() {
                               searchQuery={searchQuery}
                               stableId={stableId}
                               log={log}
-                              tabSet={tabSettings[log.tabId]}
-                              char={charSettings[log.charId] || { id: log.charId, name: log.name, color: log.color, visible: true, imageUrl: '' }}
-                              charSettings={charSettings}
-                              theme={theme}
-                              disableOtherColor={disableOtherColor}
-                              fontSize={fontSize}
-                              narrationCharacter={narrationCharacter}
                               insertedBlocks={insertedBlocks[stableId] || []}
                               startBlocks={idx === 0 ? (insertedBlocks['__start__'] || []) : []}
                               imageInputLoc={imageInputLoc}
                               splitPointsArray={splitPointsArray}
-                              onAddBlock={(id, index, type, data) => {
-                                const next = { ...insertedBlocks };
-                                if (!next[id]) next[id] = [];
-                                next[id] = [...next[id]];
-                                const newBlock: InsertedBlock = type === 'image' 
-                                  ? { id: `img_${Date.now()}_${Math.random().toString(36).substr(2,9)}`, type: 'image', url: data.url, width: '400', align: 'center' }
-                                  : { id: `split_${Date.now()}_${Math.random().toString(36).substr(2,9)}`, type: 'split', name: '' };
-                                next[id].splice(index, 0, newBlock);
-                                setInsertedBlocks(next);
-                                saveToHistory({ insertedBlocks: next });
-                                setImageInputLoc(null);
-                              }}
-                              onUpdateBlock={(id, blockId, updates) => {
-                                const next = { ...insertedBlocks };
-                                if (next[id]) {
-                                  next[id] = next[id].map(b => b.id === blockId ? { ...b, ...updates } as InsertedBlock : b);
-                                  setInsertedBlocks(next);
-                                  saveToHistory({ insertedBlocks: next });
-                                }
-                              }}
-                              onRemoveBlock={(id, blockId) => {
-                                const next = { ...insertedBlocks };
-                                if (next[id]) {
-                                  next[id] = next[id].filter(b => b.id !== blockId);
-                                  if (next[id].length === 0) delete next[id];
-                                  setInsertedBlocks(next);
-                                  saveToHistory({ insertedBlocks: next });
-                                }
-                              }}
-                              onToggleImageInput={(id, index) => {
-                                setImageInputLoc(
-                                  imageInputLoc?.logId === id && imageInputLoc.insertIndex === index 
-                                    ? null 
-                                    : { logId: id, insertIndex: index }
-                                );
-                              }}
+                              onAddBlock={onAddBlock}
+                              onUpdateBlock={onUpdateBlock}
+                              onRemoveBlock={onRemoveBlock}
+                              onToggleImageInput={onToggleImageInput}
                               onEditLog={onEditLog}
                               onDeleteLog={onDeleteLog}
                               mergedLogsCount={mergedLogs.length}
@@ -3121,9 +3136,6 @@ export default function App() {
                               isNextSameTab={isNextSameTab}
                               isNextContinuation={idx < mergedLogs.length - 1 && mergedLogs[idx + 1].isContinuation}
                               isPrevBlock={idx > 0 && !!insertedBlocks[mergedLogs[idx - 1].id.startsWith('merged:') ? mergedLogs[idx - 1].id.split(',').pop()! : mergedLogs[idx - 1].id]?.length}
-                              mergeTabStyles={mergeTabStyles}
-                              showTabNames={showTabNames}
-                              hideEmptyAvatars={hideEmptyAvatars}
                               isPrevNarration={isPrevNarration}
                               isNextNarration={isNextNarration}
                             />
@@ -3289,5 +3301,6 @@ export default function App() {
       </div>
       <Analytics />
     </div>
+    </SettingsProvider>
   );
 }
