@@ -34,14 +34,14 @@ export const BoundaryEditor = React.memo(({
       onMouseLeave={() => setIsClicked(false)}
     >
       <div className="boundary-line" />
-      <div className={cn("boundary-content", isDark ? "bg-[#252525]" : "bg-stone-50")}>
+      <div className="boundary-content">
         {allowSplit && (
           <button 
             disabled={isClicked}
             onClick={() => handleClick(onToggleSplit)}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm border pointer-events-auto",
-              isDark ? "bg-[#222] border-white/10 text-white/80 hover:bg-white/10 hover:text-white" : "bg-white border-stone-200 text-stone-600 hover:bg-stone-100 hover:text-stone-900",
+              isDark ? "bg-[#222] border-white/10 text-white/80 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white" : "bg-white border-stone-200 text-stone-600 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white",
               isClicked && "cursor-default"
             )}
             title="이곳을 기준으로 새로운 단위(분할) 생성"
@@ -55,7 +55,7 @@ export const BoundaryEditor = React.memo(({
           onClick={() => handleClick(onInsertImage)}
           className={cn(
             "flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm border pointer-events-auto",
-            isDark ? "bg-[#222] border-white/10 text-white/80 hover:bg-white/10 hover:text-white" : "bg-white border-stone-200 text-stone-600 hover:bg-stone-100 hover:text-stone-900",
+            isDark ? "bg-[#222] border-white/10 text-white/80 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white" : "bg-white border-stone-200 text-stone-600 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white",
             isClicked && "cursor-default"
           )}
           title="이미지 삽입"

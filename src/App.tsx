@@ -1241,8 +1241,8 @@ export default function App() {
     
     let last = 0;
     sortedPoints.forEach((p: number) => {
-      sections.push({ start: last, end: p });
-      last = p + 1;
+      sections.push({ start: last, end: p - 1 });
+      last = p;
     });
     sections.push({ start: last, end: mergedLogs.length - 1 });
 
@@ -2580,7 +2580,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.5</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.6</span>
           </div>
         </div>
       </aside>
@@ -2883,8 +2883,8 @@ export default function App() {
                               const sections: { start: number; end: number }[] = [];
                               let last = 0;
                               sortedPoints.forEach((p: number) => {
-                                sections.push({ start: last, end: p });
-                                last = p + 1;
+                                sections.push({ start: last, end: p - 1 });
+                                last = p;
                               });
                               sections.push({ start: last, end: mergedLogs.length - 1 });
                               
@@ -2965,8 +2965,8 @@ export default function App() {
                 >
                   {/* Top Section Name Input */}
                   <div id="section-0" className="max-w-[800px] mx-auto px-4 pt-2 font-sans relative">
-                    <div className="flex items-end justify-between max-w-full">
-                      <div className="bg-[#e6005c] rounded-t-lg px-4 py-1 flex items-center shadow-lg max-w-sm">
+                    <div className="flex items-end justify-between max-w-full border-b border-[#e6005c]">
+                      <div className="bg-[#e6005c] rounded-t-lg px-4 py-1 flex items-center shadow-lg gap-2">
                         <SectionNameEditor 
                           initialName={sectionNames[0] || ''}
                           defaultName="섹션 1"
@@ -2976,15 +2976,17 @@ export default function App() {
                             saveToHistory({ insertedBlocks: nextBlocks });
                           }}
                         />
+                        <div className="p-1 ml-2 invisible pointer-events-none flex-shrink-0">
+                          <div className="w-3 h-3" />
+                        </div>
                       </div>
                       <div className={cn(
-                        "text-[10px] font-bold mb-1",
+                        "text-[10px] font-bold mb-1 ml-4",
                         theme === 'dark' ? "text-white/40" : "text-stone-400"
                       )}>
-                        {`1 - ${splitPointsArray.length > 0 ? splitPointsArray[0] + 1 : mergedLogs.length}번 블록`}
+                        {`1 - ${splitPointsArray.length > 0 ? splitPointsArray[0] : mergedLogs.length}번 블록`}
                       </div>
                     </div>
-                    <div className="h-px bg-[#e6005c] w-full" />
                   </div>
 
                   {/* We render the logs as a list of components for interactivity */}
@@ -3086,7 +3088,7 @@ export default function App() {
                         height: `${rowVirtualizer.getTotalSize()}px`,
                         width: '100%',
                         position: 'relative',
-                        marginTop: '-8px'
+                        marginTop: '-12px'
                       }}
                     >
                       {rowVirtualizer.getVirtualItems().map((virtualItem) => {
@@ -3111,7 +3113,7 @@ export default function App() {
                               top: 0,
                               left: 0,
                               width: '100%',
-                              transform: `translateY(${virtualItem.start}px)`,
+                              transform: `translateY(${Math.round(virtualItem.start)}px)`,
                             }}
                           >
                             <LogItem 

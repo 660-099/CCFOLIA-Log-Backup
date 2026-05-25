@@ -42,6 +42,9 @@ body {
 }
 
 .boundary-wrapper.is-top-level {
+  position: absolute;
+  top: -12px;
+  left: 0;
   margin: 0;
   height: 24px;
 }
@@ -59,11 +62,13 @@ body {
   background-color: rgba(230, 0, 92, 0.4);
   border-radius: 999px;
   pointer-events: none;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
 }
 
 .boundary-wrapper:hover .boundary-line {
   background-color: rgba(230, 0, 92, 0.8);
+  left: 0;
+  right: 0;
 }
 
 .boundary-content {

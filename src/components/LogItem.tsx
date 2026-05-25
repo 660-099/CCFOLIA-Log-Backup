@@ -98,19 +98,30 @@ export const LogItem = React.memo(({
             )}
             {block.type === 'split' && (
               <div id={`section-${block.id}`} className="mt-1 mb-1 px-4 font-sans relative">
-                <div className="flex items-end justify-between max-w-full">
-                  <div className="bg-[#e6005c] rounded-t-lg px-4 py-1 flex items-center shadow-lg max-w-sm gap-2">
+                <div className="flex items-end justify-between max-w-full border-b border-[#e6005c]">
+                  <div className="bg-[#e6005c] rounded-t-lg px-4 py-1 flex items-center shadow-lg gap-2">
                     <SectionNameEditor 
                       initialName={block.name || ''}
-                      defaultName={`섹션`}
+                      defaultName={(() => {
+                        const splitIndex = splitPointsArray.indexOf(idx);
+                        return `섹션 ${splitIndex !== -1 ? splitIndex + 2 : 2}`;
+                      })()}
                       onSave={(name) => onUpdateBlock(logId, block.id, { name })}
                     />
-                    <button onClick={() => onRemoveBlock(logId, block.id)} className="text-white/60 hover:text-white p-1 ml-2">
+                    <button onClick={() => onRemoveBlock(logId, block.id)} className="text-white/60 hover:text-white p-1 ml-2 flex-shrink-0" title="섹션 삭제">
                       <X className="w-3 h-3" />
                     </button>
                   </div>
+                  <div className={cn(
+                    "text-[10px] font-bold mb-1 ml-4",
+                    theme === 'dark' ? "text-white/40" : "text-stone-400"
+                  )}>
+                    {`${idx + 1} - ${(() => {
+                      const _nextIndex = splitPointsArray.findIndex((p: number) => p > idx);
+                      return _nextIndex !== -1 ? splitPointsArray[_nextIndex] : mergedLogsCount;
+                    })()}번 블록`}
+                  </div>
                 </div>
-                <div className="h-px bg-[#e6005c] w-full" />
               </div>
             )}
             
