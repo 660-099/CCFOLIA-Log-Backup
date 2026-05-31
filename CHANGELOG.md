@@ -1,6 +1,7 @@
 # Changelog
 
 ## [1.3.1] - 2026-05-31
+- [Added] 단축키 지원: `Ctrl + Z`, `Ctrl + Y` (또는 `Ctrl + Shift + Z`)를 이용한 되돌리기(Undo) 및 다시 실행(Redo) 기능 추가 (단, 텍스트 입력창 포커스 중에는 제외)
 - [Fixed] 웹 미리보기 탭(LogItem.tsx) 나레이션 간격 동기화 (단일 부모 container 요소를 공유하며, 문장 간 `0.8em` 마진 단일 적용 형태로 일원화)
 - [Optimized] 다운로드 HTML 결과물과 웹 미리보기 화면의 나레이션 렌더링 방식 일원화에 따른 과도기적 CSS 클래스(.narration-split-row) 폐기 및 코드 정리
 

@@ -516,6 +516,39 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isEditable = activeEl && (
+        activeEl.tagName === 'INPUT' || 
+        activeEl.tagName === 'TEXTAREA' || 
+        (activeEl as HTMLElement).isContentEditable
+      );
+      if (isEditable) return;
+
+      const isCtrl = e.ctrlKey || e.metaKey;
+      if (isCtrl) {
+        const key = e.key.toLowerCase();
+        if (key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            redo();
+          } else {
+            undo();
+          }
+        } else if (key === 'y' && !e.shiftKey) {
+          e.preventDefault();
+          redo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [historyIndex, history]);
+
   const applyState = (state: any) => {
     setCharSettings(state.charSettings);
     setTabSettings(state.tabSettings);
@@ -2582,7 +2615,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.2.6</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.3.1</span>
           </div>
         </div>
       </aside>
