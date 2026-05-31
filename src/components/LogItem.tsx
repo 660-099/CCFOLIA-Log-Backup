@@ -7,6 +7,7 @@ import { LogAvatar } from './LogAvatar';
 import { SectionNameEditor } from './SectionNameEditor';
 import { BoundaryEditor } from './BoundaryEditor';
 import { useSettings } from '../contexts/SettingsContext';
+import { splitNarration } from '../utils/textTokenizer';
 
 export const LogItem = React.memo(({ 
   log, 
@@ -36,7 +37,8 @@ export const LogItem = React.memo(({
   const { 
     theme, disableOtherColor, fontSize, 
     mergeTabStyles, showTabNames, hideEmptyAvatars, 
-    narrationCharacter, charSettings, tabSettings 
+    narrationCharacter, charSettings, tabSettings,
+    enableSentenceSpacing
   } = useSettings();
   
   const tabSet = tabSettings[log.tabId];
@@ -175,16 +177,25 @@ export const LogItem = React.memo(({
   if (log.isCommand) {
     displayContent = displayContent.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/(?:\r\n|\r|\n)+/g, ' ');
   }
-  let finalHtmlContent = linkifyAndFormat(displayContent);
-  if (log.name === 'system') {
-    finalHtmlContent = finalHtmlContent.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
-      const char = charSettings[p1.trim()];
-      if (char) {
-        return `<span style="color: ${char.color};">${match}</span>`;
-      }
-      return match;
-    });
+
+  let textPieces = [displayContent];
+  if (isNarration && enableSentenceSpacing) {
+    textPieces = splitNarration(displayContent);
   }
+
+  let formattedPieces = textPieces.map(piece => {
+    let pieceHtml = linkifyAndFormat(piece);
+    if (log.name === 'system') {
+      pieceHtml = pieceHtml.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
+        const charChars = charSettings[p1.trim()];
+        if (charChars) {
+          return `<span style="color: ${charChars.color};">${match}</span>`;
+        }
+        return match;
+      });
+    }
+    return pieceHtml;
+  });
 
   let displayName = log.name;
   if (searchQuery && isHighlighted) {
@@ -192,20 +203,25 @@ export const LogItem = React.memo(({
     const regex = new RegExp(`(${escapedQuery})`, 'gi');
     const markBg = isCurrentMatch ? '#ff9900' : '#e6005c';
     
-    // Highlight content
-    const parts = finalHtmlContent.split(/(<[^>]*>)/);
-    for (let i = 0; i < parts.length; i++) {
-        if (i % 2 === 0) {
-            parts[i] = parts[i].replace(regex, `<mark style="background-color: ${markBg}; color: white; border-radius: 2px; padding: 0 2px;">$1</mark>`);
-        }
-    }
-    finalHtmlContent = parts.join('');
+    // Highlight content for each piece
+    formattedPieces = formattedPieces.map(pieceHtml => {
+      const parts = pieceHtml.split(/(<[^>]*>)/);
+      for (let i = 0; i < parts.length; i++) {
+          if (i % 2 === 0) {
+              parts[i] = parts[i].replace(regex, `<mark style="background-color: ${markBg}; color: white; border-radius: 2px; padding: 0 2px;">$1</mark>`);
+          }
+      }
+      return parts.join('');
+    });
 
     // Highlight name
     displayName = displayName.replace(regex, `<mark style="background-color: ${markBg}; color: white; border-radius: 2px; padding: 0 2px;">$1</mark>`);
   }
   
-  const safeHtmlContent = useMemo(() => DOMPurify.sanitize(finalHtmlContent, { ADD_ATTR: ['target'] }), [finalHtmlContent]);
+  const safeHtmlContentPieces = useMemo(() => {
+    return formattedPieces.map(html => DOMPurify.sanitize(html, { ADD_ATTR: ['target'] }));
+  }, [formattedPieces]);
+  const safeHtmlContent = safeHtmlContentPieces[0] || '';
   const safeHtmlName = useMemo(() => DOMPurify.sanitize(displayName), [displayName]);
   
   const getSecretBg = (hex: string) => {
@@ -259,7 +275,6 @@ export const LogItem = React.memo(({
   return (
     <div className={cn(
       "log-item-wrapper group/item relative transition-all duration-300",
-      log.isContinuation && "mt-[-4px]",
       isHighlighted && searchQuery && (
         isCurrentMatch 
           ? (theme === 'dark' ? "bg-[#ff9900]/20" : "bg-[#ff9900]/10")
@@ -333,7 +348,7 @@ export const LogItem = React.memo(({
               </div>
             </div>
           ) : log.isCommand ? (
-            <div style={{ 
+            <div key="command" style={{ 
               background: isSecret ? getSecretBg(tabColor) : 'rgba(0,0,0,0.1)',
               border: `1px solid ${theme === 'dark' ? '#444' : '#DDD'}`,
               padding: `${r(paddingSize * 0.8)}px ${r(paddingSize * 1.3)}px`,
@@ -347,34 +362,47 @@ export const LogItem = React.memo(({
               <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#333333', fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', lineHeight: 1.6, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
             </div>
           ) : isNarration ? (
-            <div style={{ 
-              padding: `${log.isContinuation ? '0.4em' : r(paddingSize * 0.75) + 'px'} ${r(paddingSize * 1.3)}px ${mergeWithNext ? '0.4em' : r(paddingSize * 0.75) + 'px'} ${r(paddingSize * 1.3)}px`, 
+            <div key="narration" className="narration-row" style={{ 
+              padding: `${r(paddingSize * 0.75)}px ${r(paddingSize * 1.3)}px`,
               textAlign: 'center',
               color: theme === 'dark' ? '#EEEEEE' : '#333333',
               lineHeight: 1.6,
               fontWeight: 'bold',
               fontStyle: 'italic'
             }}>
-              <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
+              {safeHtmlContentPieces.map((piece, pIdx) => (
+                <React.Fragment key={`${log.id}-narration-${pIdx}`}>
+                  {pIdx > 0 && <div style={{ marginTop: '0.8em' }}></div>}
+                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} dangerouslySetInnerHTML={{ __html: piece }} />
+                </React.Fragment>
+              ))}
             </div>
           ) : format === 'other' ? (
-            <div style={{ padding: `2px ${r(paddingSize * 1.3)}px`, display: 'flex', gap: `${r(gapSize / 1.5)}px`, alignItems: 'baseline' }}>
+            <div key="other" style={{ padding: `2px ${r(paddingSize * 1.3)}px`, display: 'flex', gap: `${r(gapSize / 1.5)}px`, alignItems: 'baseline' }}>
               <div className="relative inline-block flex-shrink-0" style={{ opacity: log.isContinuation ? 0 : 1, pointerEvents: log.isContinuation ? 'none' : 'auto', userSelect: log.isContinuation ? 'none' : 'auto' }}>
                 <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px` }} className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName }} />
               </div>
               <div style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
             </div>
           ) : format === 'info' ? (
-            <div style={{ 
-              padding: `${log.isContinuation ? '0.4em' : r(paddingSize * 1.3) + 'px'} ${r(paddingSize * 1.6)}px ${isNextContinuation ? '0.4em' : r(mergeWithNext ? 4 : paddingSize * 1.3) + 'px'} ${r(paddingSize * 1.6)}px`, 
+            <div key="info" className={cn(
+              log.isContinuation && "pt-1 border-t-0 rounded-t-none",
+              isNextContinuation && "pb-1 border-b-0 rounded-b-none"
+            )} style={{ 
+              paddingTop: log.isContinuation ? undefined : `${r(paddingSize * 1.3)}px`,
+              paddingBottom: isNextContinuation ? undefined : `${r(mergeWithNext ? 4 : paddingSize * 1.3)}px`,
+              paddingLeft: `${r(paddingSize * 1.6)}px`,
+              paddingRight: `${r(paddingSize * 1.6)}px`,
               background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', 
               borderLeft: `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`, 
-              margin: mergeWithPrev || mergeWithNext ? (mergeWithPrev && mergeWithNext ? `0 ${r(paddingSize * 1.3)}px` : (mergeWithPrev ? `0 ${r(paddingSize * 1.3)}px 8px ${r(paddingSize * 1.3)}px` : `8px ${r(paddingSize * 1.3)}px 0 ${r(paddingSize * 1.3)}px`)) : `8px ${r(paddingSize * 1.3)}px`, 
-              borderRadius: mergeWithPrev || mergeWithNext
-                ? `${mergeWithPrev ? '0' : '4px'} ${mergeWithPrev ? '0' : '4px'} ${mergeWithNext ? '0' : '4px'} ${mergeWithNext ? '0' : '4px'}`
-                : '4px',
-              borderTop: mergeWithPrev ? 'none' : undefined,
-              borderBottom: mergeWithNext ? 'none' : undefined
+              marginTop: mergeWithPrev ? '0' : '8px',
+              marginBottom: mergeWithNext ? '0' : '8px',
+              marginLeft: `${r(paddingSize * 1.3)}px`,
+              marginRight: `${r(paddingSize * 1.3)}px`,
+              borderTopLeftRadius: mergeWithPrev ? '0' : '4px',
+              borderTopRightRadius: mergeWithPrev ? '0' : '4px',
+              borderBottomLeftRadius: mergeWithNext ? '0' : '4px',
+              borderBottomRightRadius: mergeWithNext ? '0' : '4px'
             }}>
               {!log.isContinuation && (
                 <div className="relative inline-block mb-1">
@@ -384,21 +412,27 @@ export const LogItem = React.memo(({
               <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} />
             </div>
           ) : (
-            <div style={{ 
+            <div key="main" className={cn(
+              log.isContinuation && "pt-1 border-t-0 rounded-t-none",
+              isNextContinuation && "pb-1 border-b-0 rounded-b-none"
+            )} style={{ 
               display: 'flex', 
               gap: `${gapSize}px`, 
-              padding: `${log.isContinuation ? '0.4em' : paddingSize + 'px'} ${r(paddingSize * 1.3)}px ${isNextContinuation ? '0.4em' : (mergeWithNext ? 4 : paddingSize) + 'px'} ${r(paddingSize * 1.3)}px`, 
+              paddingTop: log.isContinuation ? undefined : `${paddingSize}px`,
+              paddingBottom: isNextContinuation ? undefined : `${mergeWithNext ? 4 : paddingSize}px`,
+              paddingLeft: `${r(paddingSize * 1.3)}px`,
+              paddingRight: `${r(paddingSize * 1.3)}px`,
               alignItems: 'flex-start',
               background: isSecret ? getSecretBg(tabColor) : 'transparent',
               borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
-              margin: isSecret 
-                ? `${mergeWithPrev ? '0' : '4px'} ${r(paddingSize * 1.3)}px ${mergeWithNext ? '0' : '4px'} ${r(paddingSize * 1.3)}px` 
-                : '0',
-              borderRadius: (mergeWithPrev || mergeWithNext) && isSecret
-                ? `${mergeWithPrev ? '0' : '4px'} ${mergeWithPrev ? '0' : '4px'} ${mergeWithNext ? '0' : '4px'} ${mergeWithNext ? '0' : '4px'}`
-                : (isSecret ? '4px' : '0'),
-              borderTop: mergeWithPrev && isSecret ? 'none' : undefined,
-              borderBottom: mergeWithNext && isSecret ? 'none' : undefined
+              marginTop: isSecret ? (mergeWithPrev ? '0' : '4px') : '0',
+              marginBottom: isSecret ? (mergeWithNext ? '0' : '4px') : '0',
+              marginLeft: isSecret ? `${r(paddingSize * 1.3)}px` : '0',
+              marginRight: isSecret ? `${r(paddingSize * 1.3)}px` : '0',
+              borderTopLeftRadius: mergeWithPrev && isSecret ? '0' : (isSecret ? '4px' : '0'),
+              borderTopRightRadius: mergeWithPrev && isSecret ? '0' : (isSecret ? '4px' : '0'),
+              borderBottomLeftRadius: mergeWithNext && isSecret ? '0' : (isSecret ? '4px' : '0'),
+              borderBottomRightRadius: mergeWithNext && isSecret ? '0' : (isSecret ? '4px' : '0')
             }}>
               {log.isContinuation ? (
                 <div style={{ width: `${avatarSize}px`, flexShrink: 0 }} />

@@ -13,6 +13,7 @@ export type SettingsContextType = {
   tabSettings: Record<string, TabSetting>;
   hideEmptyAvatars: boolean;
   narrationCharacter: string | null;
+  enableSentenceSpacing: boolean;
 };
 
 export const SettingsContext = createContext<SettingsContextType | null>(null);
@@ -42,7 +43,8 @@ export const SettingsProvider: React.FC<{
     settings.charSettings,
     settings.tabSettings,
     settings.hideEmptyAvatars,
-    settings.narrationCharacter
+    settings.narrationCharacter,
+    settings.enableSentenceSpacing
   ]);
   
   return (

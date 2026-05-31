@@ -11,6 +11,7 @@ export interface LogEntry {
   isCommand: boolean;
   isContinuation?: boolean;
   isHiddenContent?: boolean;
+  sectionId?: string;
 }
 
 export interface CharSetting {

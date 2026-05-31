@@ -427,6 +427,7 @@ export default function App() {
   );
 
   const [hideEmptyAvatars, setHideEmptyAvatars] = useLocalStorage<boolean>('ccfolia_hideEmptyAvatars', false, undefined, undefined, rememberSettings);
+  const [enableSentenceSpacing, setEnableSentenceSpacing] = useLocalStorage<boolean>('ccfolia_enableSentenceSpacing', false, undefined, undefined, rememberSettings);
   const [narrationCharacter, setNarrationCharacter] = useState<string | null>(null);
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -489,6 +490,7 @@ export default function App() {
       mergeTabStyles: Array.from(mergeTabStyles),
       hideEmptyAvatars,
       narrationCharacter,
+      enableSentenceSpacing,
       ...state
     };
     const newHistory = history.slice(0, historyIndex + 1);
@@ -541,6 +543,7 @@ export default function App() {
     if (state.mergeTabStyles) setMergeTabStyles(new Set(state.mergeTabStyles));
     if (state.hideEmptyAvatars !== undefined) setHideEmptyAvatars(state.hideEmptyAvatars);
     if (state.narrationCharacter !== undefined) setNarrationCharacter(state.narrationCharacter);
+    if (state.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(state.enableSentenceSpacing);
   };
 
   const resetSettings = () => {
@@ -568,6 +571,7 @@ export default function App() {
         setMergeTabStyles(new Set(state.mergeTabStyles || ['secret']));
         setHideEmptyAvatars(state.hideEmptyAvatars || false);
         setNarrationCharacter(state.narrationCharacter || null);
+        setEnableSentenceSpacing(state.enableSentenceSpacing || false);
         saveToHistory(state);
       } else {
         setCssFormat('internal');
@@ -581,6 +585,7 @@ export default function App() {
         setShowTabNames(new Set(['secret']));
         setMergeTabStyles(new Set(['secret']));
         setHideEmptyAvatars(false);
+        setEnableSentenceSpacing(false);
       }
     }
   };
@@ -895,6 +900,7 @@ export default function App() {
     
     const result: LogEntry[] = [];
     let prevVisibleLog: LogEntry | null = null;
+    let currentSectionId = 'section-0';
 
     const visibleLogs = logs.map(log => {
       const isVisibleContent = tabSettings[log.tabId]?.visible && charSettings[log.charId]?.visible !== false;
@@ -911,7 +917,7 @@ export default function App() {
     visibleLogs.forEach((log) => {
       const tabSet = tabSettings[log.tabId];
       const format = tabSet?.format || 'main';
-      
+      const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
       const prevStableId = prevVisibleLog ? (prevVisibleLog.id.startsWith('merged:') ? prevVisibleLog.id.split(',').pop()! : prevVisibleLog.id) : '';
       const prevHasBlock = prevVisibleLog && !!insertedBlocks[prevStableId]?.length;
 
@@ -932,13 +938,17 @@ export default function App() {
         }
       }
 
-      const newLog = { ...log, isContinuation };
+      const newLog = { ...log, isContinuation, sectionId: currentSectionId };
       result.push(newLog);
       prevVisibleLog = newLog;
+
+      if (splitPoints.has(stableId)) {
+        currentSectionId = `section-${stableId}`;
+      }
     });
 
     return result;
-  }, [logs, mergeTabs, tabSettings, charSettings, insertedBlocks]);
+  }, [logs, mergeTabs, tabSettings, charSettings, insertedBlocks, splitPoints]);
 
   useLayoutEffect(() => {
     if (listRef.current) {
@@ -960,7 +970,7 @@ export default function App() {
     if (mergedLogs.length === 0) return [];
     const list = [];
     
-    const firstEnd = splitPointsArray.length > 0 ? splitPointsArray[0] - 1 : mergedLogs.length - 1;
+    const firstEnd = splitPointsArray.length > 0 ? splitPointsArray[0] : mergedLogs.length - 1;
     list.push({ 
       id: 'section-0', 
       name: sectionNames[0] || '섹션 1',
@@ -972,15 +982,15 @@ export default function App() {
     splitPointsArray.forEach((idx, i) => {
       const splitLog = mergedLogs[idx];
       const stableId = splitLog ? (splitLog.id.startsWith('merged:') ? splitLog.id.split(',').pop()! : splitLog.id) : '';
-      const startBlock = idx + 1;
-      const endBlock = i + 1 < splitPointsArray.length ? splitPointsArray[i + 1] : mergedLogs.length;
+      const startBlock = idx + 2; // +1 for 0-index, +1 for next block
+      const endBlock = i + 1 < splitPointsArray.length ? splitPointsArray[i + 1] + 1 : mergedLogs.length;
       
       list.push({ 
         id: `section-${stableId}`, 
         name: sectionNames[stableId] || `섹션 ${i + 2}`,
         startBlock,
         endBlock,
-        targetOriginalIndex: idx
+        targetOriginalIndex: idx + 1
       });
     });
     return list;
@@ -1179,9 +1189,9 @@ export default function App() {
     });
   };
 
-  const getHtmlString = (range?: { start: number; end: number }) => {
+  const getHtmlString = (sectionId?: string) => {
     const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
-    const targetLogs = range ? mergedLogs.slice(range.start, range.end + 1) : mergedLogs;
+    const targetLogs = sectionId ? mergedLogs.filter(log => log.sectionId === sectionId) : mergedLogs;
     const filteredLogs = targetLogs.filter(log => 
       tabSettings[log.tabId]?.visible && 
       (charSettings[log.charId]?.visible !== false)
@@ -1202,6 +1212,7 @@ export default function App() {
       disableOtherColor,
       hideEmptyAvatars,
       narrationCharacter,
+      enableSentenceSpacing,
       insertedBlocks,
       mergeTabStyles,
       showTabNames,
@@ -1210,24 +1221,16 @@ export default function App() {
     );
   };
 
-  const downloadHtml = (range?: { start: number; end: number }) => {
-    const html = getHtmlString(range);
+  const downloadHtml = (section?: { id: string; name: string }) => {
+    const html = getHtmlString(section?.id);
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     const fileName = pageTitle || originalFileName || 'ccfolia';
     let suffix = '_log';
-    if (range) {
-      let name = '';
-      if (range.start === 0) {
-        name = sectionNames[0];
-      } else {
-        const splitLog = mergedLogs[range.start - 1];
-        const stableId = splitLog ? (splitLog.id.startsWith('merged:') ? splitLog.id.split(',').pop()! : splitLog.id) : '';
-        name = sectionNames[stableId];
-      }
-      suffix = name ? `_${name}` : `_part${range.start + 1}-${range.end + 1}`;
+    if (section) {
+      suffix = section.name ? `_${section.name}` : `_${section.id}`;
     }
     a.download = `${fileName}${suffix}.html`;
     a.click();
@@ -1236,23 +1239,14 @@ export default function App() {
   const downloadZip = async () => {
     const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
-    const sortedPoints = splitPointsArray;
-    const sections: { start: number; end: number }[] = [];
-    
-    let last = 0;
-    sortedPoints.forEach((p: number) => {
-      sections.push({ start: last, end: p - 1 });
-      last = p;
-    });
-    sections.push({ start: last, end: mergedLogs.length - 1 });
 
     const fileName = pageTitle || originalFileName || 'ccfolia';
     const folderName = `${fileName}_log`;
     const folder = zip.folder(folderName);
 
-    sections.forEach((s, i) => {
+    sectionsList.forEach((s, i) => {
       const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
-      const targetLogs = mergedLogs.slice(s.start, s.end + 1);
+      const targetLogs = mergedLogs.filter(log => log.sectionId === s.id);
       const filteredLogs = targetLogs.filter(log => 
         tabSettings[log.tabId]?.visible && 
         (charSettings[log.charId]?.visible !== false)
@@ -1273,6 +1267,7 @@ export default function App() {
         disableOtherColor,
         hideEmptyAvatars,
         narrationCharacter,
+        enableSentenceSpacing,
         insertedBlocks,
         mergeTabStyles,
         showTabNames,
@@ -1280,15 +1275,7 @@ export default function App() {
         selectedFont.value
       );
       
-      let name = '';
-      if (s.start === 0) {
-        name = sectionNames[0];
-      } else {
-        const splitLog = mergedLogs[s.start - 1];
-        const stableId = splitLog ? (splitLog.id.startsWith('merged:') ? splitLog.id.split(',').pop()! : splitLog.id) : '';
-        name = sectionNames[stableId];
-      }
-      const finalName = name ? `${fileName}_${name}` : `${fileName}_section_${i + 1}`;
+      const finalName = s.name ? `${fileName}_${s.name}` : `${fileName}_section_${i + 1}`;
       folder?.file(`${finalName}.html`, html);
     });
 
@@ -1298,6 +1285,7 @@ export default function App() {
     a.href = url;
     a.download = `${folderName}.zip`;
     a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleTabChange = (newTab: 'files' | 'tabs' | 'chars' | 'settings') => {
@@ -1320,7 +1308,8 @@ export default function App() {
       charSettings,
       tabSettings,
       hideEmptyAvatars,
-      narrationCharacter
+      narrationCharacter,
+      enableSentenceSpacing
     }}>
       <div className="flex flex-col md:flex-row h-[100dvh] bg-[#121212] font-sans text-stone-200 overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
@@ -1829,6 +1818,19 @@ export default function App() {
                         )}
                       </div>
                     </div>
+
+                    {narrationCharacter && (
+                      <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11">
+                        <span className="text-[11px] font-bold text-white/70">나레이션 문단 자동 나누기</span>
+                        <Toggle 
+                          enabled={enableSentenceSpacing} 
+                          onChange={(val) => {
+                            setEnableSentenceSpacing(val);
+                            saveToHistory({ enableSentenceSpacing: val });
+                          }} 
+                        />
+                      </div>
+                    )}
                   </div>
                 </Section>
 
@@ -2878,52 +2880,29 @@ export default function App() {
                             <p className="text-[9px] font-bold text-white/20 uppercase tracking-widest">분할 섹션</p>
                           </div>
                           <div className="max-h-64 overflow-y-auto custom-scrollbar">
-                            {(() => {
-                              const sortedPoints = splitPointsArray;
-                              const sections: { start: number; end: number }[] = [];
-                              let last = 0;
-                              sortedPoints.forEach((p: number) => {
-                                sections.push({ start: last, end: p - 1 });
-                                last = p;
-                              });
-                              sections.push({ start: last, end: mergedLogs.length - 1 });
-                              
-                              return sections.map((s, i) => {
-                                let name = '';
-                                if (s.start === 0) {
-                                  name = sectionNames[0];
-                                } else {
-                                  const splitLog = mergedLogs[s.start - 1];
-                                  const stableId = splitLog ? (splitLog.id.startsWith('merged:') ? splitLog.id.split(',').pop()! : splitLog.id) : '';
-                                  name = sectionNames[stableId];
-                                }
-                                const finalName = name || `섹션 ${i + 1}`;
-
-                                return (
-                                  <div key={i} className="flex items-center gap-2 pr-2 group">
-                                    <button 
-                                      onClick={() => { downloadHtml(s); setShowDownloadMenu(false); }}
-                                      className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
-                                    >
-                                      <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[9px] font-bold text-white/40 group-hover:text-white/60">
-                                        {i + 1}
-                                      </div>
-                                      <div>
-                                        <p className="text-[11px] font-bold text-white truncate max-w-[120px]">{finalName}</p>
-                                        <p className="text-[9px] text-white/30">{s.start + 1} ~ {s.end + 1}번 블록</p>
-                                      </div>
-                                    </button>
-                                    <button 
-                                      onClick={() => { copyToClipboard(getHtmlString(s)); setShowDownloadMenu(false); }}
-                                      className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/30 hover:text-white"
-                                      title="HTML 복사"
-                                    >
-                                      <Copy className="w-3.5 h-3.5" />
-                                    </button>
+                            {sectionsList.map((s, i) => (
+                              <div key={i} className="flex items-center gap-2 pr-2 group">
+                                <button 
+                                  onClick={() => { downloadHtml({ id: s.id, name: s.name }); setShowDownloadMenu(false); }}
+                                  className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
+                                >
+                                  <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[9px] font-bold text-white/40 group-hover:text-white/60">
+                                    {i + 1}
                                   </div>
-                                );
-                              });
-                            })()}
+                                  <div>
+                                    <p className="text-[11px] font-bold text-white truncate max-w-[120px]">{s.name}</p>
+                                    <p className="text-[9px] text-white/30">{s.startBlock} ~ {s.endBlock}번 블록</p>
+                                  </div>
+                                </button>
+                                <button 
+                                  onClick={() => { copyToClipboard(getHtmlString(s.id)); setShowDownloadMenu(false); }}
+                                  className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/30 hover:text-white"
+                                  title="HTML 복사"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
                           </div>
                           <div className="h-px bg-white/5 my-1" />
                           <button 
@@ -2984,7 +2963,7 @@ export default function App() {
                         "text-[10px] font-bold mb-1 ml-4",
                         theme === 'dark' ? "text-white/40" : "text-stone-400"
                       )}>
-                        {`1 - ${splitPointsArray.length > 0 ? splitPointsArray[0] : mergedLogs.length}번 블록`}
+                        {`1 - ${splitPointsArray.length > 0 ? splitPointsArray[0] + 1 : mergedLogs.length}번 블록`}
                       </div>
                     </div>
                   </div>

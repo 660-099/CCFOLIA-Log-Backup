@@ -2,6 +2,7 @@ import { LogEntry, CharSetting, TabSetting } from '../types';
 import { cn, r, linkifyAndFormat } from '../utils';
 import DOMPurify from 'dompurify';
 import { fonts } from '../constants';
+import { splitNarration } from './textTokenizer';
 
 const hexToRgbValues = (hex: string) => {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -25,6 +26,7 @@ export const generateFinalHtmlStr = (
   disableOtherColor: boolean,
   hideEmptyAvatars: boolean,
   narrationCharacter: string | null,
+  enableSentenceSpacing: boolean,
   insertedBlocks: Record<string, any[]>,
   mergeTabStyles: Set<string>,
   showTabNames: Set<string>,
@@ -225,7 +227,7 @@ export const generateFinalHtmlStr = (
   }
 
   const textResetCSS = `
-    .log-container :is(p, span, a, b, strong, i, em, h1, h2, h3, h4, h5, h6, [class$="-content"], [class$="-name"], .narration-row, .command-text) {
+    .log-container :is(p, span, a, b, strong, i, em, h1, h2, h3, h4, h5, h6, [class$="-content"], [class$="-name"], .narration-row, .narration-split-row, .command-text) {
       background-color: transparent !important;
     }
   `;
@@ -285,6 +287,7 @@ export const generateFinalHtmlStr = (
     .command-text { font-family: 'NanumGothicCodingLigature', monospace; color: ${textColor}; font-weight: bold; line-height: 1.6; }
 
     .narration-row { text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic; }
+    .narration-split-row { text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic; padding: ${s(2)}px ${s(15.6)}px; margin-bottom: 0px; }
   `;
 
   const isInline = cssFormat === 'inline';
@@ -384,21 +387,33 @@ export const generateFinalHtmlStr = (
     const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && nextVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main') : false;
 
     // Combine all contents in this chunk
-    let finalHtmlContent = groupedLogs.map((l, i) => {
+    let finalHtmlContentPieces = groupedLogs.map((l, i) => {
       let content = l.content;
       if (l.isCommand) {
         content = content.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/(?:\r\n|\r|\n)+/g, ' ');
       }
-      let html = linkifyAndFormat(content);
-      if (l.name === 'system') {
-        html = html.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
-          const charIds = Object.keys(charSettings).filter(id => charSettings[id].name === p1.trim());
-          const matchedChar = charIds.length > 0 ? charSettings[charIds[0]] : null;
-          return matchedChar ? `<span style="color: ${matchedChar.color};">${match}</span>` : match;
-        });
+      
+      let textPieces = [content];
+      if (isNarration && enableSentenceSpacing) {
+        textPieces = splitNarration(content);
       }
-      return DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
-    }).join(`<div style="margin-top: ${format === 'other' ? '4px' : '0.8em'};"></div>`);
+      
+      let htmlPieces = textPieces.map(piece => {
+        let pieceHtml = linkifyAndFormat(piece);
+        if (l.name === 'system') {
+          pieceHtml = pieceHtml.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
+            const charIds = Object.keys(charSettings).filter(id => charSettings[id].name === p1.trim());
+            const matchedChar = charIds.length > 0 ? charSettings[charIds[0]] : null;
+            return matchedChar ? `<span style="color: ${matchedChar.color};">${match}</span>` : match;
+          });
+        }
+        let sanitizeFn = (DOMPurify && DOMPurify.sanitize) ? DOMPurify.sanitize.bind(DOMPurify) : (global as any).DOMPurify?.sanitize;
+        return sanitizeFn ? sanitizeFn(pieceHtml, { ADD_ATTR: ['target'] }) : pieceHtml;
+      });
+      return htmlPieces;
+    });
+
+    let finalHtmlContent = finalHtmlContentPieces.map(pieces => pieces.join(`<div style="margin-top: ${isNarration ? '10px' : (format === 'other' ? '4px' : '0.8em')};"></div>`)).join(`<div style="margin-top: ${isNarration ? '10px' : (format === 'other' ? '4px' : '0.8em')};"></div>`);
 
     if (!isHidden) {
       if (showTabNames.has(format) && !isPrevSameTab) {
@@ -438,11 +453,6 @@ export const generateFinalHtmlStr = (
       if (format === 'other') {
         itemMarginBottom = '0';
       }
-      
-      if (isNarration) {
-        itemMarginTop = isPrevNarration ? '0' : '10px';
-        itemMarginBottom = isNextNarration ? '0' : '10px';
-      }
 
       const isSectionStart = chunkIdx === 0 || hasBlockBefore;
       const isSectionEnd = isNextSameTab === false || hasBlockAfter;
@@ -453,75 +463,82 @@ export const generateFinalHtmlStr = (
       const fullFilterAttrs = isFilterEnabled 
         ? ` data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="ccfolia-log-entry"`
         : '';
+        
+      if (isNarration) {
+        html += `<div${fullFilterAttrs} style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop}; padding: ${s(9)}px ${s(15.6)}px; text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic;">`;
+        const flatPieces = finalHtmlContentPieces.flat();
+        html += flatPieces.map((piece, pIdx) => {
+          const prefix = pIdx > 0 ? `<div style="margin-top: 0.8em;"></div>` : '';
+          return `${prefix}<div style="white-space: pre-wrap; word-break: break-all;">${piece}</div>`;
+        }).join('');
+        html += `</div>`;
+      } else {
+        html += `<div${fullFilterAttrs} style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
+        if (log.isCommand) {
+          const nameHtml = log.name !== 'system' ? `<span style="color: ${color}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold;">[ ${log.name} ]</span>` : '';
+          const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
+          if (format === 'secret') {
+            const tabColor = tabSet?.color || '#ffd400';
+            const secretBg = getSecretBg(tabColor);
+            html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${s(12)}px ${s(15.6)}px; border-radius: 8px; margin: ${s(8)}px ${s(15.6)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
+          } else {
+            html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${commandBg}; border: 1px solid ${borderColor}; padding: ${s(12)}px ${s(15.6)}px; border-radius: 8px; margin: ${s(8)}px ${s(15.6)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
+          }
+        } else if (format === 'other') {
+          html += `<div style="padding: ${s(2)}px ${s(15.6)}px; display: flex; gap: ${s(8)}px; align-items: baseline;">
+            <span style="font-weight: bold; flex-shrink: 0; font-size: 0.96em; color: ${otherNameColor};">${log.name}</span>
+            <div style="${otherContentStyle}">${finalHtmlContent}</div>
+          </div>`;
+        } else if (format === 'info') {
+          const infoMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(8)}px ${s(15.6)}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : s(8)}px ${s(15.6)}px`;
+          const infoRadius = shouldMergeStyle 
+            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+            : '4px';
+          const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : '';
+          const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : '';
 
-      html += `<div${fullFilterAttrs} style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
-      
-      if (log.isCommand) {
-        const nameHtml = log.name !== 'system' ? `<span style="color: ${color}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold;">[ ${log.name} ]</span>` : '';
-        const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
-        if (format === 'secret') {
+          html += `<div style="padding: ${s(15.6)}px ${s(19.2)}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: ${infoMargin}; border-radius: ${infoRadius}; ${infoBorderTop ? `border-top: ${infoBorderTop}; ` : ''}${infoBorderBottom ? `border-bottom: ${infoBorderBottom}; ` : ''}">
+            <span style="${nameStyle}">${log.name}</span>
+            <div style="${contentStyle}">${finalHtmlContent}</div>
+          </div>`;
+        } else if (format === 'secret') {
           const tabColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(tabColor);
-          html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${s(12)}px ${s(15.6)}px; border-radius: 8px; margin: ${s(8)}px ${s(15.6)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
+          const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
+          const secretMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(4)}px ${s(15.6)}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : s(4)}px ${s(15.6)}px`;
+          const secretRadius = shouldMergeStyle 
+            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+            : '4px';
+          const secretBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : '';
+          const secretBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : '';
+
+          const borderTopStyle = secretBorderTop ? `border-top: ${secretBorderTop}; ` : '';
+          const borderBottomStyle = secretBorderBottom ? `border-bottom: ${secretBorderBottom}; ` : '';
+
+          html += `
+            <div style="display: flex; gap: ${s(12)}px; padding: ${s(12)}px ${s(15.6)}px; align-items: flex-start; background: ${secretBg}; border-left: 4px solid ${tabColor}; margin: ${secretMargin}; border-radius: ${secretRadius}; ${borderTopStyle}${borderBottomStyle}">
+              ${imgTag}
+              <div style="${bodyStyle}">
+                <span style="${nameStyle}">${log.name}</span>
+                <div style="${contentStyle}">${finalHtmlContent}</div>
+              </div>
+            </div>`;
         } else {
-          html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${commandBg}; border: 1px solid ${borderColor}; padding: ${s(12)}px ${s(15.6)}px; border-radius: 8px; margin: ${s(8)}px ${s(15.6)}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; ${marginLeft}">${finalHtmlContent}</span></div>`;
+          const avatarHtml = img 
+            ? `<img src="${img}" style="${avatarStyle}" />` 
+            : `<div style="${avatarStyle}"></div>`;
+          
+          html += `
+            <div style="display: flex; gap: ${s(12)}px; padding: ${s(12)}px ${s(15.6)}px; align-items: flex-start;">
+              ${avatarHtml}
+              <div style="${bodyStyle}">
+                <span style="${nameStyle}">${log.name}</span>
+                <div style="${contentStyle}">${finalHtmlContent}</div>
+              </div>
+            </div>`;
         }
-      } else if (isNarration) {
-        html += `<div style="padding: ${s(9)}px ${s(15.6)}px; text-align: center; color: ${textColor}; line-height: 1.6; font-weight: bold; font-style: italic;">${finalHtmlContent}</div>`;
-      } else if (format === 'other') {
-        html += `<div style="padding: ${s(2)}px ${s(15.6)}px; display: flex; gap: ${s(8)}px; align-items: baseline;">
-          <span style="font-weight: bold; flex-shrink: 0; font-size: 0.96em; color: ${otherNameColor};">${log.name}</span>
-          <div style="${otherContentStyle}">${finalHtmlContent}</div>
-        </div>`;
-      } else if (format === 'info') {
-        const infoMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(8)}px ${s(15.6)}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : s(8)}px ${s(15.6)}px`;
-        const infoRadius = shouldMergeStyle 
-          ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
-          : '4px';
-        const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : '';
-        const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : '';
-
-        html += `<div style="padding: ${s(15.6)}px ${s(19.2)}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: ${infoMargin}; border-radius: ${infoRadius}; ${infoBorderTop ? `border-top: ${infoBorderTop}; ` : ''}${infoBorderBottom ? `border-bottom: ${infoBorderBottom}; ` : ''}">
-          <span style="${nameStyle}">${log.name}</span>
-          <div style="${contentStyle}">${finalHtmlContent}</div>
-        </div>`;
-      } else if (format === 'secret') {
-        const tabColor = tabSet?.color || '#ffd400';
-        const secretBg = getSecretBg(tabColor);
-        const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
-        const secretMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(4)}px ${s(15.6)}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : s(4)}px ${s(15.6)}px`;
-        const secretRadius = shouldMergeStyle 
-          ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
-          : '4px';
-        const secretBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : '';
-        const secretBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : '';
-
-        const borderTopStyle = secretBorderTop ? `border-top: ${secretBorderTop}; ` : '';
-        const borderBottomStyle = secretBorderBottom ? `border-bottom: ${secretBorderBottom}; ` : '';
-
-        html += `
-          <div style="display: flex; gap: ${s(12)}px; padding: ${s(12)}px ${s(15.6)}px; align-items: flex-start; background: ${secretBg}; border-left: 4px solid ${tabColor}; margin: ${secretMargin}; border-radius: ${secretRadius}; ${borderTopStyle}${borderBottomStyle}">
-            ${imgTag}
-            <div style="${bodyStyle}">
-              <span style="${nameStyle}">${log.name}</span>
-              <div style="${contentStyle}">${finalHtmlContent}</div>
-            </div>
-          </div>`;
-      } else {
-        const avatarHtml = img 
-          ? `<img src="${img}" style="${avatarStyle}" />` 
-          : `<div style="${avatarStyle}"></div>`;
-        
-        html += `
-          <div style="display: flex; gap: ${s(12)}px; padding: ${s(12)}px ${s(15.6)}px; align-items: flex-start;">
-            ${avatarHtml}
-            <div style="${bodyStyle}">
-              <span style="${nameStyle}">${log.name}</span>
-              <div style="${contentStyle}">${finalHtmlContent}</div>
-            </div>
-          </div>`;
+        html += `</div>`;
       }
-      html += `</div>`;
     } else {
       const isSectionStart = !prevVisibleChunk || hasBlockBefore;
       const isSectionEnd = !nextVisibleChunk || isNextSameTab === false || hasBlockAfter;
@@ -558,7 +575,13 @@ export const generateFinalHtmlStr = (
           html += `<div class="command-box" style="display: flex; align-items: center; flex-wrap: wrap; padding-top: ${s(12)}px; padding-bottom: ${s(shouldMergeStyle && isNextSameTab ? 6 : 12)}px;">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
         }
       } else if (isNarration) {
-        html += `<div class="narration-row" style="padding-top: ${s(isPrevNarration ? 3 : 9)}px; padding-bottom: ${s(isNextNarration ? 3 : 9)}px; padding-left: ${s(15.6)}px; padding-right: ${s(15.6)}px;">${finalHtmlContent}</div>`;
+        const flatPieces = finalHtmlContentPieces.flat();
+        html += `<div class="narration-row" style="padding: ${s(9)}px ${s(15.6)}px;">`;
+        html += flatPieces.map((piece, pIdx) => {
+          const prefix = pIdx > 0 ? `<div style="margin-top: 0.8em;"></div>` : '';
+          return `${prefix}<div style="white-space: pre-wrap; word-break: break-all;">${piece}</div>`;
+        }).join('');
+        html += `</div>`;
       } else if (format === 'other') {
         html += `<div class="other-row" style="padding-top: ${s(2)}px; padding-bottom: ${s(2)}px;"><span class="other-name" style="color: ${otherNameColor}">${log.name}</span><div class="other-content">${finalHtmlContent}</div></div>`;
       } else if (format === 'info') {
