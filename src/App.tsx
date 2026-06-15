@@ -49,7 +49,8 @@ import {
   ChevronUp,
   Search,
   List,
-  Info
+  Info,
+  FileDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
@@ -290,6 +291,7 @@ const PortalDropdown = ({ isOpen, onClose, triggerRef, children, position = 'bot
 };
 
 export default function App() {
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isTitleEditing, setIsTitleEditing] = useState(false);
   const [pageTitle, setPageTitle] = useState('');
   const [tempTitle, setTempTitle] = useState('');
@@ -1329,6 +1331,22 @@ export default function App() {
     setActiveTab(newTab);
   };
 
+  const handleGlobalDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+    
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    const mockEvent = { target: { files: [file] } } as any;
+    if (file.name.toLowerCase().endsWith('.html') || file.name.toLowerCase().endsWith('.htm')) {
+      await handleLogUpload(mockEvent);
+    } else if (file.name.toLowerCase().endsWith('.json')) {
+      await handleProjectUpload(mockEvent);
+    }
+  };
+
   return (
     <SettingsProvider settings={{
       theme,
@@ -1344,7 +1362,48 @@ export default function App() {
       narrationCharacter,
       enableSentenceSpacing
     }}>
-      <div className="flex flex-col md:flex-row h-[100dvh] bg-[#121212] font-sans text-stone-200 overflow-hidden">
+      <div 
+        className="flex flex-col md:flex-row h-[100dvh] bg-[#121212] font-sans text-stone-200 overflow-hidden relative"
+        onDragEnter={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.dataTransfer.types.some(t => t === 'Files')) {
+            setIsDraggingFile(true);
+          }
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingFile(false);
+        }}
+      >
+        {isDraggingFile && (
+          <div 
+            className="absolute inset-0 z-[1000000] bg-[#050505]/80 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-200"
+            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.target === e.currentTarget) {
+                setIsDraggingFile(false);
+              }
+            }}
+            onDrop={handleGlobalDrop}
+          >
+            <div className="pointer-events-none flex flex-col items-center justify-center w-full max-w-xl p-16 rounded-[2.5rem] border-2 border-dashed border-[#e6005c]/50 bg-[#e6005c]/5 backdrop-blur-2xl shadow-[0_0_100px_rgba(230,0,92,0.15)] animate-in zoom-in-95 duration-300 mx-4">
+              <div className="relative flex items-center justify-center w-24 h-24 mb-6 rounded-3xl bg-black/20">
+                <FileDown className="w-10 h-10 text-[#e6005c] animate-bounce drop-shadow-[0_0_15px_rgba(230,0,92,0.5)]" />
+              </div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight mb-2 drop-shadow-md">파일을 여기에 놓아주세요</h2>
+              <p className="text-white/50 text-xs sm:text-sm font-medium">HTML 로그 파일 또는 JSON 프로젝트 백업</p>
+            </div>
+          </div>
+        )}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
         <aside className={cn(
@@ -1684,10 +1743,23 @@ export default function App() {
                         <div className="flex items-center gap-2">
                           <Toggle 
                             enabled={tab.visible} 
-                            onChange={(val) => {
-                              const next = { ...tabSettings, [tab.id]: { ...tab, visible: val } };
-                              setTabSettings(next);
-                              saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                            onChange={(val, e) => {
+                              if (e && e.altKey) {
+                                let next = { ...tabSettings };
+                                const isSolo = Object.keys(next).every(k => k === tab.id ? next[k].visible : !next[k].visible);
+                                if (isSolo) {
+                                  Object.keys(next).forEach(k => next[k] = { ...next[k], visible: true });
+                                } else {
+                                  Object.keys(next).forEach(k => next[k] = { ...next[k], visible: false });
+                                  next[tab.id].visible = true;
+                                }
+                                setTabSettings(next);
+                                saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                              } else {
+                                const next = { ...tabSettings, [tab.id]: { ...tab, visible: val } };
+                                setTabSettings(next);
+                                saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                              }
                             }} 
                           />
                           {renamingTab === tab.id ? (
@@ -2207,10 +2279,23 @@ export default function App() {
                           <div className="shrink-0">
                             <Toggle 
                               enabled={char.visible} 
-                              onChange={(val) => {
-                                const next = { ...charSettings, [char.id]: { ...char, visible: val } };
-                                setCharSettings(next);
-                                saveToHistory({ charSettings: next, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                              onChange={(val, e) => {
+                                if (e && e.altKey) {
+                                  let next = { ...charSettings };
+                                  const isSolo = Object.keys(next).every(k => k === char.id ? next[k].visible : !next[k].visible);
+                                  if (isSolo) {
+                                    Object.keys(next).forEach(k => next[k] = { ...next[k], visible: true });
+                                  } else {
+                                    Object.keys(next).forEach(k => next[k] = { ...next[k], visible: false });
+                                    next[char.id].visible = true;
+                                  }
+                                  setCharSettings(next);
+                                  saveToHistory({ charSettings: next, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                                } else {
+                                  const next = { ...charSettings, [char.id]: { ...char, visible: val } };
+                                  setCharSettings(next);
+                                  saveToHistory({ charSettings: next, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                                }
                               }} 
                             />
                           </div>
@@ -2615,7 +2700,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.3.3</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.4.0</span>
           </div>
         </div>
       </aside>
@@ -3183,7 +3268,7 @@ export default function App() {
                     {activeColorPicker.startsWith('tab-') ? (
                       <ColorPickerPopup 
                         color={tabSettings[activeColorPicker.replace('tab-', '')]?.color || '#ffd400'} 
-                        extractedColors={extractedColors}
+                        extractedColors={Array.from(new Set([...extractedColors, ...Object.values(charSettings).map((c: any) => c.color), ...Object.values(tabSettings).filter((t: any) => t.color).map((t: any) => t.color)]))}
                         triggerRect={colorPickerRect}
                         onClose={() => {
                           setActiveColorPicker(null);
@@ -3199,7 +3284,7 @@ export default function App() {
                     ) : (
                       <ColorPickerPopup 
                         color={charSettings[activeColorPicker]?.color || '#ffffff'} 
-                        extractedColors={extractedColors}
+                        extractedColors={Array.from(new Set([...extractedColors, ...Object.values(charSettings).map((c: any) => c.color), ...Object.values(tabSettings).filter((t: any) => t.color).map((t: any) => t.color)]))}
                         triggerRect={colorPickerRect}
                         onClose={() => {
                           setActiveColorPicker(null);

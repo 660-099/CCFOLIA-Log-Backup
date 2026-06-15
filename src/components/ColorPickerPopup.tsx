@@ -88,8 +88,19 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
   }, [triggerRect]);
 
   const rgb = hexToRgbValues(selectedColor);
-  const normalizedDefaultColors = DEFAULT_COLORS.map(c => c.toLowerCase());
-  const usedColors = extractedColors.filter(c => !normalizedDefaultColors.includes(c.toLowerCase()));
+  const normalizeHex = (hex: string) => {
+    if (!hex) return '';
+    let h = hex.replace('#', '').toLowerCase();
+    if (h.length === 3) h = h.split('').map(x => x + x).join('');
+    return '#' + h;
+  };
+  const normalizedSelectedColor = normalizeHex(selectedColor);
+  const normalizedDefaultColors = DEFAULT_COLORS.map(normalizeHex);
+  const usedColors = Array.from(new Set(
+    extractedColors
+      .filter(c => c && typeof c === 'string')
+      .map(normalizeHex)
+  ));
 
   return createPortal(
     <div className="fixed inset-0 z-[100]">
@@ -200,7 +211,7 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
                     }}
                     className={cn(
                       "aspect-square rounded-full border transition-all shadow-sm",
-                      selectedColor.toLowerCase() === c.toLowerCase() ? "border-white scale-110 z-10" : "border-white/10 hover:scale-110 active:scale-95"
+                      normalizedSelectedColor === c ? "border-white scale-110 z-10" : "border-white/10 hover:scale-110 active:scale-95"
                     )}
                     style={{ backgroundColor: c }}
                   />
@@ -221,7 +232,7 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
                   }}
                   className={cn(
                     "aspect-square rounded-full border transition-all shadow-sm",
-                    selectedColor.toLowerCase() === c.toLowerCase() ? "border-white scale-110 z-10" : "border-white/10 hover:scale-110 active:scale-95"
+                    normalizedSelectedColor === normalizeHex(c) ? "border-white scale-110 z-10" : "border-white/10 hover:scale-110 active:scale-95"
                   )}
                   style={{ backgroundColor: c }}
                 />

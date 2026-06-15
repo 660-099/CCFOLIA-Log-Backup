@@ -218,7 +218,30 @@ export const generateFinalHtmlStr = (
             aT.checked = tC.every(c => c.checked);
             aC.checked = cC.every(c => c.checked);
           };
-          [...tC, ...cC].forEach(c => c.addEventListener('change', update));
+
+          [...tC, ...cC].forEach(c => {
+            const h = e => {
+              if (e.altKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                const group = c.dataset.type === 'tab' ? tC : cC;
+                setTimeout(() => {
+                  const isSolo = group.every(x => x === c ? x.checked : !x.checked);
+                  if (isSolo) {
+                    group.forEach(x => x.checked = true);
+                  } else {
+                    group.forEach(x => x.checked = false);
+                    c.checked = true;
+                  }
+                  update();
+                }, 0);
+              }
+            };
+            c.parentElement.addEventListener('click', h);
+            c.addEventListener('click', h);
+            c.addEventListener('change', update);
+          });
+          
           aT.addEventListener('change', e => { tC.forEach(c => c.checked = e.target.checked); update(); });
           aC.addEventListener('change', e => { cC.forEach(c => c.checked = e.target.checked); update(); });
         });

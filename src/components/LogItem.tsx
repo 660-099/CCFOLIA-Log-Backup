@@ -329,6 +329,13 @@ export const LogItem = React.memo(({
               <textarea 
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    onEditLog(log.id, editContent);
+                    setIsEditing(false);
+                  }
+                }}
                 className="w-full bg-black/40 text-white text-sm p-2 rounded-lg border border-white/10 outline-none focus:border-[#e6005c] min-h-[80px]"
                 autoFocus
               />
