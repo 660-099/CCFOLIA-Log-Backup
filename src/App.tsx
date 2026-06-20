@@ -291,6 +291,8 @@ const PortalDropdown = ({ isOpen, onClose, triggerRef, children, position = 'bot
 };
 
 export default function App() {
+  const [isBulkJsonModalOpen, setIsBulkJsonModalOpen] = useState(false);
+  const [bulkJsonInput, setBulkJsonInput] = useState('');
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isTitleEditing, setIsTitleEditing] = useState(false);
   const [pageTitle, setPageTitle] = useState('');
@@ -1347,6 +1349,49 @@ export default function App() {
     }
   };
 
+  const applyBulkJson = () => {
+    try {
+      if (!bulkJsonInput.trim()) return;
+      
+      let parsed;
+      try { parsed = JSON.parse(bulkJsonInput); }
+      catch {
+        // try to parse dirty json, sometimes users paste text that is almost json
+        // basic replacement for trailing commas and single quotes just in case, but let's just stick to JSON
+        parsed = JSON.parse(bulkJsonInput.replace(/[']/g, '"'));
+      }
+      
+      if (typeof parsed !== 'object' || parsed === null) throw new Error();
+      
+      let nextCharSettings = { ...charSettings };
+      let changedCount = 0;
+
+      Object.keys(nextCharSettings).forEach(charId => {
+        const charName = nextCharSettings[charId].name;
+        if (parsed[charName] && typeof parsed[charName] === 'string' && parsed[charName].trim() !== '') {
+          nextCharSettings[charId] = {
+            ...nextCharSettings[charId],
+            imageUrl: parsed[charName].trim()
+          };
+          changedCount++;
+        }
+      });
+
+      if (changedCount > 0) {
+        setCharSettings(nextCharSettings);
+        saveToHistory({ charSettings: nextCharSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+        alert(`${changedCount}명의 캐릭터 이미지가 업데이트되었습니다.`);
+      } else {
+        alert(`일치하는 캐릭터 이름이 없습니다.`);
+      }
+      
+      setIsBulkJsonModalOpen(false);
+      setBulkJsonInput('');
+    } catch (err) {
+      alert('올바른 JSON 형식이 아닙니다.\n{"캐릭터이름": "이미지주소"} 형태로 입력해주세요.');
+    }
+  };
+
   return (
     <SettingsProvider settings={{
       theme,
@@ -2260,13 +2305,22 @@ export default function App() {
                     icon={List} 
                     title="발언자 목록" 
                     rightElement={
-                      <button 
-                        onClick={() => setCharSortMode(charSortMode === 'appearance' ? 'alphabetical' : 'appearance')}
-                        className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5 mt-[-4px]"
-                      >
-                        <ArrowUpDown className="w-3 h-3" />
-                        {charSortMode === 'appearance' ? '등장순' : '가나다순'}
-                      </button>
+                      <div className="flex items-center gap-2 mt-[-4px]">
+                        <button 
+                          onClick={() => setIsBulkJsonModalOpen(true)}
+                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
+                        >
+                          <Upload className="w-3 h-3" />
+                          이미지 일괄 등록
+                        </button>
+                        <button 
+                          onClick={() => setCharSortMode(charSortMode === 'appearance' ? 'alphabetical' : 'appearance')}
+                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
+                        >
+                          <ArrowUpDown className="w-3 h-3" />
+                          {charSortMode === 'appearance' ? '등장순' : '가나다순'}
+                        </button>
+                      </div>
                     }
                   />
                   {sortedCharOrder.length > 0 ? (
@@ -3398,6 +3452,50 @@ export default function App() {
           <span className="text-[10px] font-bold">미리보기</span>
         </button>
       </div>
+      {isBulkJsonModalOpen && (
+        <div className="fixed inset-0 z-[2000000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <FileJson className="w-4 h-4 text-[#e6005c]" />
+                이미지 일괄 등록
+              </h2>
+              <button 
+                onClick={() => setIsBulkJsonModalOpen(false)}
+                className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white outline-none"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 flex flex-col gap-3">
+              <p className="text-xs text-white/60 leading-relaxed">
+                <code className="bg-black/30 px-1 py-0.5 rounded text-[#e6005c]">{'{"캐릭터 이름": "이미지 URL"}'}</code> 형식의 JSON을 붙여넣으세요. 이름이 일치하는 캐릭터의 이미지가 자동으로 변경됩니다.
+              </p>
+              <textarea
+                value={bulkJsonInput}
+                onChange={e => setBulkJsonInput(e.target.value)}
+                placeholder={'{\n  "GM": "https://i.imgur.com/abc1234.png",\n  "서성운": "https://i.imgur.com/def5678.png"\n}'}
+                className="w-full h-64 bg-black/40 border border-white/10 rounded-xl p-3 text-[11px] font-mono text-white/80 placeholder:text-white/20 custom-scrollbar outline-none focus:border-[#e6005c]/50 transition-colors resize-none mb-1"
+                spellCheck={false}
+              />
+            </div>
+            <div className="px-5 py-4 border-t border-white/5 bg-black/20 flex justify-end gap-2">
+              <button 
+                onClick={() => setIsBulkJsonModalOpen(false)}
+                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white/60 hover:text-white hover:bg-white/5 transition-colors outline-none"
+              >
+                취소
+              </button>
+              <button 
+                onClick={applyBulkJson}
+                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white bg-[#e6005c] hover:bg-[#ff0066] shadow-[0_0_15px_rgba(230,0,92,0.3)] transition-all outline-none"
+              >
+                확인 및 적용
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <Analytics />
     </div>
     </SettingsProvider>
