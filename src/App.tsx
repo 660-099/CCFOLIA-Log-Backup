@@ -50,7 +50,13 @@ import {
   Search,
   List,
   Info,
-  FileDown
+  FileDown,
+  Settings2,
+  UnfoldVertical,
+  UnfoldHorizontal,
+  MoveVertical,
+  Maximize2,
+  MoveHorizontal
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
@@ -74,14 +80,148 @@ const Section = ({ children, className = '' }: { children: React.ReactNode, clas
   </div>
 );
 
-const SectionTitle = ({ icon: Icon, title, rightElement }: { icon: any, title: React.ReactNode, rightElement?: React.ReactNode }) => (
-  <div className="flex items-center justify-between">
-    <h2 className="text-[10px] font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
-      <Icon className="w-3.5 h-3.5" /> {title}
+const MenuHeaderWrapper = ({ 
+  icon: Icon, 
+  title, 
+  tooltip,
+  isSubHeader = false
+}: { 
+  icon?: any, 
+  title: React.ReactNode, 
+  tooltip?: React.ReactNode,
+  isSubHeader?: boolean
+}) => (
+  <div className="flex items-center gap-1.5">
+    {Icon && <Icon className={cn("w-3.5 h-3.5 shrink-0", isSubHeader ? "text-white/40" : "text-white/30")} />}
+    <h2 className={cn("text-[10px] font-bold tracking-tight flex items-center pr-1 m-0 p-0 leading-none", isSubHeader ? "text-white/40" : "text-white/30")}>
+      {title}
     </h2>
-    {rightElement}
+    {tooltip && (
+      <Tooltip position="right" content={typeof tooltip === 'string' ? <div className="text-[11px] leading-relaxed w-[180px] text-center">{tooltip}</div> : tooltip}>
+        <HelpCircle className="w-3.5 h-3.5 text-white/30 hover:text-white/60 cursor-help transition-colors shrink-0" />
+      </Tooltip>
+    )}
   </div>
 );
+
+const SectionTitle = ({ icon: Icon, title, rightElement, tooltip }: { icon?: any, title: React.ReactNode, rightElement?: React.ReactNode, tooltip?: React.ReactNode }) => (
+  <div className="flex items-center justify-between min-h-[20px]">
+    <MenuHeaderWrapper icon={Icon} title={title} tooltip={tooltip} />
+    {rightElement && <div className="flex items-center gap-1.5">{rightElement}</div>}
+  </div>
+);
+
+const NumberAdjuster = ({ 
+  label, value, min, max, step, onChange, onSave, unit = "", highlightDefault = null, icon: Icon, hideReset = false, rightElement, tooltip, isSubHeader = true
+}: { 
+  label?: string; value: number; min: number; max: number; step: number; 
+  onChange: (val: number) => void; onSave?: (val: number) => void; unit?: string; highlightDefault?: number | null; icon?: any; hideReset?: boolean; rightElement?: React.ReactNode; tooltip?: React.ReactNode; isSubHeader?: boolean
+}) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [tempVal, setTempVal] = useState(value.toString());
+
+  const handleBlur = () => {
+    let v = parseFloat(tempVal);
+    if (!isNaN(v)) {
+      v = Number(v.toFixed(1));
+      onChange(v);
+      if (onSave) onSave(v);
+      setTempVal(v.toString());
+    } else {
+      setTempVal(value.toString());
+    }
+    setIsEditing(false);
+  };
+
+  const isChanged = highlightDefault !== null && value !== highlightDefault;
+  const highlightColor = isChanged ? '#e6005c' : '#ffffff';
+
+  let trackStyle = {};
+  if (highlightDefault !== null && isChanged) {
+    const defaultPct = ((highlightDefault - min) / (max - min)) * 100;
+    const currentPct = ((value - min) / (max - min)) * 100;
+    const startPct = Math.min(defaultPct, currentPct);
+    const endPct = Math.max(defaultPct, currentPct);
+    
+    trackStyle = {
+      background: `linear-gradient(to right, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.4) ${startPct}%, rgba(230, 0, 92, 0.4) ${startPct}%, rgba(230, 0, 92, 0.4) ${endPct}%, rgba(0, 0, 0, 0.4) ${endPct}%, rgba(0, 0, 0, 0.4) 100%)`
+    };
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between min-h-[20px]">
+        {label ? (
+          <MenuHeaderWrapper icon={Icon} title={label} tooltip={tooltip} isSubHeader={isSubHeader} />
+        ) : (
+          <div /> /* For alignment when there's no label */
+        )}
+        <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 bg-black/20 rounded-md p-0.5 border border-white/5">
+            <button 
+              onClick={() => { const v = Number(Math.max(min, value - step).toFixed(1)); onChange(v); if (onSave) onSave(v); }} 
+              className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white transition-colors outline-none"
+            >
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            
+            {isEditing ? (
+              <input 
+                type="text" 
+                autoFocus 
+                value={tempVal} 
+                onChange={e => setTempVal(e.target.value)}
+                onBlur={handleBlur}
+                onKeyDown={e => { if(e.key === 'Enter') e.currentTarget.blur(); }}
+                className="w-9 text-center text-[10px] font-bold py-0.5 bg-black/40 border border-white/20 rounded outline-none"
+                style={{ color: highlightColor }}
+              />
+            ) : (
+              <span 
+                onClick={() => { setIsEditing(true); setTempVal(value.toString()); }} 
+                className="text-[10px] font-bold py-0.5 cursor-pointer flex items-center justify-center hover:bg-white/5 rounded min-w-[28px] text-center shrink-0"
+                style={{ color: highlightColor }}
+              >
+                {value > 0 && label === '자간' ? `+${value}` : value}{unit}
+              </span>
+            )}
+            
+            <button 
+              onClick={() => { const v = Number(Math.min(max, value + step).toFixed(1)); onChange(v); if (onSave) onSave(v); }} 
+              className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white transition-colors outline-none"
+            >
+              <ChevronUp className="w-3 h-3" />
+            </button>
+          </div>
+          {highlightDefault !== null && !hideReset && (
+            <button 
+              onClick={() => { onChange(highlightDefault); if (onSave) onSave(highlightDefault); }}
+              disabled={!isChanged}
+              className={cn("p-1 rounded transition-colors outline-none shrink-0", isChanged ? "text-white/60 hover:text-white hover:bg-white/10" : "text-white/20")}
+              title="기본값으로 초기화"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {rightElement}
+        </div>
+      </div>
+      <div className="relative flex items-center h-2 group">
+        <input 
+          type="range" min={min} max={max} step={step} value={value} 
+          onChange={(e) => onChange(Number(parseFloat(e.target.value).toFixed(1)))}
+          onMouseUp={(e) => { if (onSave) onSave(Number(parseFloat(e.currentTarget.value).toFixed(1))); }}
+          onTouchEnd={(e) => { if (onSave) onSave(Number(parseFloat(e.currentTarget.value).toFixed(1))); }}
+          onKeyUp={(e) => { if (onSave) onSave(Number(parseFloat(e.currentTarget.value).toFixed(1))); }}
+          className={cn("w-full h-1 bg-black/40 rounded-lg appearance-none cursor-pointer relative z-10 focus:outline-none focus:ring-0", 
+            isChanged ? "accent-[#e6005c]" : "accent-white/70"
+          )}
+          style={trackStyle}
+        />
+      </div>
+    </div>
+  );
+};
 
 const Tooltip = ({ 
   children, 
@@ -189,7 +329,7 @@ const Tooltip = ({
             transition: 'opacity 0.2s',
             visibility: coords.opacity === 0 ? 'hidden' : 'visible'
           }}
-          className={unstyled ? `fixed z-[9999] pointer-events-none ${className || ''}` : cn("fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-xl p-3 text-[11px] leading-relaxed text-white/60 shadow-2xl pointer-events-none w-max max-w-xs font-normal text-left", className)}
+          className={unstyled ? `fixed z-[9999] pointer-events-none ${className || ''}` : cn("fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-xl p-3 text-[11px] leading-relaxed text-white/60 shadow-2xl pointer-events-none w-max max-w-xs font-normal text-left break-keep", className)}
         >
           {content}
         </div>,
@@ -317,6 +457,13 @@ export default function App() {
   
   const [cssFormat, setCssFormat] = useLocalStorage<'inline' | 'internal'>('ccfolia_cssFormat', 'internal', undefined, undefined, rememberSettings);
   const [fontSize, setFontSize] = useLocalStorage<number>('ccfolia_fontSize', 14, undefined, undefined, rememberSettings);
+  const [textFontSize, setTextFontSize] = useLocalStorage<number>('ccfolia_textFontSize', 14, undefined, undefined, rememberSettings);
+  const [lineHeight, setLineHeight] = useLocalStorage<number>('ccfolia_lineHeight', 1.6, undefined, undefined, rememberSettings);
+  const [letterSpacing, setLetterSpacing] = useLocalStorage<number>('ccfolia_letterSpacing', 0, undefined, undefined, rememberSettings);
+  const [blockSpacing, setBlockSpacing] = useLocalStorage<number>('ccfolia_blockSpacing', 2, undefined, undefined, rememberSettings);
+  const [contentPadding, setContentPadding] = useLocalStorage<number>('ccfolia_contentPadding', 12, undefined, undefined, rememberSettings);
+  const [avatarSizeValue, setAvatarSizeValue] = useLocalStorage<number>('ccfolia_avatarSizeValue', 46, undefined, undefined, rememberSettings);
+  const [isAdvancedLayoutOpen, setIsAdvancedLayoutOpen] = useState(false);
   const [fontFamily, setFontFamily] = useLocalStorage<string>('ccfolia_fontFamily', 'Noto Sans KR', undefined, undefined, rememberSettings);
   const [theme, setTheme] = useLocalStorage<'dark' | 'light'>('ccfolia_theme', 'dark', undefined, undefined, rememberSettings);
   const [darkBgColor, setDarkBgColor] = useLocalStorage<string>('ccfolia_darkBgColor', '#212121', undefined, undefined, rememberSettings);
@@ -431,8 +578,9 @@ export default function App() {
   );
 
   const [hideEmptyAvatars, setHideEmptyAvatars] = useLocalStorage<boolean>('ccfolia_hideEmptyAvatars', false, undefined, undefined, rememberSettings);
+  const [hideAllAvatars, setHideAllAvatars] = useLocalStorage<boolean>('ccfolia_hideAllAvatars', false, undefined, undefined, rememberSettings);
   const [enableSentenceSpacing, setEnableSentenceSpacing] = useLocalStorage<boolean>('ccfolia_enableSentenceSpacing', false, undefined, undefined, rememberSettings);
-  const [narrationCharacter, setNarrationCharacter] = useState<string | null>(null);
+  const [narrationCharacter, setNarrationCharacter] = useLocalStorage<string | null>('ccfolia_narrationCharacter', null, undefined, undefined, rememberSettings);
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -481,6 +629,12 @@ export default function App() {
       tabOrder,
       cssFormat,
       fontSize,
+      textFontSize,
+      lineHeight,
+      letterSpacing,
+      blockSpacing,
+      avatarSizeValue,
+      contentPadding,
       fontFamily,
       theme,
       darkBgColor,
@@ -493,6 +647,7 @@ export default function App() {
       showTabNames: Array.from(showTabNames),
       mergeTabStyles: Array.from(mergeTabStyles),
       hideEmptyAvatars,
+      hideAllAvatars,
       narrationCharacter,
       enableSentenceSpacing,
       ...state
@@ -559,6 +714,12 @@ export default function App() {
     if (state.tabOrder) setTabOrder(state.tabOrder);
     setCssFormat(state.cssFormat);
     setFontSize(state.fontSize);
+    if (state.textFontSize !== undefined) setTextFontSize(state.textFontSize);
+    if (state.lineHeight !== undefined) setLineHeight(state.lineHeight);
+    if (state.letterSpacing !== undefined) setLetterSpacing(state.letterSpacing);
+    if (state.blockSpacing !== undefined) setBlockSpacing(state.blockSpacing);
+    if (state.contentPadding !== undefined) setContentPadding(state.contentPadding);
+    if (state.avatarSizeValue !== undefined) setAvatarSizeValue(state.avatarSizeValue);
     setFontFamily(state.fontFamily);
     setTheme(state.theme);
     if (state.darkBgColor) setDarkBgColor(state.darkBgColor);
@@ -579,6 +740,7 @@ export default function App() {
     if (state.showTabNames) setShowTabNames(new Set(state.showTabNames));
     if (state.mergeTabStyles) setMergeTabStyles(new Set(state.mergeTabStyles));
     if (state.hideEmptyAvatars !== undefined) setHideEmptyAvatars(state.hideEmptyAvatars);
+    if (state.hideAllAvatars !== undefined) setHideAllAvatars(state.hideAllAvatars);
     if (state.narrationCharacter !== undefined) setNarrationCharacter(state.narrationCharacter);
     if (state.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(state.enableSentenceSpacing);
   };
@@ -592,6 +754,12 @@ export default function App() {
         setTabOrder(state.tabOrder);
         setCssFormat(state.cssFormat);
         setFontSize(state.fontSize);
+        if (state.textFontSize !== undefined) setTextFontSize(state.textFontSize);
+        if (state.lineHeight !== undefined) setLineHeight(state.lineHeight);
+        if (state.letterSpacing !== undefined) setLetterSpacing(state.letterSpacing);
+        if (state.blockSpacing !== undefined) setBlockSpacing(state.blockSpacing);
+        if (state.contentPadding !== undefined) setContentPadding(state.contentPadding);
+        if (state.avatarSizeValue !== undefined) setAvatarSizeValue(state.avatarSizeValue);
         setFontFamily(state.fontFamily);
         setTheme(state.theme);
         if (state.darkBgColor) setDarkBgColor(state.darkBgColor);
@@ -607,12 +775,18 @@ export default function App() {
         setShowTabNames(new Set(state.showTabNames || ['secret']));
         setMergeTabStyles(new Set(state.mergeTabStyles || ['secret']));
         setHideEmptyAvatars(state.hideEmptyAvatars || false);
+        setHideAllAvatars(state.hideAllAvatars || false);
         setNarrationCharacter(state.narrationCharacter || null);
         setEnableSentenceSpacing(state.enableSentenceSpacing || false);
         saveToHistory(state);
       } else {
         setCssFormat('internal');
         setFontSize(14);
+        setTextFontSize(14);
+        setLineHeight(1.6);
+        setLetterSpacing(0);
+        setBlockSpacing(2);
+        setContentPadding(12);
         setFontFamily('Noto Sans KR');
         setTheme('dark');
         setDarkBgColor('#212121');
@@ -622,6 +796,7 @@ export default function App() {
         setShowTabNames(new Set(['secret']));
         setMergeTabStyles(new Set(['secret']));
         setHideEmptyAvatars(false);
+        setHideAllAvatars(false);
         setEnableSentenceSpacing(false);
       }
     }
@@ -787,6 +962,7 @@ export default function App() {
       tabOrder: newTabOrder,
       cssFormat: 'internal' as const,
       fontSize: 14,
+      textFontSize: 14,
       fontFamily: 'Noto Sans KR',
       theme: 'dark' as const,
       disableOtherColor: true,
@@ -797,7 +973,8 @@ export default function App() {
       mergeTabs: ['main', 'secret', 'other'],
       showTabNames: ['secret'],
       mergeTabStyles: ['secret'],
-      hideEmptyAvatars: false
+      hideEmptyAvatars: false,
+      hideAllAvatars: false
     };
     setInitialState(initial);
     setHistory([initial]);
@@ -845,9 +1022,16 @@ export default function App() {
       
       if (json.cssFormat) setCssFormat(json.cssFormat);
       if (json.fontSize) setFontSize(json.fontSize);
+      if (json.textFontSize !== undefined) setTextFontSize(json.textFontSize);
+      if (json.lineHeight !== undefined) setLineHeight(json.lineHeight);
+      if (json.letterSpacing !== undefined) setLetterSpacing(json.letterSpacing);
+      if (json.blockSpacing !== undefined) setBlockSpacing(json.blockSpacing);
+      if (json.contentPadding !== undefined) setContentPadding(json.contentPadding);
+      if (json.avatarSizeValue !== undefined) setAvatarSizeValue(json.avatarSizeValue);
       if (json.fontFamily) setFontFamily(json.fontFamily);
       if (json.theme) setTheme(json.theme);
       if (json.filterBarMode !== undefined) setFilterBarMode(json.filterBarMode);
+      if (json.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(json.enableSentenceSpacing);
       if (json.disableOtherColor !== undefined) setDisableOtherColor(json.disableOtherColor);
       
       if (json.insertedBlocks) {
@@ -860,6 +1044,7 @@ export default function App() {
       if (json.showTabNames) setShowTabNames(new Set(json.showTabNames));
       if (json.mergeTabStyles) setMergeTabStyles(new Set(json.mergeTabStyles));
       if (json.hideEmptyAvatars !== undefined) setHideEmptyAvatars(json.hideEmptyAvatars);
+      if (json.hideAllAvatars !== undefined) setHideAllAvatars(json.hideAllAvatars);
       if (json.narrationCharacter !== undefined) setNarrationCharacter(json.narrationCharacter);
 
       saveToHistory(json);
@@ -881,6 +1066,7 @@ export default function App() {
       data.charOrder = charOrder;
       data.narrationCharacter = narrationCharacter;
       data.hideEmptyAvatars = hideEmptyAvatars;
+      data.hideAllAvatars = hideAllAvatars;
     }
     
     if (saveOptions.tabs) {
@@ -895,9 +1081,16 @@ export default function App() {
     if (saveOptions.design) {
       data.cssFormat = cssFormat;
       data.fontSize = fontSize;
+      data.textFontSize = textFontSize;
+      data.lineHeight = lineHeight;
+      data.letterSpacing = letterSpacing;
+      data.blockSpacing = blockSpacing;
+      data.contentPadding = contentPadding;
+      data.avatarSizeValue = avatarSizeValue;
       data.fontFamily = fontFamily;
       data.theme = theme;
       data.filterBarMode = filterBarMode;
+      data.enableSentenceSpacing = enableSentenceSpacing;
     }
     
     if (saveOptions.splits || saveOptions.images) {
@@ -1086,6 +1279,32 @@ export default function App() {
     return { displayItems: items, searchMatchIndices: indices };
   }, [mergedLogs, searchQuery]);
 
+  const displayItemsNameWidth = useMemo(() => {
+    if (!hideAllAvatars) return 120;
+    if (typeof document === 'undefined') return 120;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return 120;
+    
+    // font values
+    const fw = fonts.find(f => f.name === fontFamily)?.value || 'sans-serif';
+    const nameSizePixel = textFontSize * 0.96;
+    ctx.font = `bold ${nameSizePixel}px ${fw}`;
+    
+    let mw = 0;
+    for (const item of displayItems) {
+      const log = item.log;
+      if (log.charId !== narrationCharacter && !log.isContinuation) {
+         if (tabSettings[log.tabId]?.visible !== false && charSettings[log.charId]?.visible !== false) {
+           const w = ctx.measureText(log.name + ':').width;
+           if (w > mw) mw = w;
+         }
+      }
+    }
+    
+    return Math.min(Math.max(48, Math.ceil(mw + 8)), 120);
+  }, [displayItems, textFontSize, fontFamily, narrationCharacter, hideAllAvatars, tabSettings, charSettings]);
+
   useEffect(() => {
     if (searchQuery) {
       setCurrentMatchIndex(searchMatchIndices.length > 0 ? 0 : -1);
@@ -1248,13 +1467,20 @@ export default function App() {
       fontFamily,
       disableOtherColor,
       hideEmptyAvatars,
+      hideAllAvatars,
       narrationCharacter,
       enableSentenceSpacing,
       insertedBlocks,
       mergeTabStyles,
       showTabNames,
       pageTitle,
-      selectedFont.value
+      selectedFont.value,
+      textFontSize,
+      lineHeight,
+      letterSpacing,
+      blockSpacing,
+      contentPadding,
+      avatarSizeValue
     );
   };
 
@@ -1303,13 +1529,20 @@ export default function App() {
         fontFamily,
         disableOtherColor,
         hideEmptyAvatars,
+        hideAllAvatars,
         narrationCharacter,
         enableSentenceSpacing,
         insertedBlocks,
         mergeTabStyles,
         showTabNames,
         pageTitle,
-        selectedFont.value
+        selectedFont.value,
+        textFontSize,
+        lineHeight,
+        letterSpacing,
+        blockSpacing,
+        contentPadding,
+        avatarSizeValue
       );
       
       const finalName = s.name ? `${fileName}_${s.name}` : `${fileName}_section_${i + 1}`;
@@ -1396,6 +1629,7 @@ export default function App() {
     <SettingsProvider settings={{
       theme,
       fontSize,
+      textFontSize,
       fontFamily,
       cssFormat,
       disableOtherColor,
@@ -1404,8 +1638,14 @@ export default function App() {
       charSettings,
       tabSettings,
       hideEmptyAvatars,
+      hideAllAvatars,
       narrationCharacter,
-      enableSentenceSpacing
+      enableSentenceSpacing,
+      lineHeight,
+      letterSpacing,
+      blockSpacing,
+      contentPadding,
+      avatarSizeValue
     }}>
       <div 
         className="flex flex-col md:flex-row h-[100dvh] bg-[#121212] font-sans text-stone-200 overflow-hidden relative"
@@ -1589,32 +1829,22 @@ export default function App() {
                     )}
                   </label>
                   <input type="file" id="main-log-upload" ref={fileInputRef} onChange={handleLogUpload} accept=".html" className="hidden" />
-                  <p className="px-1 pt-1 text-[9px] text-white/40 leading-tight flex items-center gap-1">
-                    <Info className="w-3 h-3 shrink-0" />
-                    <span><a href="https://lispcoc.github.io/ccfolia_log_getter/" target="_blank" rel="noopener noreferrer" className="text-[#e6005c] hover:underline">CCFOLIA Log Getter</a> 추출 파일을 지원합니다.</span>
-                  </p>
                 </Section>
 
                 <Section>
                   <SectionTitle 
                     icon={Palette} 
-                    title={
-                      <div className="flex items-center gap-2">
-                        <span>프로젝트 관리</span>
-                        <Tooltip position="right" content={
-                          <>
-                            <p className="mb-2">
-                              섹션 분할, 삽화, 탭, 캐릭터 설정 등 현재의 모든 편집 데이터를 JSON 파일로 내보냅니다. 원본 로그를 업로드한 상태에서 이 파일을 불러오면 이전 작업 상태를 그대로 복원합니다.
-                            </p>
-                            <p className="text-[#e6005c] font-medium">
-                              프로젝트 파일은 편집 정보만 포함하므로, 원본 로그 파일이 없으면 복원되지 않습니다.
-                            </p>
-                          </>
-                        }>
-                          <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
-                        </Tooltip>
+                    title="프로젝트 관리"
+                    tooltip={
+                      <div className="text-[11px] leading-relaxed w-[220px] text-left">
+                        <p className="mb-2">
+                          섹션 분할, 삽화, 탭, 캐릭터 설정 등 현재의 모든 편집 데이터를 JSON 파일로 내보냅니다. 원본 로그를 업로드한 상태에서 이 파일을 불러오면 이전 작업 상태를 그대로 복원합니다.
+                        </p>
+                        <p className="text-[#e6005c] font-medium">
+                          프로젝트 파일은 편집 정보만 포함하므로, 원본 로그 파일이 없으면 복원되지 않습니다.
+                        </p>
                       </div>
-                    } 
+                    }
                   />
                   <div 
                     onClick={() => {
@@ -1777,7 +2007,7 @@ export default function App() {
                 </Section>
 
                 <Section>
-                  <SectionTitle icon={Settings} title="개별 탭 출력 설정" />
+                  <SectionTitle icon={Settings} title="개별 탭 출력 설정" tooltip={<div className="text-[11px] leading-relaxed w-[210px] text-left">Alt 키를 누른 채로 클릭하면 해당 항목만 남기고 모두 숨길 수 있습니다.</div>} />
                   <div className="space-y-2">
                   {tabOrder.length > 0 ? (
                     tabOrder.map(tabId => {
@@ -1905,13 +2135,24 @@ export default function App() {
               >
                 <Section>
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11">
-                      <span className="text-[11px] font-bold text-white/70">이미지 배경 상자 숨김</span>
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
+                      <span className="text-[11px] font-bold text-white/70">이미지 배경 숨김</span>
                       <Toggle 
                         enabled={hideEmptyAvatars} 
                         onChange={(val) => {
                           setHideEmptyAvatars(val);
                           saveToHistory({ hideEmptyAvatars: val });
+                        }} 
+                      />
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
+                      <span className="text-[11px] font-bold text-white/70">캐릭터 이미지 숨김</span>
+                      <Toggle 
+                        enabled={hideAllAvatars} 
+                        onChange={(val) => {
+                          setHideAllAvatars(val);
+                          saveToHistory({ hideAllAvatars: val });
                         }} 
                       />
                     </div>
@@ -1985,25 +2226,17 @@ export default function App() {
                 </Section>
 
                 <Section>
-                  <div className="flex items-center justify-between">
-                    <SectionTitle 
-                      icon={Users} 
-                      title={
-                        <div className="flex items-center gap-1.5">
-                          캐릭터 보관함
-                          <Tooltip content={
-                            <div className="text-[11px] leading-relaxed w-[240px]">
-                              이름이 일치하는 캐릭터에게 등록된 이미지 URL과 지정색을 적용합니다.<br/><br/>
-                              {`">"`} 버튼의 목록에서 캐릭터를 선택하면 해당 인물의 설정만 즉시 적용됩니다.<br/><br/>
-                              <span className="text-[#e6005c]">모든 데이터는 서버가 아니고 현재 브라우저(로컬 스토리지)에만 보관됩니다. 캐시를 지우거나 시크릿 모드를 사용하면 등록된 정보가 삭제됩니다.</span>
-                            </div>
-                          } position="right">
-                            <HelpCircle className="w-3.5 h-3.5 text-white/30 hover:text-white/60 transition-colors cursor-help" />
-                          </Tooltip>
-                        </div>
-                      } 
-                    />
-                  </div>
+                  <SectionTitle 
+                    icon={Users} 
+                    title="캐릭터 보관함"
+                    tooltip={
+                      <div className="text-[11px] leading-relaxed w-[220px] text-left">
+                        이름이 일치하는 캐릭터에게 등록된 이미지 URL과 지정색을 적용합니다.<br/><br/>
+                        {`">"`} 버튼의 목록에서 캐릭터를 선택하면 해당 인물의 설정만 즉시 적용됩니다.<br/><br/>
+                        <span className="text-[#e6005c]">모든 데이터는 서버가 아니고 현재 브라우저(로컬 스토리지)에만 보관됩니다. 캐시를 지우거나 시크릿 모드를 사용하면 등록된 정보가 삭제됩니다.</span>
+                      </div>
+                    }
+                  />
                   <div className="bg-white/5 border border-white/5 rounded-xl shadow-sm">
                     <button
                       onClick={() => setIsLibraryAccordionOpen(!isLibraryAccordionOpen)}
@@ -2304,8 +2537,9 @@ export default function App() {
                   <SectionTitle 
                     icon={List} 
                     title="발언자 목록" 
+                    tooltip={<div className="text-[11px] leading-relaxed w-[210px] text-left">Alt 키를 누른 채로 클릭하면 해당 항목만 남기고 모두 숨길 수 있습니다.</div>}
                     rightElement={
-                      <div className="flex items-center gap-2 mt-[-4px]">
+                      <div className="flex items-center gap-2">
                         <button 
                           onClick={() => setIsBulkJsonModalOpen(true)}
                           className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
@@ -2562,48 +2796,82 @@ export default function App() {
                 </Section>
 
                 <Section>
-                  <SectionTitle 
-                    icon={Scaling} 
-                    title="전체 크기 조절"
-                    rightElement={
-                      isEditingFontSize ? (
-                        <input 
-                          type="number"
-                          value={fontSize}
-                          autoFocus
-                          onBlur={() => setIsEditingFontSize(false)}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 12;
-                            setFontSize(val);
-                            saveToHistory({ charSettings, tabSettings, cssFormat, fontSize: val, fontFamily, theme, disableOtherColor });
-                          }}
-                          className="w-12 text-right text-xs font-bold text-[#e6005c] bg-pink-500/10 border border-pink-500/20 rounded px-1 outline-none"
-                        />
-                      ) : (
-                        <span 
-                          onClick={() => setIsEditingFontSize(true)}
-                          className="text-xs font-bold text-[#e6005c] cursor-pointer hover:underline"
-                        >
-                          {fontSize}px
-                        </span>
-                      )
-                    }
-                  />
                   <div className="pt-0.5 pb-2">
-                    <input 
-                      type="range" 
-                      min="10" 
-                      max="30" 
-                      step="1"
-                      value={fontSize} 
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        setFontSize(val);
-                        saveToHistory({ charSettings, tabSettings, cssFormat, fontSize: val, fontFamily, theme, disableOtherColor });
-                      }}
-                      className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#e6005c]"
+                    <NumberAdjuster 
+                      label="전체 크기 조절" min={10} max={30} step={1} value={fontSize} unit="px" highlightDefault={14} hideReset icon={Scaling}
+                      isSubHeader={false}
+                      tooltip={<div className="text-[11px] leading-relaxed w-[170px] text-left">슬라이더 범위를 벗어나는 수치는 직접 입력해주세요.</div>}
+                      rightElement={
+                        <button
+                          onClick={() => setIsAdvancedLayoutOpen(!isAdvancedLayoutOpen)}
+                          className="flex items-center gap-1.5 ml-2 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
+                        >
+                          <Settings2 className="w-3 h-3" />
+                          {isAdvancedLayoutOpen ? '설정 닫기' : '상세 설정'}
+                        </button>
+                      }
+                      onChange={(val) => { setFontSize(val); }} onSave={(val) => { saveToHistory({ fontSize: val }); }}
                     />
                   </div>
+                  {isAdvancedLayoutOpen && (
+                    <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200 mt-2">
+                      <div className="flex items-center bg-black/20 p-0.5 rounded-lg border border-white/5 gap-0.75 shrink-0">
+                        <button 
+                          onClick={() => {
+                            setLineHeight(1.5); setContentPadding(15); setBlockSpacing(-12); setAvatarSizeValue(42); setLetterSpacing(0);
+                            saveToHistory({ lineHeight: 1.5, contentPadding: 15, blockSpacing: -12, avatarSizeValue: 42, letterSpacing: 0 });
+                          }}
+                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (lineHeight === 1.5 && contentPadding === 15 && blockSpacing === -12 && avatarSizeValue === 42 && letterSpacing === 0) ? "bg-white/15 text-white shadow-sm" : "text-white/30 hover:text-white/60")}
+                        >좁게</button>
+                        <button 
+                          onClick={() => {
+                            setTextFontSize(14); setLineHeight(1.6); setLetterSpacing(0); setBlockSpacing(2); setContentPadding(12);
+                            saveToHistory({ textFontSize: 14, lineHeight: 1.6, letterSpacing: 0, blockSpacing: 2, contentPadding: 12 });
+                          }}
+                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (textFontSize === 14 && lineHeight === 1.6 && letterSpacing === 0 && blockSpacing === 2 && contentPadding === 12) ? "bg-white/15 text-white shadow-sm" : "text-white/30 hover:text-white/60")}
+                        >
+                          기본
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setTextFontSize(14); setLineHeight(2.0); setLetterSpacing(0); setBlockSpacing(6); setContentPadding(20);
+                            saveToHistory({ textFontSize: 14, lineHeight: 2.0, letterSpacing: 0, blockSpacing: 6, contentPadding: 20 });
+                          }}
+                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (textFontSize === 14 && lineHeight === 2.0 && letterSpacing === 0 && blockSpacing === 6 && contentPadding === 20) ? "bg-white/15 text-white shadow-sm" : "text-white/30 hover:text-white/60")}
+                        >넓게</button>
+                      </div>
+                      
+                      <NumberAdjuster 
+                        label="글자 크기" min={10} max={18} step={1} value={textFontSize} unit="px" highlightDefault={14} icon={Type}
+                        onChange={(val) => { setTextFontSize(val); }} onSave={(val) => { saveToHistory({ textFontSize: val }); }}
+                      />
+
+                      <NumberAdjuster 
+                        label="이미지 크기" min={30} max={80} step={1} value={avatarSizeValue} unit="px" highlightDefault={46} icon={User}
+                        onChange={(val) => { setAvatarSizeValue(val); }} onSave={(val) => { saveToHistory({ avatarSizeValue: val }); }}
+                      />
+                      
+                      <NumberAdjuster 
+                        label="자간" min={-1.5} max={1.5} step={0.1} value={letterSpacing} unit="px" highlightDefault={0} icon={UnfoldHorizontal}
+                        onChange={(val) => { setLetterSpacing(val); }} onSave={(val) => { saveToHistory({ letterSpacing: val }); }}
+                      />
+
+                      <NumberAdjuster 
+                        label="줄간격" min={1} max={3} step={0.1} value={lineHeight} highlightDefault={1.6} icon={UnfoldVertical}
+                        onChange={(val) => { setLineHeight(val); }} onSave={(val) => { saveToHistory({ lineHeight: val }); }}
+                      />
+
+                      <NumberAdjuster 
+                        label="블록 간격" min={-20} max={30} step={2} value={blockSpacing} unit="px" highlightDefault={2} icon={MoveVertical}
+                        onChange={(val) => { setBlockSpacing(val); }} onSave={(val) => { saveToHistory({ blockSpacing: val }); }}
+                      />
+
+                      <NumberAdjuster 
+                        label="좌우 여백" min={0} max={40} step={0.5} value={contentPadding} unit="px" highlightDefault={12} icon={MoveHorizontal}
+                        onChange={(val) => { setContentPadding(val); }} onSave={(val) => { saveToHistory({ contentPadding: val }); }}
+                      />
+                    </div>
+                  )}
                 </Section>
 
                 <Section>
@@ -2653,7 +2921,7 @@ export default function App() {
                   
                   <div className="grid grid-cols-2 gap-2">
                     <Tooltip position="bottom" className="text-center" content={
-                      <>HTML 상단에 스타일 시트를 포함합니다. <span className="text-[#e6005c] font-medium">(권장)</span></>
+                      <>스타일 코드를 상단에 배치해 코드 단축 <span className="text-[#e6005c] font-medium">(권장)</span></>
                     }>
                       <button 
                         onClick={() => { setCssFormat('internal'); saveToHistory({ charSettings, tabSettings, cssFormat: 'internal', fontSize, fontFamily, theme, disableOtherColor }); }}
@@ -2667,7 +2935,7 @@ export default function App() {
                       </button>
                     </Tooltip>
                     <Tooltip position="bottom" className="text-center" content={
-                      <>각 태그에 직접 스타일을 부여합니다.<br />(티스토리 기본 스킨 사용 시 권장)</>
+                      <>티스토리 기본 스킨/모바일 모드 사용 시 권장</>
                     }>
                       <button 
                         onClick={() => { setCssFormat('inline'); saveToHistory({ charSettings, tabSettings, cssFormat: 'inline', fontSize, fontFamily, theme, disableOtherColor }); }}
@@ -2742,19 +3010,19 @@ export default function App() {
                 )}>설정 기억하기</span>
               </label>
               <Tooltip position="top" content={
-                <>
+                <div className="text-[11px] leading-relaxed w-[220px] text-left">
                   <p className="mb-2">
                     변경되는 설정을 브라우저에 자동 저장합니다. 모든 데이터는 서버 전송 없이 개인 기기에만 보관됩니다. <span className="text-white/30 text-[9px]">(브라우저 캐시 삭제 시 초기화)</span>
                   </p>
                   <p className="text-[#e6005c] font-medium">
                     토글을 끄면 저장된 데이터가 삭제되며, 새로고침 시 기본 설정으로 돌아갑니다.
                   </p>
-                </>
+                </div>
               }>
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.4.0</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.4.3</span>
           </div>
         </div>
       </aside>
@@ -3104,6 +3372,7 @@ export default function App() {
             "flex-1 overflow-y-auto custom-scrollbar relative min-w-0 transition-colors",
             theme === 'dark' ? "bg-[#252525]" : "bg-stone-50"
           )}
+          style={{ '--name-col-width': `${displayItemsNameWidth}px` } as React.CSSProperties}
         >
           <div className="w-full min-w-0 min-h-full flex flex-col">
             {logs.length > 0 ? (

@@ -4,6 +4,7 @@ import { CharSetting, TabSetting } from '../types';
 export type SettingsContextType = {
   theme: 'light' | 'dark';
   fontSize: number;
+  textFontSize: number;
   fontFamily: string;
   cssFormat: 'inline' | 'class';
   disableOtherColor: boolean;
@@ -12,8 +13,14 @@ export type SettingsContextType = {
   charSettings: Record<string, CharSetting>;
   tabSettings: Record<string, TabSetting>;
   hideEmptyAvatars: boolean;
+  hideAllAvatars: boolean;
   narrationCharacter: string | null;
   enableSentenceSpacing: boolean;
+  lineHeight: number;
+  letterSpacing: number;
+  blockSpacing: number;
+  contentPadding: number;
+  avatarSizeValue: number;
 };
 
 export const SettingsContext = createContext<SettingsContextType | null>(null);
@@ -35,6 +42,7 @@ export const SettingsProvider: React.FC<{
   const value = useMemo(() => settings, [
     settings.theme,
     settings.fontSize,
+    settings.textFontSize,
     settings.fontFamily,
     settings.cssFormat,
     settings.disableOtherColor,
@@ -43,8 +51,14 @@ export const SettingsProvider: React.FC<{
     settings.charSettings,
     settings.tabSettings,
     settings.hideEmptyAvatars,
+    settings.hideAllAvatars,
     settings.narrationCharacter,
-    settings.enableSentenceSpacing
+    settings.enableSentenceSpacing,
+    settings.lineHeight,
+    settings.letterSpacing,
+    settings.blockSpacing,
+    settings.contentPadding,
+    settings.avatarSizeValue
   ]);
   
   return (
