@@ -30,9 +30,9 @@ body {
 /* Boundary Editor Updates */
 .boundary-wrapper {
   position: relative;
-  width: 100%;
+  width: calc(100% - 80px);
   height: 20px;
-  margin: -10px 0;
+  margin: -10px auto -10px 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -46,6 +46,7 @@ body {
   top: -12px;
   left: 0;
   margin: 0;
+  width: calc(100% - 80px);
   height: 24px;
 }
 
@@ -57,7 +58,7 @@ body {
 .boundary-line {
   position: absolute;
   left: 20px;
-  right: 20px;
+  right: -60px;
   height: 2px;
   background-color: rgba(230, 0, 92, 0.4);
   border-radius: 999px;
@@ -68,11 +69,12 @@ body {
 .boundary-wrapper:hover .boundary-line {
   background-color: rgba(230, 0, 92, 0.8);
   left: 0;
-  right: 0;
+  right: -80px;
 }
 
 .boundary-content {
   position: relative;
+  left: 40px;
   display: flex;
   gap: 6px;
   padding: 0 12px;

@@ -17,6 +17,7 @@ export const SectionNameEditor = ({ initialName, defaultName, onSave }: { initia
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
             if (e.key === 'Enter') {
               onSave(value);
               setIsEditing(false);

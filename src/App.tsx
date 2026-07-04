@@ -67,6 +67,7 @@ import { cn, r, rgbToHex } from './utils';
 import { extractOldFormat, InsertedBlock, migrateToInsertedBlocks } from './utils/migration';
 import { Toggle } from './components/Toggle';
 import { LogItem } from './components/LogItem';
+import { SearchableSelect } from './components/SearchableSelect';
 import { SectionNameEditor } from './components/SectionNameEditor';
 import { CharacterNameWithTooltip, ColorPickerPopup } from './components/ColorPickerPopup';
 import { generateFinalHtmlStr } from './utils/htmlGenerator';
@@ -172,7 +173,10 @@ const NumberAdjuster = ({
                 value={tempVal} 
                 onChange={e => setTempVal(e.target.value)}
                 onBlur={handleBlur}
-                onKeyDown={e => { if(e.key === 'Enter') e.currentTarget.blur(); }}
+                onKeyDown={e => {
+                  if (e.nativeEvent.isComposing) return;
+                  if(e.key === 'Enter') e.currentTarget.blur();
+                }}
                 className="w-9 text-center text-[10px] font-bold py-0.5 bg-black/40 border border-white/20 rounded outline-none"
                 style={{ color: highlightColor }}
               />
@@ -430,144 +434,7 @@ const PortalDropdown = ({ isOpen, onClose, triggerRef, children, position = 'bot
   );
 };
 
-const SearchableSelect = ({ 
-  value, 
-  onChange, 
-  options,
-  placeholder = "(선택 안 됨)"
-}: { 
-  value: string; 
-  onChange: (value: string) => void; 
-  options: { label: string; value: string }[];
-  placeholder?: string;
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const selectedOption = options.find(opt => opt.value === value);
-  const displayValue = isOpen ? searchTerm : (selectedOption ? selectedOption.label : '');
-
-  const filteredOptions = [
-    ...options.filter(opt => 
-      opt.label.toLowerCase().includes(searchTerm.toLowerCase())
-    ),
-    { label: placeholder, value: '' }
-  ];
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!isOpen) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
-        setIsOpen(true);
-      }
-      return;
-    }
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setHighlightedIndex(prev => 
-          prev < filteredOptions.length - 1 ? prev + 1 : prev
-        );
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setHighlightedIndex(prev => prev > 0 ? prev - 1 : 0);
-        break;
-      case 'Enter':
-        e.preventDefault();
-        if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
-          onChange(filteredOptions[highlightedIndex].value);
-          setIsOpen(false);
-          inputRef.current?.blur();
-        }
-        break;
-      case 'Escape':
-        e.preventDefault();
-        setIsOpen(false);
-        inputRef.current?.blur();
-        break;
-    }
-  };
-
-  useEffect(() => {
-    setHighlightedIndex(0); // Reset highlight when search changes
-  }, [searchTerm]);
-
-  // Handle scrolling of highlighted item
-  const listboxRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (isOpen && listboxRef.current && highlightedIndex >= 0) {
-      const highlightedEl = listboxRef.current.children[highlightedIndex] as HTMLElement;
-      if (highlightedEl) {
-        highlightedEl.scrollIntoView({ block: 'nearest' });
-      }
-    }
-  }, [highlightedIndex, isOpen]);
-
-  return (
-    <div ref={wrapperRef} className="relative w-full">
-      <div className="relative">
-        <input
-          ref={inputRef}
-          type="text"
-          value={displayValue}
-          onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setIsOpen(true);
-          }}
-          onFocus={() => {
-            setSearchTerm('');
-            setIsOpen(true);
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          className="w-full text-[10px] px-2 py-1.5 pr-6 bg-black/40 border border-white/10 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors placeholder:text-white/30"
-        />
-        <ChevronDown className={cn("w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none transition-transform", isOpen && "rotate-180")} />
-      </div>
-      {isOpen && (
-        <div 
-          ref={listboxRef}
-          className="absolute z-50 w-full mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl max-h-32 overflow-y-auto custom-scrollbar"
-        >
-          {filteredOptions.map((opt, idx) => (
-            <div
-              key={opt.value}
-              className={cn(
-                "px-2 py-1.5 text-[10px] cursor-pointer truncate transition-colors",
-                idx === highlightedIndex ? "bg-white/10 text-white" : "text-white/80 hover:bg-[#e6005c] hover:text-white",
-                opt.value === '' && "text-white/50" // Placeholder styling
-              )}
-              onMouseEnter={() => setHighlightedIndex(idx)}
-              onClick={() => {
-                onChange(opt.value);
-                setIsOpen(false);
-              }}
-            >
-              {opt.label}
-            </div>
-          ))}
-          {filteredOptions.length === 0 && (
-            <div className="px-2 py-1.5 text-[10px] text-white/40">결과 없음</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
 
 export default function App() {
   const [isBulkImgurModalOpen, setIsBulkImgurModalOpen] = useState(false);
@@ -617,6 +484,7 @@ export default function App() {
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
   const [newNameInput, setNewNameInput] = useState('');
   const [newTabNameInput, setNewTabNameInput] = useState('');
+  const [newCharName, setNewCharName] = useState('');
   const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
   const [colorPickerRect, setColorPickerRect] = useState<DOMRect | null>(null);
   const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'settings'>('files');
@@ -724,6 +592,7 @@ export default function App() {
   const [enableSentenceSpacing, setEnableSentenceSpacing] = useLocalStorage<boolean>('ccfolia_enableSentenceSpacing', false, undefined, undefined, rememberSettings);
   const [narrationCharacter, setNarrationCharacter] = useLocalStorage<string | null>('ccfolia_narrationCharacter', null, undefined, undefined, rememberSettings);
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [listOffset, setListOffset] = useState(0);
@@ -1621,6 +1490,80 @@ export default function App() {
     });
   }, [charOrder, charSortMode, charSettings]);
 
+  const addCustomCharacter = (customName?: string) => {
+    const newId = `custom_${Date.now()}`;
+    
+    // Find unique name like "새 캐릭터", "새 캐릭터 (1)", "새 캐릭터 (2)"...
+    let baseName = customName?.trim() || "새 캐릭터";
+    let newName = baseName;
+    let counter = 1;
+    const existingNames = Object.values(charSettings).map(c => (c as CharSetting).name);
+    while (existingNames.includes(newName)) {
+      newName = `${baseName} (${counter})`;
+      counter++;
+    }
+
+    const newChar: CharSetting = {
+      id: newId,
+      name: newName,
+      color: '#9E9E9E',
+      visible: true,
+      imageUrl: ''
+    };
+    const nextCharSettings = { ...charSettings, [newId]: newChar };
+    const nextCharOrder = [newId, ...charOrder];
+
+    setCharSettings(nextCharSettings);
+    setCharOrder(nextCharOrder);
+    saveToHistory({ charSettings: nextCharSettings, charOrder: nextCharOrder });
+  };
+
+  const onChangeSpeaker = useCallback((logId: string, newCharId: string) => {
+    const newChar = charSettings[newCharId];
+    if (!newChar) return;
+
+    if (logId.startsWith('merged:')) {
+      const ids = logId.replace('merged:', '').split(',');
+      const firstId = ids[0];
+      const otherIds = ids.slice(1);
+
+      const next = logs.filter(l => !otherIds.includes(l.id)).map(l => 
+        l.id === firstId ? { ...l, charId: newChar.id, name: newChar.name, color: newChar.color } : l
+      );
+      setLogs(next);
+      saveToHistory({ logs: next });
+    } else {
+      const next = logs.map(l => 
+        l.id === logId ? { ...l, charId: newChar.id, name: newChar.name, color: newChar.color } : l
+      );
+      setLogs(next);
+      saveToHistory({ logs: next });
+    }
+  }, [logs, charSettings, saveToHistory]);
+
+  const onChangeTab = useCallback((logId: string, newTabId: string) => {
+    const newTab = tabSettings[newTabId];
+    if (!newTab) return;
+
+    if (logId.startsWith('merged:')) {
+      const ids = logId.replace('merged:', '').split(',');
+      const firstId = ids[0];
+      const otherIds = ids.slice(1);
+
+      const next = logs.filter(l => !otherIds.includes(l.id)).map(l => 
+        l.id === firstId ? { ...l, tabId: newTab.id, tab: newTab.name } : l
+      );
+      setLogs(next);
+      saveToHistory({ logs: next });
+    } else {
+      const next = logs.map(l => 
+        l.id === logId ? { ...l, tabId: newTab.id, tab: newTab.name } : l
+      );
+      setLogs(next);
+      saveToHistory({ logs: next });
+    }
+  }, [logs, tabSettings, saveToHistory]);
+
   const onEditLog = useCallback((id: string, content: string) => {
     if (id.startsWith('merged:')) {
       const ids = id.replace('merged:', '').split(',');
@@ -1666,6 +1609,41 @@ export default function App() {
       });
     }
   }, [logs, mergedLogs, insertedBlocks, saveToHistory]);
+
+  const insertLogBlock = useCallback((afterLogId: string, insertBefore: boolean = false) => {
+    const lastId = afterLogId.startsWith('merged:')
+      ? afterLogId.replace('merged:', '').split(',').pop()!
+      : afterLogId;
+
+    const targetIndex = logs.findIndex(l => l.id === lastId);
+    if (targetIndex === -1) return;
+
+    const referenceLog = logs[targetIndex];
+    const newLogId = `log_${Date.now()}`;
+    const newLog: LogEntry = {
+      id: newLogId,
+      charId: referenceLog.charId,
+      name: referenceLog.name,
+      color: referenceLog.color,
+      tabId: referenceLog.tabId,
+      tab: referenceLog.tab,
+      content: "",
+      isCommand: false,
+      isHiddenContent: false,
+      isContinuation: false,
+      sectionId: referenceLog.sectionId,
+    };
+
+    const nextLogs = [...logs];
+    if (insertBefore) {
+      nextLogs.splice(targetIndex, 0, newLog);
+    } else {
+      nextLogs.splice(targetIndex + 1, 0, newLog);
+    }
+    setLogs(nextLogs);
+    saveToHistory({ logs: nextLogs });
+    setEditingLogId(newLogId);
+  }, [logs, saveToHistory]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -2233,6 +2211,7 @@ export default function App() {
                                 onChange={(e) => setNewTabNameInput(e.target.value)}
                                 onBlur={() => renameTab(tab.id, newTabNameInput)}
                                 onKeyDown={(e) => {
+                                  if (e.nativeEvent.isComposing) return;
                                   if (e.key === 'Enter') renameTab(tab.id, newTabNameInput);
                                   if (e.key === 'Escape') setRenamingTab(null);
                                 }}
@@ -2543,6 +2522,7 @@ export default function App() {
                                             value={libraryNameInput}
                                             onChange={e => setLibraryNameInput(e.target.value)}
                                             onKeyDown={e => {
+                                               if (e.nativeEvent.isComposing) return;
                                                if (e.key === 'Enter') {
                                                    setCharacterLibrary(prev => prev.map(l => l.id === lib.id ? {...l, name: libraryNameInput} : l));
                                                    setRenamingLibraryId(null);
@@ -2735,7 +2715,29 @@ export default function App() {
                           이미지 일괄 등록
                         </button>
                         <button 
-                          onClick={() => setCharSortMode(charSortMode === 'appearance' ? 'alphabetical' : 'appearance')}
+                          onClick={() => {
+                            if (charSortMode === 'appearance') {
+                              setCharSortMode('alphabetical');
+                            } else {
+                              const allCharIds = Object.keys(charSettings);
+                              const seen = new Set<string>();
+                              const newOrder: string[] = [];
+                              logs.forEach(log => {
+                                if (log.charId && allCharIds.includes(log.charId) && !seen.has(log.charId)) {
+                                  seen.add(log.charId);
+                                  newOrder.push(log.charId);
+                                }
+                              });
+                              allCharIds.forEach(id => {
+                                if (!seen.has(id)) {
+                                  newOrder.push(id);
+                                }
+                              });
+                              setCharOrder(newOrder);
+                              setCharSortMode('appearance');
+                              saveToHistory({ charOrder: newOrder, charSortMode: 'appearance' });
+                            }
+                          }}
                           className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
                         >
                           <ArrowUpDown className="w-3 h-3" />
@@ -2744,6 +2746,41 @@ export default function App() {
                       </div>
                     }
                   />
+                  <div className="mb-3 flex gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="추가할 캐릭터 이름 입력..."
+                      value={newCharName}
+                      onChange={(e) => setNewCharName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing) return;
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (newCharName.trim()) {
+                            addCustomCharacter(newCharName);
+                            setNewCharName('');
+                          } else {
+                            addCustomCharacter();
+                          }
+                        }
+                      }}
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-[10px] text-white placeholder:text-white/30 outline-none focus:border-[#e6005c] transition-colors"
+                    />
+                    <button
+                      onClick={() => {
+                        if (newCharName.trim()) {
+                          addCustomCharacter(newCharName);
+                          setNewCharName('');
+                        } else {
+                          addCustomCharacter();
+                        }
+                      }}
+                      className="shrink-0 flex items-center justify-center gap-1 px-3 bg-[#e6005c] hover:bg-[#ff0066] rounded-xl transition-all text-white text-[10px] font-bold shadow-sm"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      추가
+                    </button>
+                  </div>
                   {sortedCharOrder.length > 0 ? (
                     <div className="space-y-2">
                     {sortedCharOrder.map(charId => {
@@ -2782,6 +2819,7 @@ export default function App() {
                                 value={newNameInput}
                                 onChange={(e) => setNewNameInput(e.target.value)}
                                 onKeyDown={(e) => {
+                                  if (e.nativeEvent.isComposing) return;
                                   if (e.key === 'Enter') renameCharacter(char.id, newNameInput);
                                   if (e.key === 'Escape') setRenamingChar(null);
                                 }}
@@ -3209,7 +3247,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.5.0</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.6.1</span>
           </div>
         </div>
       </aside>
@@ -3249,6 +3287,7 @@ export default function App() {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing) return;
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           if (e.shiftKey) {
@@ -3318,6 +3357,7 @@ export default function App() {
                     value={tempTitle}
                     onChange={(e) => setTempTitle(e.target.value)}
                     onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
                       if (e.key === 'Enter') {
                         setPageTitle(tempTitle);
                         saveToHistory({ pageTitle: tempTitle });
@@ -3611,26 +3651,10 @@ export default function App() {
                       @import url('https://hangeul.pstatic.net/hangeul_static/css/nanum-gothic-coding.css');
                       .log-item-wrapper { 
                         position: relative; 
-                        border-bottom: 1px solid transparent;
-                        transition: border-color 0.2s;
+                        transition: background-color 0s;
                       }
-                      .log-item-wrapper:hover {
-                        border-bottom: 1px dotted ${theme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'};
-                      }
-                      .log-item-wrapper:hover .block-number { opacity: 1; }
-                      .block-number { 
-                        position: absolute; 
-                        right: 12px; 
-                        top: 8px; 
-                        font-size: 10px; 
-                        font-weight: bold; 
-                        color: ${theme === 'dark' ? '#666' : '#CCC'}; 
-                        opacity: 0; 
-                        transition: opacity 0.2s;
-                        pointer-events: none;
-                        z-index: 10;
-                        padding: 2px 6px;
-                        font-family: sans-serif !important;
+                      .log-item-wrapper:hover, .log-item-wrapper.is-editing {
+                        background-color: ${theme === 'dark' ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.055)'};
                       }
                       .section-name-input {
                         background: transparent;
@@ -3740,6 +3764,11 @@ export default function App() {
                               onToggleImageInput={onToggleImageInput}
                               onEditLog={onEditLog}
                               onDeleteLog={onDeleteLog}
+                              insertLogBlock={insertLogBlock}
+                              onChangeSpeaker={onChangeSpeaker}
+                              onChangeTab={onChangeTab}
+                              charSettings={charSettings}
+                              tabOrder={tabOrder}
                               mergedLogsCount={mergedLogs.length}
                               isPrevSameTab={isPrevSameTab}
                               isNextSameTab={isNextSameTab}
@@ -3747,6 +3776,8 @@ export default function App() {
                               isPrevBlock={idx > 0 && !!insertedBlocks[mergedLogs[idx - 1].id.startsWith('merged:') ? mergedLogs[idx - 1].id.split(',').pop()! : mergedLogs[idx - 1].id]?.length}
                               isPrevNarration={isPrevNarration}
                               isNextNarration={isNextNarration}
+                              editingLogId={editingLogId}
+                              setEditingLogId={setEditingLogId}
                             />
                           </div>
                         );

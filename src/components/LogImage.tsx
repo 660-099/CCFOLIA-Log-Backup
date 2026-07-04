@@ -70,7 +70,10 @@ export const LogImage = React.memo(({ url, width, align = 'center', onDelete, on
             value={widthInput}
             onChange={(e) => setWidthInput(e.target.value)}
             onBlur={() => onUpdateWidth(widthInput)}
-            onKeyDown={(e) => e.key === 'Enter' && onUpdateWidth(widthInput)}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === 'Enter') onUpdateWidth(widthInput);
+            }}
             placeholder="너비(px)"
             className="w-16 bg-transparent text-[10px] text-white px-2 py-1.5 outline-none placeholder:text-white/30"
           />

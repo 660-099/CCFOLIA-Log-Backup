@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import DOMPurify from 'dompurify';
 import { Pencil, Trash2, Plus, X, Image as ImageIcon } from 'lucide-react';
 import { cn, r, linkifyAndFormat } from '../utils';
@@ -8,6 +8,7 @@ import { SectionNameEditor } from './SectionNameEditor';
 import { BoundaryEditor } from './BoundaryEditor';
 import { useSettings } from '../contexts/SettingsContext';
 import { splitNarration } from '../utils/textTokenizer';
+import { SearchableSelect } from './SearchableSelect';
 
 export const LogItem = React.memo(({ 
   log, 
@@ -25,6 +26,11 @@ export const LogItem = React.memo(({
   onToggleImageInput,
   onEditLog,
   onDeleteLog,
+  insertLogBlock,
+  onChangeSpeaker,
+  onChangeTab,
+  charSettings: charSettingsFromProps,
+  tabOrder,
   splitPointsArray,
   isPrevSameTab,
   isNextSameTab,
@@ -32,15 +38,19 @@ export const LogItem = React.memo(({
   isPrevBlock,
   mergedLogsCount,
   isPrevNarration,
-  isNextNarration
+  isNextNarration,
+  editingLogId = null,
+  setEditingLogId
 }: any) => {
   const { 
     theme, disableOtherColor, fontSize, textFontSize,
     mergeTabStyles, showTabNames, hideEmptyAvatars, hideAllAvatars,
-    narrationCharacter, charSettings, tabSettings,
+    narrationCharacter, charSettings: charSettingsFromContext, tabSettings,
     enableSentenceSpacing,
     lineHeight = 1.6, letterSpacing = 0, blockSpacing = 2, contentPadding = 15.5, avatarSizeValue = 46
   } = useSettings();
+
+  const charSettings = charSettingsFromProps || charSettingsFromContext;
 
   let effectiveBlockSpacing = blockSpacing;
   let basePaddingVertical = 12;
@@ -52,19 +62,56 @@ export const LogItem = React.memo(({
   const tabSet = tabSettings[log.tabId];
   const char = charSettings[log.charId] || { id: log.charId, name: log.name, color: log.color, visible: true, imageUrl: '' };
 
-  const [isEditing, setIsEditing] = useState(false);
+  const isEditing = editingLogId === log.id;
   const [editContent, setEditContent] = useState(log.content.replace(/<br\s*\/?>/gi, '\n'));
+  const [editCharId, setEditCharId] = useState(log.charId);
+  const [editTabId, setEditTabId] = useState(log.tabId);
+  const [isHoveringButton, setIsHoveringButton] = useState(false);
+
+  useEffect(() => {
+    if (isEditing) {
+      setEditContent(log.content.replace(/<br\s*\/?>/gi, '\n'));
+      setEditCharId(log.charId);
+      setEditTabId(log.tabId);
+    }
+  }, [isEditing, log.id, log.content, log.charId, log.tabId]);
+
+  const handleCancel = () => {
+    if (!log.content || log.content.trim() === '') {
+      onDeleteLog(log.id);
+    }
+    setEditingLogId(null);
+  };
+
+  const handleConfirm = () => {
+    const trimmed = editContent.trim();
+    if (!trimmed) {
+      onDeleteLog(log.id);
+    } else {
+      onEditLog(log.id, editContent);
+      if (editCharId !== log.charId && onChangeSpeaker) {
+        onChangeSpeaker(log.id, editCharId);
+      }
+      if (editTabId !== log.tabId && onChangeTab) {
+        onChangeTab(log.id, editTabId);
+      }
+    }
+    setEditingLogId(null);
+  };
 
   // Define how blocks are rendered
   const renderBlocks = (blocks: any[], logId: string, isTopLevel: boolean = false) => {
+    const isLastLog = idx === mergedLogsCount - 1;
     return (
       <>
         <BoundaryEditor 
           id={logId}
           onToggleSplit={() => onAddBlock(logId, 0, 'split')}
           onInsertImage={() => onToggleImageInput(logId, 0)}
-          allowSplit={!isTopLevel}
+          onInsertLog={() => insertLogBlock(log.id, isTopLevel)}
+          allowSplit={!isTopLevel && !(isLastLog && blocks.length === 0)}
           isTopLevel={isTopLevel}
+          disabled={isHoveringButton}
         />
         {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === 0 && (
           <div className={cn(
@@ -77,6 +124,7 @@ export const LogItem = React.memo(({
                 placeholder="https://..." 
                 className={cn("flex-1 border rounded-lg px-3 py-2 text-[11px]", theme === 'dark' ? "bg-black/40 text-white" : "bg-white text-stone-900")}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
                   if (e.key === 'Enter') onAddBlock(logId, 0, 'image', { url: e.currentTarget.value });
                 }}
               />
@@ -139,7 +187,9 @@ export const LogItem = React.memo(({
               id={logId}
               onToggleSplit={() => onAddBlock(logId, i + 1, 'split')}
               onInsertImage={() => onToggleImageInput(logId, i + 1)}
-              allowSplit={true}
+              onInsertLog={() => insertLogBlock(log.id, isTopLevel)}
+              allowSplit={!(isLastLog && i === blocks.length - 1)}
+              disabled={isHoveringButton}
             />
             {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === i + 1 && (
               <div className={cn(
@@ -152,6 +202,7 @@ export const LogItem = React.memo(({
                     placeholder="https://..." 
                     className={cn("flex-1 border rounded-lg px-3 py-2 text-[11px]", theme === 'dark' ? "bg-black/40 text-white" : "bg-white text-stone-900")}
                     onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
                       if (e.key === 'Enter') onAddBlock(logId, i + 1, 'image', { url: e.currentTarget.value });
                     }}
                   />
@@ -175,7 +226,7 @@ export const LogItem = React.memo(({
 
   const format = tabSet?.format || 'main';
   const color = char.color || log.color;
-  const otherNameColor = disableOtherColor ? (theme === 'dark' ? '#AAAAAA' : '#444444') : color;
+  const otherNameColor = disableOtherColor ? (theme === 'dark' ? '#AAAAAA' : '#777777') : color;
   const img = char.imageUrl;
   const isSecret = format === 'secret';
   const tabColor = tabSet?.color || '#ffd400';
@@ -290,7 +341,8 @@ export const LogItem = React.memo(({
 
   return (
     <div className={cn(
-      "log-item-wrapper group/item relative transition-all duration-300",
+      "log-item-wrapper group/item relative min-h-[30px] flex flex-col justify-center",
+      isEditing && "is-editing",
       isHighlighted && searchQuery && (
         isCurrentMatch 
           ? (theme === 'dark' ? "bg-[#ff9900]/20" : "bg-[#ff9900]/10")
@@ -298,26 +350,46 @@ export const LogItem = React.memo(({
       )
     )}>
       {idx === 0 && renderBlocks(startBlocks, '__start__', true)}
-      <div className="absolute top-2 right-4 flex gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity z-20">
+      {!isEditing && (
+        <div 
+          onMouseEnter={() => setIsHoveringButton(true)}
+          onMouseLeave={() => setIsHoveringButton(false)}
+          className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
+        >
+          {!log.isHiddenContent && !log.isContinuation && (
+            <span className={cn(
+              "text-[10px] font-bold font-sans mr-1 select-none",
+              theme === 'dark' ? "text-stone-500" : "text-stone-400"
+            )}>
+              #{idx + 1}
+            </span>
+          )}
           <button 
-            onClick={() => { setIsEditing(true); setEditContent(log.content.replace(/<br\s*\/?>/gi, '\n')); }} 
-            className="p-1 bg-stone-800/80 text-white/60 hover:text-white rounded border border-white/10 shadow-lg backdrop-blur-sm"
+            onClick={() => { setEditingLogId(log.id); setEditContent(log.content.replace(/<br\s*\/?>/gi, '\n')); setEditCharId(log.charId); }} 
+            className={cn(
+              "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+              theme === 'dark' 
+                ? "bg-stone-800/80 text-white/60 hover:text-white border-white/10" 
+                : "bg-white/90 text-stone-600 hover:text-stone-900 border-stone-200"
+            )}
             title="수정"
           >
             <Pencil className="w-3 h-3" />
           </button>
           <button 
             onClick={() => onDeleteLog(log.id)} 
-            className="p-1 bg-stone-800/80 text-white/60 hover:text-red-400 rounded border border-white/10 shadow-lg backdrop-blur-sm"
+            className={cn(
+              "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+              theme === 'dark' 
+                ? "bg-stone-800/80 text-white/60 hover:text-red-400 border-white/10" 
+                : "bg-white/90 text-stone-600 hover:text-red-500 border-stone-200"
+            )}
             title="삭제"
           >
             <Trash2 className="w-3 h-3" />
           </button>
         </div>
-
-        {!log.isHiddenContent && !log.isContinuation && (
-          <div className="block-number font-sans">{idx + 1}</div>
-        )}
+      )}
 
         {!log.isHiddenContent && shouldShowIndex && (
           <div style={{ margin: `12px ${r(paddingHorizontal)}px 4px ${r(paddingHorizontal)}px`, display: 'flex' }}>
@@ -341,33 +413,84 @@ export const LogItem = React.memo(({
             marginTop: itemMarginTop
           }}>
             {isEditing ? (
-            <div className="mx-4 my-2 p-3 bg-black/20 rounded-xl border border-white/10 flex flex-col gap-2">
-              <textarea 
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault();
-                    onEditLog(log.id, editContent);
-                    setIsEditing(false);
-                  }
-                }}
-                className="w-full bg-black/40 text-white text-sm p-2 rounded-lg border border-white/10 outline-none focus:border-[#e6005c] min-h-[80px]"
-                autoFocus
-              />
-              <div className="flex justify-end gap-2">
-                <button 
-                  onClick={() => setIsEditing(false)} 
-                  className="px-3 py-1 text-[11px] font-bold text-white/40 hover:text-white transition-colors"
-                >
-                  취소
-                </button>
-                <button 
-                  onClick={() => { onEditLog(log.id, editContent); setIsEditing(false); }} 
-                  className="px-4 py-1 bg-[#e6005c] text-white rounded-lg text-[11px] font-bold hover:bg-[#ff0066] transition-colors"
-                >
-                  확인
-                </button>
+            <div 
+              className="w-full my-1.5" 
+              style={{ paddingLeft: `${r(paddingHorizontal)}px`, paddingRight: `${r(paddingHorizontal)}px` }}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return;
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  handleConfirm();
+                }
+              }}
+            >
+              <div className={cn(
+                "p-2 rounded-lg flex flex-col gap-2 border",
+                theme === 'dark' ? "bg-black/20 border-white/10" : "bg-stone-100 border-stone-200 shadow-sm"
+              )}>
+                {/* Header Control Row (above the Textarea) */}
+                <div className={cn(
+                  "flex items-center justify-between gap-3 pb-1.5 border-b",
+                  theme === 'dark' ? "border-white/5" : "border-stone-200/60"
+                )}>
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className={cn("text-[10px] whitespace-nowrap font-medium shrink-0", theme === 'dark' ? "text-white/40" : "text-stone-500")}>탭:</span>
+                      <SearchableSelect
+                        value={editTabId}
+                        onChange={(val) => setEditTabId(val)}
+                        options={(tabOrder || Object.keys(tabSettings)).map((tId: string) => {
+                          const tab = tabSettings[tId];
+                          return { label: tab?.name || tId, value: tId, color: tab?.color };
+                        })}
+                        placeholder="선택 안 함"
+                        className="w-[120px] text-xs"
+                        theme={theme}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className={cn("text-[10px] whitespace-nowrap font-medium shrink-0", theme === 'dark' ? "text-white/40" : "text-stone-500")}>발언자:</span>
+                      <SearchableSelect
+                        value={editCharId}
+                        onChange={(val) => setEditCharId(val)}
+                        options={Object.values(charSettings).map((c: any) => ({ label: c.name, value: c.id, color: c.color }))}
+                        placeholder="선택 안 함"
+                        className="w-[120px] text-xs"
+                        theme={theme}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-1 shrink-0">
+                    <button 
+                      onClick={handleCancel} 
+                      className={cn(
+                        "px-2 py-1 text-[11px] font-medium transition-colors",
+                        theme === 'dark' ? "text-white/40 hover:text-white" : "text-stone-500 hover:text-stone-800"
+                      )}
+                    >
+                      취소
+                    </button>
+                    <button 
+                      onClick={handleConfirm} 
+                      className="px-3 py-1 bg-[#e6005c] text-white rounded text-[11px] font-medium hover:bg-[#ff0066] transition-colors shadow-sm"
+                    >
+                      확인
+                    </button>
+                  </div>
+                </div>
+
+                {/* Textarea */}
+                <textarea 
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className={cn(
+                    "w-full text-[13px] p-1.5 rounded outline-none focus:border-[#e6005c] min-h-[64px] transition-colors resize-y",
+                    theme === 'dark' 
+                      ? "bg-black/35 text-white border-white/5" 
+                      : "bg-white text-stone-800 border-stone-200"
+                  )}
+                  autoFocus
+                />
               </div>
             </div>
           ) : log.isCommand ? (
@@ -412,7 +535,7 @@ export const LogItem = React.memo(({
               <div className="relative inline-block flex-shrink-0" style={{ opacity: log.isContinuation ? 0 : 1, pointerEvents: log.isContinuation ? 'none' : 'auto', userSelect: log.isContinuation ? 'none' : 'auto' }}>
                 <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px` }} className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName }} />
               </div>
-              <div style={{ color: theme === 'dark' ? '#AAAAAA' : '#444444', fontSize: `${scaledTextFontSize}px`, whiteSpace: 'pre-wrap', wordBreak: 'keep-all', overflowWrap: 'break-word' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
+              <div style={{ color: theme === 'dark' ? '#AAAAAA' : '#777777', fontSize: `${scaledTextFontSize}px`, whiteSpace: 'pre-wrap', wordBreak: 'keep-all', overflowWrap: 'break-word' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
             </div>
           ) : format === 'info' ? (
             <div key="info" className={cn(

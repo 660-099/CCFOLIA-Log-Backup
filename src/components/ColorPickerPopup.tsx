@@ -143,6 +143,7 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
                   value={tempColorInput}
                   onChange={(e) => setTempColorInput(e.target.value)}
                   onKeyDown={(e) => {
+                    if (e.nativeEvent.isComposing) return;
                     if (e.key === 'Enter') {
                       let col = tempColorInput.trim();
                       if (mode === 'hex') {
