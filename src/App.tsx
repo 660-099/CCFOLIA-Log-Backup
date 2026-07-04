@@ -430,9 +430,151 @@ const PortalDropdown = ({ isOpen, onClose, triggerRef, children, position = 'bot
   );
 };
 
+const SearchableSelect = ({ 
+  value, 
+  onChange, 
+  options,
+  placeholder = "(선택 안 됨)"
+}: { 
+  value: string; 
+  onChange: (value: string) => void; 
+  options: { label: string; value: string }[];
+  placeholder?: string;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedOption = options.find(opt => opt.value === value);
+  const displayValue = isOpen ? searchTerm : (selectedOption ? selectedOption.label : '');
+
+  const filteredOptions = [
+    ...options.filter(opt => 
+      opt.label.toLowerCase().includes(searchTerm.toLowerCase())
+    ),
+    { label: placeholder, value: '' }
+  ];
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
+        setIsOpen(true);
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setHighlightedIndex(prev => 
+          prev < filteredOptions.length - 1 ? prev + 1 : prev
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setHighlightedIndex(prev => prev > 0 ? prev - 1 : 0);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
+          onChange(filteredOptions[highlightedIndex].value);
+          setIsOpen(false);
+          inputRef.current?.blur();
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setIsOpen(false);
+        inputRef.current?.blur();
+        break;
+    }
+  };
+
+  useEffect(() => {
+    setHighlightedIndex(0); // Reset highlight when search changes
+  }, [searchTerm]);
+
+  // Handle scrolling of highlighted item
+  const listboxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isOpen && listboxRef.current && highlightedIndex >= 0) {
+      const highlightedEl = listboxRef.current.children[highlightedIndex] as HTMLElement;
+      if (highlightedEl) {
+        highlightedEl.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [highlightedIndex, isOpen]);
+
+  return (
+    <div ref={wrapperRef} className="relative w-full">
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={displayValue}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => {
+            setSearchTerm('');
+            setIsOpen(true);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          className="w-full text-[10px] px-2 py-1.5 pr-6 bg-black/40 border border-white/10 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors placeholder:text-white/30"
+        />
+        <ChevronDown className={cn("w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none transition-transform", isOpen && "rotate-180")} />
+      </div>
+      {isOpen && (
+        <div 
+          ref={listboxRef}
+          className="absolute z-50 w-full mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl max-h-32 overflow-y-auto custom-scrollbar"
+        >
+          {filteredOptions.map((opt, idx) => (
+            <div
+              key={opt.value}
+              className={cn(
+                "px-2 py-1.5 text-[10px] cursor-pointer truncate transition-colors",
+                idx === highlightedIndex ? "bg-white/10 text-white" : "text-white/80 hover:bg-[#e6005c] hover:text-white",
+                opt.value === '' && "text-white/50" // Placeholder styling
+              )}
+              onMouseEnter={() => setHighlightedIndex(idx)}
+              onClick={() => {
+                onChange(opt.value);
+                setIsOpen(false);
+              }}
+            >
+              {opt.label}
+            </div>
+          ))}
+          {filteredOptions.length === 0 && (
+            <div className="px-2 py-1.5 text-[10px] text-white/40">결과 없음</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function App() {
-  const [isBulkJsonModalOpen, setIsBulkJsonModalOpen] = useState(false);
-  const [bulkJsonInput, setBulkJsonInput] = useState('');
+  const [isBulkImgurModalOpen, setIsBulkImgurModalOpen] = useState(false);
+  const [bulkImgurUrl, setBulkImgurUrl] = useState('');
+  const [isBulkImgurLoading, setIsBulkImgurLoading] = useState(false);
+  const [bulkImages, setBulkImages] = useState<{ url: string; fileName: string; ext: string }[]>([]);
+  const [bulkImageMapping, setBulkImageMapping] = useState<Record<string, string>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isTitleEditing, setIsTitleEditing] = useState(false);
   const [pageTitle, setPageTitle] = useState('');
@@ -621,6 +763,90 @@ export default function App() {
     (favicon as HTMLLinkElement).href = `data:image/svg+xml;base64,${btoa(svg)}`;
     document.getElementsByTagName('head')[0].appendChild(favicon);
   }, []);
+
+  const handleBulkImgurFetch = async () => {
+    if (!bulkImgurUrl) return;
+    
+    setIsBulkImgurLoading(true);
+    try {
+      const response = await fetch('/api/imgur', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: bulkImgurUrl }),
+      });
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Imgur 정보를 가져오지 못했습니다.');
+      }
+      
+      const images: { url: string; fileName: string; ext: string }[] = await response.json();
+      setBulkImages(images);
+      
+      // Auto-match based on fileName
+      const newMapping: Record<string, string> = {};
+      
+      const normalize = (str: string) => str.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+
+      images.forEach(img => {
+        let nameToMatch = img.fileName;
+        if (nameToMatch.includes('.')) {
+          nameToMatch = nameToMatch.substring(0, nameToMatch.lastIndexOf('.'));
+        }
+        
+        const normalizedFileName = normalize(nameToMatch);
+        let matchedCharId = Object.keys(charSettings).find(id => normalize(charSettings[id].name) === normalizedFileName);
+        
+        // Advanced matching: if no exact match, check if filename contains the character name
+        if (!matchedCharId) {
+          const sortedIds = Object.keys(charSettings).sort((a, b) => charSettings[b].name.length - charSettings[a].name.length);
+          matchedCharId = sortedIds.find(id => {
+            const normalizedCharName = normalize(charSettings[id].name);
+            return normalizedCharName.length > 0 && normalizedFileName.includes(normalizedCharName);
+          });
+        }
+
+        if (matchedCharId) {
+          newMapping[img.url] = matchedCharId;
+        }
+      });
+      setBulkImageMapping(newMapping);
+      
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setIsBulkImgurLoading(false);
+    }
+  };
+
+  const applyBulkImages = () => {
+    let changedCount = 0;
+    const nextCharSettings = { ...charSettings };
+
+    Object.entries(bulkImageMapping).forEach(([url, charId]) => {
+      const idStr = charId as string;
+      if (idStr && nextCharSettings[idStr]) {
+        nextCharSettings[idStr] = {
+          ...nextCharSettings[idStr],
+          imageUrl: url
+        };
+        changedCount++;
+      }
+    });
+
+    if (changedCount > 0) {
+      setCharSettings(nextCharSettings);
+      saveToHistory({ charSettings: nextCharSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+      alert(`총 ${changedCount}명의 캐릭터 이미지가 업데이트되었습니다.`);
+    } else {
+      alert('적용된 캐릭터 이미지가 없습니다.');
+    }
+    
+    setIsBulkImgurModalOpen(false);
+    setBulkImgurUrl('');
+    setBulkImages([]);
+    setBulkImageMapping({});
+  };
 
   const saveToHistory = (state: any) => {
     const fullState = {
@@ -1030,6 +1256,8 @@ export default function App() {
       if (json.avatarSizeValue !== undefined) setAvatarSizeValue(json.avatarSizeValue);
       if (json.fontFamily) setFontFamily(json.fontFamily);
       if (json.theme) setTheme(json.theme);
+      if (json.darkBgColor !== undefined) setDarkBgColor(json.darkBgColor);
+      if (json.lightBgColor !== undefined) setLightBgColor(json.lightBgColor);
       if (json.filterBarMode !== undefined) setFilterBarMode(json.filterBarMode);
       if (json.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(json.enableSentenceSpacing);
       if (json.disableOtherColor !== undefined) setDisableOtherColor(json.disableOtherColor);
@@ -1089,6 +1317,8 @@ export default function App() {
       data.avatarSizeValue = avatarSizeValue;
       data.fontFamily = fontFamily;
       data.theme = theme;
+      data.darkBgColor = darkBgColor;
+      data.lightBgColor = lightBgColor;
       data.filterBarMode = filterBarMode;
       data.enableSentenceSpacing = enableSentenceSpacing;
     }
@@ -1579,49 +1809,6 @@ export default function App() {
       await handleLogUpload(mockEvent);
     } else if (file.name.toLowerCase().endsWith('.json')) {
       await handleProjectUpload(mockEvent);
-    }
-  };
-
-  const applyBulkJson = () => {
-    try {
-      if (!bulkJsonInput.trim()) return;
-      
-      let parsed;
-      try { parsed = JSON.parse(bulkJsonInput); }
-      catch {
-        // try to parse dirty json, sometimes users paste text that is almost json
-        // basic replacement for trailing commas and single quotes just in case, but let's just stick to JSON
-        parsed = JSON.parse(bulkJsonInput.replace(/[']/g, '"'));
-      }
-      
-      if (typeof parsed !== 'object' || parsed === null) throw new Error();
-      
-      let nextCharSettings = { ...charSettings };
-      let changedCount = 0;
-
-      Object.keys(nextCharSettings).forEach(charId => {
-        const charName = nextCharSettings[charId].name;
-        if (parsed[charName] && typeof parsed[charName] === 'string' && parsed[charName].trim() !== '') {
-          nextCharSettings[charId] = {
-            ...nextCharSettings[charId],
-            imageUrl: parsed[charName].trim()
-          };
-          changedCount++;
-        }
-      });
-
-      if (changedCount > 0) {
-        setCharSettings(nextCharSettings);
-        saveToHistory({ charSettings: nextCharSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
-        alert(`${changedCount}명의 캐릭터 이미지가 업데이트되었습니다.`);
-      } else {
-        alert(`일치하는 캐릭터 이름이 없습니다.`);
-      }
-      
-      setIsBulkJsonModalOpen(false);
-      setBulkJsonInput('');
-    } catch (err) {
-      alert('올바른 JSON 형식이 아닙니다.\n{"캐릭터이름": "이미지주소"} 형태로 입력해주세요.');
     }
   };
 
@@ -2541,7 +2728,7 @@ export default function App() {
                     rightElement={
                       <div className="flex items-center gap-2">
                         <button 
-                          onClick={() => setIsBulkJsonModalOpen(true)}
+                          onClick={() => setIsBulkImgurModalOpen(true)}
                           className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
                         >
                           <Upload className="w-3 h-3" />
@@ -3022,7 +3209,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.4.3</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.5.0</span>
           </div>
         </div>
       </aside>
@@ -3721,43 +3908,82 @@ export default function App() {
           <span className="text-[10px] font-bold">미리보기</span>
         </button>
       </div>
-      {isBulkJsonModalOpen && (
+      {isBulkImgurModalOpen && (
         <div className="fixed inset-0 z-[2000000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                <FileJson className="w-4 h-4 text-[#e6005c]" />
-                이미지 일괄 등록
-              </h2>
-              <button 
-                onClick={() => setIsBulkJsonModalOpen(false)}
-                className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white outline-none"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 flex flex-col gap-3">
-              <p className="text-xs text-white/60 leading-relaxed">
-                <code className="bg-black/30 px-1 py-0.5 rounded text-[#e6005c]">{'{"캐릭터 이름": "이미지 URL"}'}</code> 형식의 JSON을 붙여넣으세요. 이름이 일치하는 캐릭터의 이미지가 자동으로 변경됩니다.
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl w-full max-w-[500px] overflow-hidden flex flex-col pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-5 py-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Upload className="w-4 h-4 text-[#e6005c]" />
+                  이미지 일괄 등록
+                </h2>
+                <button 
+                  onClick={() => setIsBulkImgurModalOpen(false)}
+                  className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white outline-none"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-[11px] text-white/50 leading-relaxed">
+                Imgur 앨범 링크를 입력하면 앨범 내의 이미지들을 한 번에 불러옵니다.
               </p>
-              <textarea
-                value={bulkJsonInput}
-                onChange={e => setBulkJsonInput(e.target.value)}
-                placeholder={'{\n  "GM": "https://i.imgur.com/abc1234.png",\n  "서성운": "https://i.imgur.com/def5678.png"\n}'}
-                className="w-full h-64 bg-black/40 border border-white/10 rounded-xl p-3 text-[11px] font-mono text-white/80 placeholder:text-white/20 custom-scrollbar outline-none focus:border-[#e6005c]/50 transition-colors resize-none mb-1"
-                spellCheck={false}
-              />
             </div>
+            
+            <div className="border-b border-white/5" />
+            
+            <div className="p-5 flex flex-col gap-4">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="예: https://imgur.com/a/앨범주소"
+                  value={bulkImgurUrl}
+                  onChange={(e) => setBulkImgurUrl(e.target.value)}
+                  className="flex-1 text-[10px] px-3 py-2 bg-black/20 border border-white/10 rounded-xl outline-none focus:border-[#e6005c] text-white/80 transition-colors"
+                />
+                <button
+                  onClick={handleBulkImgurFetch}
+                  disabled={isBulkImgurLoading || !bulkImgurUrl}
+                  className="px-3 py-2 bg-white/10 hover:bg-white/20 disabled:bg-white/5 disabled:cursor-not-allowed text-white text-[11px] font-bold rounded-xl transition-colors whitespace-nowrap"
+                >
+                  {isBulkImgurLoading ? '불러오는 중...' : '불러오기'}
+                </button>
+              </div>
+
+              {bulkImages.length > 0 && (
+                <div className="bg-black/20 border border-white/10 rounded-xl max-h-[60vh] overflow-y-auto custom-scrollbar p-2 flex flex-col gap-1">
+                  {bulkImages.map((img, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg transition-colors">
+                      <div className="w-24 h-24 shrink-0 rounded bg-black/40 border border-white/10 overflow-hidden flex items-center justify-center">
+                        <img src={img.url} className="w-full h-full object-contain" alt={img.fileName} referrerPolicy="no-referrer" />
+                      </div>
+                      <div className="flex-1 min-w-0 flex flex-col justify-center">
+                        <div className="text-[11px] font-medium text-white truncate">{img.fileName}</div>
+                        <div className="text-[9px] text-white/40 truncate">{img.url}</div>
+                      </div>
+                      <div className="shrink-0 w-28">
+                        <SearchableSelect 
+                          value={bulkImageMapping[img.url] || ""}
+                          onChange={(id) => setBulkImageMapping(prev => ({ ...prev, [img.url]: id }))}
+                          options={Object.entries(charSettings).map(([id, char]) => ({ label: (char as CharSetting).name, value: id }))}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
             <div className="px-5 py-4 border-t border-white/5 bg-black/20 flex justify-end gap-2">
               <button 
-                onClick={() => setIsBulkJsonModalOpen(false)}
+                onClick={() => setIsBulkImgurModalOpen(false)}
                 className="px-4 py-2 rounded-lg text-[11px] font-bold text-white/60 hover:text-white hover:bg-white/5 transition-colors outline-none"
               >
                 취소
               </button>
               <button 
-                onClick={applyBulkJson}
-                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white bg-[#e6005c] hover:bg-[#ff0066] shadow-[0_0_15px_rgba(230,0,92,0.3)] transition-all outline-none"
+                onClick={applyBulkImages}
+                disabled={bulkImages.length === 0}
+                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white bg-[#e6005c] hover:bg-[#ff0066] disabled:bg-[#e6005c]/50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(230,0,92,0.3)] transition-all outline-none"
               >
                 확인 및 적용
               </button>
