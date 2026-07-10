@@ -1093,13 +1093,16 @@ export default function App() {
     setTabSettings(newTabs);
     setTabOrder(newTabOrder);
     setInsertedBlocks({});
-    setMergeTabs(new Set(['main', 'secret', 'other']));
-    setMergeTabStyles(new Set(['secret']));
-    setShowTabNames(new Set(['secret']));
-    setHideEmptyAvatars(false);
-    setCssFormat('internal');
-    setFontSize(14);
-    setDisableOtherColor(true);
+    
+    if (!rememberSettings) {
+      setMergeTabs(new Set(['main', 'secret', 'other']));
+      setMergeTabStyles(new Set(['secret']));
+      setShowTabNames(new Set(['secret']));
+      setHideEmptyAvatars(false);
+      setCssFormat('internal');
+      setFontSize(14);
+      setDisableOtherColor(true);
+    }
     setPageTitle('');
     setActiveTab('tabs');
 
@@ -1108,22 +1111,22 @@ export default function App() {
       charSettings: newChars,
       tabSettings: newTabs,
       tabOrder: newTabOrder,
-      cssFormat: 'internal' as const,
-      fontSize: 14,
-      textFontSize: 14,
-      fontFamily: 'Noto Sans KR',
-      theme: 'dark' as const,
-      disableOtherColor: true,
+      cssFormat: rememberSettings ? cssFormat : ('internal' as const),
+      fontSize: rememberSettings ? fontSize : 14,
+      textFontSize: rememberSettings ? textFontSize : 14,
+      fontFamily: rememberSettings ? fontFamily : 'Noto Sans KR',
+      theme: rememberSettings ? theme : ('dark' as const),
+      disableOtherColor: rememberSettings ? disableOtherColor : true,
       logs: trimmedLogs,
       insertedImages: {},
       splitPoints: [] as number[],
       sectionNames: {} as Record<number, string>,
-      mergeTabs: ['main', 'secret', 'other'],
-      showTabNames: ['secret'],
-      mergeTabStyles: ['secret'],
-      hideEmptyAvatars: false,
-      hideAllAvatars: false,
-      showLogDivider: false
+      mergeTabs: rememberSettings ? Array.from(mergeTabs) : ['main', 'secret', 'other'],
+      showTabNames: rememberSettings ? Array.from(showTabNames) : ['secret'],
+      mergeTabStyles: rememberSettings ? Array.from(mergeTabStyles) : ['secret'],
+      hideEmptyAvatars: rememberSettings ? hideEmptyAvatars : false,
+      hideAllAvatars: rememberSettings ? hideAllAvatars : false,
+      showLogDivider: rememberSettings ? showLogDivider : false
     };
     setInitialState(initial);
     setHistory([initial]);
@@ -3370,7 +3373,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.7.9</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.7.10</span>
           </div>
         </div>
       </aside>
