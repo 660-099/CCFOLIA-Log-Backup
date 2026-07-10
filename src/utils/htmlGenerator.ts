@@ -67,8 +67,8 @@ export const generateFinalHtmlStr = (
     effectiveBlockSpacing = 0;
   }
 
-  const paddingVertical = basePaddingVertical; // Base padding (vert)
-  const paddingHorizontal = contentPadding;
+  const paddingVertical = s(basePaddingVertical); // Scaled padding (vert)
+  const paddingHorizontal = s(contentPadding); // Scaled padding (horiz)
   const nameSize = t(13.44); // 0.96em of textFontSize
 
   const narrationMargin = Math.floor(effectiveBlockSpacing * 1.2 + lineHeight * 6);
@@ -306,6 +306,7 @@ export const generateFinalHtmlStr = (
     .log-container * { box-sizing: border-box; min-width: 0; }
     .log-container { 
       width: 100%; max-width: 800px; margin: 0 auto; 
+      display: flex; flex-direction: column;
       ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''}
       background: ${bgColor}; color: ${textColor};
       padding: 20px 0;
@@ -323,9 +324,11 @@ export const generateFinalHtmlStr = (
     .log-item.mb-narr { margin-bottom: ${Math.ceil(narrationMargin / 2)}px !important; }
     .log-item.mt-narr { margin-top: ${Math.floor(narrationMargin / 2)}px !important; }
     .log-item.mb-cmd { margin-bottom: ${effectiveBlockSpacing}px !important; }
-    .log-item div { margin-bottom: 0 !important; }
+    .log-item div:not(.log-divider) { margin-bottom: 0 !important; }
+    .mt-0-force { margin-top: 0 !important; }
+    .mt-0-force .secret-row, .mt-0-force .info-row, .mt-0-force .command-box { margin-top: 0 !important; }
 
-    .tab-name-block { margin: ${s(12)}px ${paddingHorizontal}px ${s(4)}px; display: flex; }
+    .tab-name-block { margin: ${s(12)}px ${paddingHorizontal}px ${s(8)}px; display: flex; }
     .tab-name-badge { padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; }
 
     .main-row, .secret-row, .command-box, .narration-row { padding: ${paddingVertical}px ${paddingHorizontal}px; }
@@ -421,6 +424,114 @@ export const generateFinalHtmlStr = (
     }
   });
 
+  const getHasDividerBetween = (chunkA: any, chunkB: any) => {
+    if (!showLogDivider) return false;
+    if (!chunkA || !chunkB) return false;
+    const logA = chunkA.logs[0];
+    const logB = chunkB.logs[0];
+
+    const getFormatOf = (l: any) => {
+      if (l.isCommand) return 'command';
+      const tabSet = tabSettings[l.tabId];
+      const formatVal = tabSet?.format || 'main';
+      if (l.charId === narrationCharacter && formatVal === 'main') {
+        return 'narration';
+      }
+      return formatVal;
+    };
+
+    const formatA = getFormatOf(logA);
+    const formatB = getFormatOf(logB);
+
+    const isISA = formatA === 'info' || formatA === 'secret';
+    const isISB = formatB === 'info' || formatB === 'secret';
+    const isTabNameAndMergeA = isISA && showTabNames.has(formatA) && mergeTabStyles.has(formatA);
+    const isTabNameAndMergeB = isISB && showTabNames.has(formatB) && mergeTabStyles.has(formatB);
+
+    // [강제 규칙] 정보/비밀 탭이고 '탭 이름 표시' & '탭별 통합'이 활성화되었을 때, 탭 묶음의 상/하단에는 무조건 구분선 적용
+    if (isTabNameAndMergeA && (logA.tabId !== logB.tabId || logB.isCommand || !isISB)) {
+      return true;
+    }
+    if (isTabNameAndMergeB && (logA.tabId !== logB.tabId || logA.isCommand || !isISA)) {
+      return true;
+    }
+
+    // 우선순위 1위: 발언자별 통합 (연속되는 대사 사이사이에는 구분선이 들어가지 않음)
+    if (logB.isContinuation) {
+      return false;
+    }
+    if (logA.isCommand || logB.isCommand) {
+      // 우선순위 2위: 다이스 및 매크로 (사이사이나 위 아래에 구분선 없음)
+      return false;
+    }
+
+    // 우선순위 3위: 정보 및 비밀탭
+    if (isISA || isISB) {
+      if (isISA && isISB) {
+        if (logA.tabId === logB.tabId) {
+          // 같은 탭이면 '탭별 통합'이 활성화되어 있을 때만 구분선이 있음
+          return mergeTabStyles.has(formatA);
+        } else {
+          // 다른 탭인 경우, '탭별 통합'이 활성화되어 있거나 '탭 이름 표시'가 활성화되어 있으면 구분선이 있음
+          if (mergeTabStyles.has(formatA) || mergeTabStyles.has(formatB)) {
+            return true;
+          }
+          return showTabNames.has(formatB);
+        }
+      } else if (!isISA && isISB) {
+        // 가장 첫 정보/비밀 위: '탭 이름 표시'가 활성화되어 있다면 구분선이 있음
+        return showTabNames.has(formatB);
+      } else if (isISA && !isISB) {
+        // 가장 마지막 정보/비밀 아래: 해당 비밀/정보탭의 '탭 이름 표시'가 활성화되어 있을 때만 구분선이 들어감
+        return showTabNames.has(formatA);
+      }
+    } else {
+      // 우선순위 4위: 잡담 탭 (잡담끼리는 하나로 취급해 사이사이에 구분선 없고, 첫 잡담 위와 마지막 잡담 아래에만 선이 있음)
+      const isChatA = formatA === 'other';
+      const isChatB = formatB === 'other';
+      if (isChatA || isChatB) {
+        if (isChatA && isChatB) {
+          return false;
+        }
+        return true;
+      } else {
+        // 그 외 일반적인 경우 (기본)
+        const isSameTab = logA.tab === logB.tab;
+        const shouldMergeA = mergeTabStyles.has(formatA);
+        if (shouldMergeA && isSameTab) {
+          return false;
+        }
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const getHasSpecialDividerBetween = (chunkA: any, chunkB: any) => {
+    if (!getHasDividerBetween(chunkA, chunkB)) return false;
+    const logA = chunkA.logs[0];
+    const logB = chunkB.logs[0];
+    if (logA.tabId === logB.tabId) return false;
+
+    const getFormatOf = (l: any) => {
+      if (l.isCommand) return 'command';
+      const tabSet = tabSettings[l.tabId];
+      const formatVal = tabSet?.format || 'main';
+      if (l.charId === narrationCharacter && formatVal === 'main') {
+        return 'narration';
+      }
+      return formatVal;
+    };
+
+    const formatA = getFormatOf(logA);
+    const formatB = getFormatOf(logB);
+
+    const isISA = formatA === 'info' || formatA === 'secret' || formatA === 'other';
+    const isISB = formatB === 'info' || formatB === 'secret' || formatB === 'other';
+
+    return isISA || isISB;
+  };
+
   chunks.forEach((chunk, chunkIdx) => {
     const log = chunk.logs[0];
     const { logs: groupedLogs, blocksAfter, isHidden, stableId } = chunk;
@@ -464,100 +575,93 @@ export const generateFinalHtmlStr = (
     const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && nextVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main') : false;
 
     // Calculate divider presence and visual properties early
-    let hasDividerBelow = false;
-    if (showLogDivider && nextVisibleChunk) {
-      const logA = log;
-      const logB = nextVisibleChunk.logs[0];
+    const hasDividerBelow = nextVisibleChunk ? getHasDividerBetween(chunk, nextVisibleChunk) : false;
+    const hasDividerAbove = prevVisibleChunk ? getHasDividerBetween(prevVisibleChunk, chunk) : false;
 
-      const getFormatOf = (l: any) => {
-        if (l.isCommand) return 'command';
-        const tabSet = tabSettings[l.tabId];
-        const formatVal = tabSet?.format || 'main';
-        if (l.charId === narrationCharacter && formatVal === 'main') {
-          return 'narration';
-        }
-        return formatVal;
-      };
+    const hasSpecialDividerBelow = nextVisibleChunk ? getHasSpecialDividerBetween(chunk, nextVisibleChunk) : false;
+    const hasSpecialDividerAbove = prevVisibleChunk ? getHasSpecialDividerBetween(prevVisibleChunk, chunk) : false;
 
-      const formatA = getFormatOf(logA);
-      const formatB = getFormatOf(logB);
-
-      // 우선순위 1위: 발언자별 통합 (연속되는 대사 사이사이에는 구분선이 들어가지 않음)
-      if (logB.isContinuation) {
-        hasDividerBelow = false;
-      } else if (logA.isCommand || logB.isCommand) {
-        // 우선순위 2위: 다이스 및 매크로 (사이사이나 위 아래에 구분선 없음)
-        hasDividerBelow = false;
+    const prevLogObj = prevVisibleChunk ? prevVisibleChunk.logs[0] : null;
+    let prevFormat = null;
+    if (prevLogObj) {
+      if (prevLogObj.isCommand) {
+        prevFormat = 'command';
       } else {
-        // 우선순위 3위: 정보 및 비밀탭
-        const isISA = formatA === 'info' || formatA === 'secret';
-        const isISB = formatB === 'info' || formatB === 'secret';
-        if (isISA || isISB) {
-          if (isISA && isISB) {
-            if (logA.tabId === logB.tabId) {
-              // 같은 탭이면 '탭별 통합'이 활성화되어 있을 때만 구분선이 있음
-              hasDividerBelow = mergeTabStyles.has(formatA);
-            } else {
-              // 다른 탭인 경우, '탭별 통합'이 활성화되어 있거나 '탭 이름 표시'가 활성화되어 있으면 구분선이 있음
-              if (mergeTabStyles.has(formatA) || mergeTabStyles.has(formatB)) {
-                hasDividerBelow = true;
-              } else {
-                hasDividerBelow = showTabNames.has(formatB);
-              }
-            }
-          } else if (!isISA && isISB) {
-            // 가장 첫 정보/비밀 위: '탭 이름 표시'가 활성화되어 있다면 구분선이 있음
-            hasDividerBelow = showTabNames.has(formatB);
-          } else if (isISA && !isISB) {
-            // 가장 마지막 정보/비밀 아래: 해당 비밀/정보탭의 '탭 이름 표시'가 활성화되어 있을 때만 구분선이 들어감
-            hasDividerBelow = showTabNames.has(formatA);
-          }
+        const tabSetVal = tabSettings[prevLogObj.tabId];
+        const formatVal = tabSetVal?.format || 'main';
+        if (prevLogObj.charId === narrationCharacter && formatVal === 'main') {
+          prevFormat = 'narration';
         } else {
-          // 우선순위 4위: 잡담 탭 (잡담끼리는 하나로 취급해 사이사이에 구분선 없고, 첫 잡담 위와 마지막 잡담 아래에만 선이 있음)
-          const isChatA = formatA === 'other';
-          const isChatB = formatB === 'other';
-          if (isChatA || isChatB) {
-            if (isChatA && isChatB) {
-              hasDividerBelow = false;
-            } else {
-              hasDividerBelow = true;
-            }
-          } else {
-            // 그 외 일반적인 경우 (기본)
-            const isSameTab = logA.tab === logB.tab;
-            const shouldMergeA = mergeTabStyles.has(formatA);
-            if (shouldMergeA && isSameTab) {
-              hasDividerBelow = false;
-            } else {
-              hasDividerBelow = true;
-            }
-          }
+          prevFormat = formatVal;
+        }
+      }
+    }
+    const isSectionStartOuter = !prevVisibleChunk || isPrevSameTab === false || hasBlockBefore;
+    const mergeWithPrevOuter = log.isContinuation || (shouldMergeStyle && isPrevSameTab && !isSectionStartOuter);
+
+    const nextLogObj = nextVisibleChunk ? nextVisibleChunk.logs[0] : null;
+    let nextFormat = null;
+    if (nextLogObj) {
+      if (nextLogObj.isCommand) {
+        nextFormat = 'command';
+      } else {
+        const tabSetVal = tabSettings[nextLogObj.tabId];
+        const formatVal = tabSetVal?.format || 'main';
+        if (nextLogObj.charId === narrationCharacter && formatVal === 'main') {
+          nextFormat = 'narration';
+        } else {
+          nextFormat = formatVal;
         }
       }
     }
 
-    let absoluteDividerHtml = '';
+    let dividerHtml = '';
     if (hasDividerBelow) {
       const isMainTab = format === 'main' ? 'true' : 'false';
       const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
       const isCommandFlag = log.isCommand ? 'true' : 'false';
       const divAttrs = isFilterEnabled 
-        ? ` data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="ccfolia-log-entry"`
-        : '';
+        ? ` data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="ccfolia-log-entry log-divider"`
+        : ` class="log-divider"`;
       const borderStyleColor = isDark 
         ? `rgba(255, 255, 255, 0.15)` 
         : `rgba(0, 0, 0, 0.1)`;
       
       const isInternalBoxDivider = (format === 'info' || format === 'secret') && mergeWithNextOuter;
-      let leftOffset, rightOffset;
-      if (isInternalBoxDivider) {
-        leftOffset = paddingHorizontal + 16; // 4px colored border + 12px indentation padding
-        rightOffset = paddingHorizontal + 12; // 12px indentation padding
-      } else {
-        leftOffset = paddingHorizontal;
-        rightOffset = paddingHorizontal;
+      const tabColor = tabSet?.color || '#ffd400';
+      
+      let nextShouldShowIndex = false;
+      if (nextLogObj && nextFormat) {
+        const isSameTab = log.tabId === nextLogObj.tabId;
+        nextShouldShowIndex = showTabNames.has(nextFormat) && (!isSameTab || hasBlockAfter);
       }
-      absoluteDividerHtml = `<div${divAttrs} style="position: absolute; bottom: 0; left: ${leftOffset}px; right: ${rightOffset}px; border-bottom: 1px solid ${borderStyleColor}; pointer-events: none; z-index: 10;"></div>`;
+
+      let marginTopVal = hasSpecialDividerBelow ? 12 : 0;
+      let marginBottomVal = hasSpecialDividerBelow ? 12 : 0;
+
+      if (hasSpecialDividerBelow) {
+        if (format === 'main') {
+          marginTopVal = 0;
+        }
+        if (nextFormat === 'main') {
+          if (nextShouldShowIndex) {
+            marginBottomVal = 12;
+          } else {
+            marginBottomVal = 0;
+          }
+        }
+      }
+      
+      let styleStr = `margin-top: ${s(marginTopVal)}px; margin-bottom: ${s(marginBottomVal)}px; margin-left: 0; margin-right: 0;`;
+      if (isInternalBoxDivider) {
+        const bg = format === 'secret' ? getSecretBg(tabColor) : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)');
+        const bLeft = format === 'secret' ? `4px solid ${tabColor}` : `4px solid ${isDark ? '#444' : '#DDD'}`;
+        styleStr = `margin-top: ${s(marginTopVal)}px; margin-bottom: ${s(marginBottomVal)}px; margin-left: ${paddingHorizontal}px; margin-right: ${paddingHorizontal}px; background: ${bg}; border-left: ${bLeft}; padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px;`;
+      } else {
+        styleStr += ` padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px;`;
+      }
+
+      dividerHtml = `<div${divAttrs} style="${styleStr} display: flex; align-items: center; justify-content: stretch; pointer-events: none;"><div style="width: 100%; border-bottom: 1px solid ${borderStyleColor};"></div></div>`;
     }
 
     // Generate blocksAfterHtml early
@@ -609,6 +713,7 @@ export const generateFinalHtmlStr = (
     let finalHtmlContent = finalHtmlContentPieces.map(pieces => pieces.join(`<div style="margin-top: ${isNarration ? '10px' : (format === 'other' ? '4px' : '0.8em')};"></div>`)).join(`<div style="margin-top: ${isNarration ? '10px' : (format === 'other' ? '4px' : '0.8em')};"></div>`);
 
     if (!isHidden) {
+      const hasSpecialDividerAboveAndNoBadge = hasSpecialDividerAbove && !(showTabNames.has(format) && !isPrevSameTab);
       if (showTabNames.has(format) && !isPrevSameTab) {
         const tabName = log.tab;
       const isSecret = format === 'secret';
@@ -618,14 +723,16 @@ export const generateFinalHtmlStr = (
       const isMainTab = format === 'main' ? 'true' : 'false';
       if (isInline) {
         const fAttrs = isFilterEnabled ? ` data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="ccfolia-log-entry"` : '';
-        html += `<div${fAttrs} style="margin: ${s(12)}px ${paddingHorizontal}px ${s(4)}px ${paddingHorizontal}px; display: flex;">
+        const tabMarginTop = hasSpecialDividerAbove ? '0' : `${s(12)}px`;
+        html += `<div${fAttrs} style="margin: ${tabMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px; display: flex;">
           <div style="background: ${tabBg}; color: ${tabColor}; padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; border: 1px solid ${tabColor}44;">
             ${tabName}
           </div>
         </div>`;
       } else {
         const fAttrs = isFilterEnabled ? ` data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="tab-name-block ccfolia-log-entry"` : ` class="tab-name-block"`;
-        html += `<div${fAttrs}>
+        const badgeStyle = hasSpecialDividerAbove ? ' style="margin-top: 0 !important;"' : '';
+        html += `<div${fAttrs}${badgeStyle}>
           <div class="tab-name-badge" style="background: ${tabBg}; color: ${tabColor}; border: 1px solid ${tabColor}44;">
             ${tabName}
           </div>
@@ -663,6 +770,10 @@ export const generateFinalHtmlStr = (
         itemMarginTop = '0';
       }
 
+      if (hasSpecialDividerAboveAndNoBadge) {
+        itemMarginTop = '0';
+      }
+
       const isMainTab = format === 'main' ? 'true' : 'false';
       const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
       const isCommandFlag = log.isCommand ? 'true' : 'false';
@@ -681,23 +792,22 @@ export const generateFinalHtmlStr = (
           html += blocksAfterHtml;
         }
         if (hasDividerBelow) {
-          html += absoluteDividerHtml;
+          html += dividerHtml;
         }
         html += `</div>`;
       } else {
-        const needsOuterBoxDividerPadding = hasDividerBelow && !mergeWithNext && (format === 'info' || format === 'secret');
-        const wrapperPaddingBottomStyle = needsOuterBoxDividerPadding ? ` padding-bottom: ${s(12)}px;` : '';
-        html += `<div${fullFilterAttrs} style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};${wrapperPaddingBottomStyle}">`;
+        html += `<div${fullFilterAttrs} style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
         if (log.isCommand) {
           const nameHtml = log.name !== 'system' ? `<span style="color: ${color}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; font-size: ${r(textFontSize)}px;">[ ${log.name} ]</span>` : '';
           const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
           const lsStyle = letterSpacing === 0 ? '' : `letter-spacing: ${letterSpacing}px;`;
+          const cmdMarginTop = hasSpecialDividerAboveAndNoBadge ? '0' : `${s(8)}px`;
           if (format === 'secret') {
             const tabColor = tabSet?.color || '#ffd400';
             const secretBg = getSecretBg(tabColor);
-            html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingVertical}px ${paddingHorizontal}px; border-radius: 8px; margin: ${s(8)}px ${paddingHorizontal}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; font-size: ${r(textFontSize)}px; ${lsStyle} ${marginLeft}">${finalHtmlContent}</span></div>`;
+            html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingVertical}px ${paddingHorizontal}px; border-radius: 8px; margin: ${cmdMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; font-size: ${r(textFontSize)}px; ${lsStyle} ${marginLeft}">${finalHtmlContent}</span></div>`;
           } else {
-            html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${commandBg}; border: 1px solid ${borderColor}; padding: ${paddingVertical}px ${paddingHorizontal}px; border-radius: 8px; margin: ${s(8)}px ${paddingHorizontal}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; font-size: ${r(textFontSize)}px; ${lsStyle} ${marginLeft}">${finalHtmlContent}</span></div>`;
+            html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${commandBg}; border: 1px solid ${borderColor}; padding: ${paddingVertical}px ${paddingHorizontal}px; border-radius: 8px; margin: ${cmdMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; font-size: ${r(textFontSize)}px; ${lsStyle} ${marginLeft}">${finalHtmlContent}</span></div>`;
           }
         } else if (format === 'other') {
           html += `<div style="padding: ${s(2)}px ${paddingHorizontal}px; display: flex; gap: ${gapSize / 1.5}px; align-items: baseline; line-height: ${lineHeight}; ${letterSpacing === 0 ? '' : `letter-spacing: ${letterSpacing}px;`}">
@@ -705,7 +815,9 @@ export const generateFinalHtmlStr = (
             <div style="${otherContentStyle}">${finalHtmlContent}</div>
           </div>`;
         } else if (format === 'info') {
-          const infoMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(8)}px ${paddingHorizontal}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : (hasDividerBelow ? '0' : s(8))}px ${paddingHorizontal}px`;
+          const infoMarginTop = hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px');
+          const infoMarginBottomVal = mergeWithNext ? '0' : (hasSpecialDividerBelow ? '0' : '4px');
+          const infoMargin = `${infoMarginTop} ${paddingHorizontal}px ${infoMarginBottomVal} ${paddingHorizontal}px`;
           const infoRadius = shouldMergeStyle 
             ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
             : '4px';
@@ -721,7 +833,9 @@ export const generateFinalHtmlStr = (
           const tabColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(tabColor);
           const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
-          const secretMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(4)}px ${paddingHorizontal}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : (hasDividerBelow ? '0' : s(4))}px ${paddingHorizontal}px`;
+          const secretMarginTop = hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px');
+          const secretMarginBottomVal = mergeWithNext ? '0' : (hasSpecialDividerBelow ? '0' : '4px');
+          const secretMargin = `${secretMarginTop} ${paddingHorizontal}px ${secretMarginBottomVal} ${paddingHorizontal}px`;
           const secretRadius = shouldMergeStyle 
             ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
             : '4px';
@@ -757,14 +871,13 @@ export const generateFinalHtmlStr = (
           html += blocksAfterHtml;
         }
         if (hasDividerBelow) {
-          html += absoluteDividerHtml;
+          html += dividerHtml;
         }
         html += `</div>`;
       }
     } else {
       const isSectionStart = !prevVisibleChunk || hasBlockBefore;
       const isSectionEnd = !nextVisibleChunk || isNextSameTab === false || hasBlockAfter;
-
       let mb = '';
       let mt = '';
 
@@ -779,7 +892,7 @@ export const generateFinalHtmlStr = (
       }
 
       const cl = [mb, mt].filter(Boolean).join(' ');
-      const clStr = `log-item${cl ? ` ${cl}` : ''}`;
+      const clStr = `log-item${cl ? ` ${cl}` : ''}${hasSpecialDividerAboveAndNoBadge ? ' mt-0-force' : ''}`;
       
       const isMainTab = format === 'main' ? 'true' : 'false';
       const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
@@ -855,7 +968,7 @@ export const generateFinalHtmlStr = (
         html += blocksAfterHtml;
       }
       if (hasDividerBelow) {
-        html += absoluteDividerHtml;
+        html += dividerHtml;
       }
       html += `</div>`;
     }
@@ -880,7 +993,7 @@ export const generateFinalHtmlStr = (
     <body>
       <div class="log-main-container"${isInline ? ` style="background-color: ${bgColor}; margin: 0; padding: 0;"` : ''}>
         ${filterBarHtml}
-        ${isInline ? `<div class="log-container" style="width: 100%; max-width: 800px; margin: 0 auto; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: ${lineHeight}; letter-spacing: ${letterSpacing === 0 ? 'normal' : `${letterSpacing}px`}; padding: 20px 0; font-size: ${textFontSize}px; overflow-x: hidden;">\n${html}\n</div>` : `<div class="log-container">\n${html}\n</div>`}
+        ${isInline ? `<div class="log-container" style="width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: ${lineHeight}; letter-spacing: ${letterSpacing === 0 ? 'normal' : `${letterSpacing}px`}; padding: 20px 0; font-size: ${textFontSize}px; overflow-x: hidden;">\n${html}\n</div>` : `<div class="log-container">\n${html}\n</div>`}
       </div>
       ${filterBarScript}
     </body>

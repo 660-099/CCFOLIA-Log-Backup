@@ -493,6 +493,7 @@ export default function App() {
 
   const [mobileTab, setMobileTab] = useState<'settings' | 'preview'>('settings');
   const [charSortMode, setCharSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
+  const [tabSortMode, setTabSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
   const [isNarrationDropdownOpen, setIsNarrationDropdownOpen] = useState(false);
   const narrationDropdownRef = useRef<HTMLDivElement>(null);
   const [isFontDropdownOpen, setIsFontDropdownOpen] = useState(false);
@@ -503,14 +504,21 @@ export default function App() {
   const [hoverImgUrl, setHoverImgUrl] = useState<string | null>(null);
 
   const [showSaveMenu, setShowSaveMenu] = useState(false);
-  const [saveOptions, setSaveOptions] = useState({
+  const [saveOptions, setSaveOptions] = useLocalStorage<{
+    tabs: boolean;
+    chars: boolean;
+    design: boolean;
+    splits: boolean;
+    images: boolean;
+    edits: boolean;
+  }>('ccfolia_saveOptions', {
     tabs: true,
     chars: true,
     design: true,
     splits: true,
     images: true,
     edits: true
-  });
+  }, undefined, undefined, rememberSettings);
 
   const [insertedBlocks, setInsertedBlocks] = useState<Record<string, InsertedBlock[]>>({});
   const [imageInputLoc, setImageInputLoc] = useState<{ logId: string; insertIndex: number } | null>(null);
@@ -524,7 +532,7 @@ export default function App() {
   const [isLibraryAccordionOpen, setIsLibraryAccordionOpen] = useState(false);
   const [openLibraryDropdownId, setOpenLibraryDropdownId] = useState<string | null>(null);
   const [hoverLibraryDropdownId, setHoverLibraryDropdownId] = useState<string | null>(null);
-  const [librarySortMode, setLibrarySortMode] = useState<'newest' | 'oldest' | 'alphabetical'>('newest');
+  const [librarySortMode, setLibrarySortMode] = useLocalStorage<'newest' | 'oldest' | 'alphabetical'>('ccfolia_librarySortMode', 'newest', undefined, undefined, rememberSettings);
   const [isLibraryEditMode, setIsLibraryEditMode] = useState(false);
   const [renamingLibraryId, setRenamingLibraryId] = useState<string | null>(null);
   const [libraryNameInput, setLibraryNameInput] = useState('');
@@ -590,7 +598,7 @@ export default function App() {
   const [hideEmptyAvatars, setHideEmptyAvatars] = useLocalStorage<boolean>('ccfolia_hideEmptyAvatars', false, undefined, undefined, rememberSettings);
   const [hideAllAvatars, setHideAllAvatars] = useLocalStorage<boolean>('ccfolia_hideAllAvatars', false, undefined, undefined, rememberSettings);
   const [enableSentenceSpacing, setEnableSentenceSpacing] = useLocalStorage<boolean>('ccfolia_enableSentenceSpacing', false, undefined, undefined, rememberSettings);
-  const [narrationCharacter, setNarrationCharacter] = useLocalStorage<string | null>('ccfolia_narrationCharacter', null, undefined, undefined, rememberSettings);
+  const [narrationCharacter, setNarrationCharacter] = useState<string | null>(null);
   const [showLogDivider, setShowLogDivider] = useLocalStorage<boolean>('ccfolia_showLogDivider', false, undefined, undefined, rememberSettings);
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
@@ -898,6 +906,17 @@ export default function App() {
         setHideAllAvatars(false);
         setEnableSentenceSpacing(false);
         setShowLogDivider(false);
+        setCharSortMode('appearance');
+        setTabSortMode('appearance');
+        setLibrarySortMode('newest');
+        setSaveOptions({
+          tabs: true,
+          chars: true,
+          design: true,
+          splits: true,
+          images: true,
+          edits: true
+        });
       }
     }
   };
@@ -950,6 +969,35 @@ export default function App() {
       return next;
     });
     setRenamingTab(null);
+  };
+
+  const handleRandomizeTabColors = () => {
+    const defaultColors = [
+      '#212121', '#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
+      '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b',
+      '#ffc107', '#ff9800', '#ff5722', '#795548', '#607d8b', '#9e9e9e', '#e0e0e0'
+    ];
+    
+    // Shuffle default colors
+    const shuffled = [...defaultColors];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    
+    const nextTabSettings = { ...tabSettings };
+    const tabIds = Object.keys(nextTabSettings);
+    
+    tabIds.forEach((tabId, idx) => {
+      const colorIdx = idx % shuffled.length;
+      nextTabSettings[tabId] = {
+        ...nextTabSettings[tabId],
+        color: shuffled[colorIdx]
+      };
+    });
+    
+    setTabSettings(nextTabSettings);
+    saveToHistory({ tabSettings: nextTabSettings });
   };
 
   const handleAddToLibrary = () => {
@@ -1497,6 +1545,26 @@ export default function App() {
       return a.localeCompare(b, 'ko', { sensitivity: 'base', numeric: true });
     });
   }, [charOrder, charSortMode, charSettings]);
+
+  const sortedTabOrder = useMemo(() => {
+    if (tabSortMode === 'appearance') return tabOrder;
+    return [...tabOrder].sort((idA, idB) => {
+      const a = tabSettings[idA]?.name || 'Unknown';
+      const b = tabSettings[idB]?.name || 'Unknown';
+
+      // Handle "Unknown" or empty names by putting them at the end
+      if (a === 'Unknown' && b !== 'Unknown') return 1;
+      if (a !== 'Unknown' && b === 'Unknown') return -1;
+      
+      const isAEnglish = /^[a-zA-Z]/.test(a);
+      const isBEnglish = /^[a-zA-Z]/.test(b);
+      
+      if (isAEnglish && !isBEnglish) return -1;
+      if (!isAEnglish && isBEnglish) return 1;
+
+      return a.localeCompare(b, 'ko', { sensitivity: 'base', numeric: true });
+    });
+  }, [tabOrder, tabSortMode, tabSettings]);
 
   const addCustomCharacter = (customName?: string) => {
     const newId = `custom_${Date.now()}`;
@@ -2178,10 +2246,35 @@ export default function App() {
                 </Section>
 
                 <Section>
-                  <SectionTitle icon={Settings} title="개별 탭 출력 설정" tooltip={<div className="text-[11px] leading-relaxed w-[210px] text-left">Alt 키를 누른 채로 클릭하면 해당 항목만 남기고 모두 숨길 수 있습니다.</div>} />
+                  <SectionTitle 
+                    icon={Settings} 
+                    title="개별 탭 설정" 
+                    tooltip={<div className="text-[11px] leading-relaxed w-[210px] text-left">Alt 키를 누른 채로 클릭하면 해당 항목만 남기고 모두 숨길 수 있습니다.</div>} 
+                    rightElement={
+                      <div className="flex items-center gap-1.5">
+                        <button 
+                          onClick={handleRandomizeTabColors}
+                          className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
+                          title="모든 탭에 무작위 색상을 겹치지 않게 지정합니다"
+                        >
+                          <Palette className="w-3 h-3" />
+                          무작위 색상 지정
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setTabSortMode(prev => prev === 'appearance' ? 'alphabetical' : 'appearance');
+                          }}
+                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
+                        >
+                          <ArrowUpDown className="w-3 h-3" />
+                          {tabSortMode === 'appearance' ? '등장순' : '가나다순'}
+                        </button>
+                      </div>
+                    }
+                  />
                   <div className="space-y-2">
-                  {tabOrder.length > 0 ? (
-                    tabOrder.map(tabId => {
+                  {sortedTabOrder.length > 0 ? (
+                    sortedTabOrder.map(tabId => {
                       const tab = tabSettings[tabId];
                       if (!tab) return null;
                       return (
@@ -3001,7 +3094,7 @@ export default function App() {
                       />
                     </div>
                     <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/70">캐릭터 이미지 숨김</span>
+                      <span className="text-[11px] font-bold text-white/70">스탠딩 숨김</span>
                       <Toggle 
                         enabled={hideAllAvatars} 
                         onChange={(val) => {
@@ -3277,7 +3370,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.6.4</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.7.9</span>
           </div>
         </div>
       </aside>

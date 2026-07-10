@@ -341,24 +341,38 @@ export const LogItem = React.memo(({
     return `${start} - ${end}`;
   };
 
-  const hasDividerBelow = useMemo(() => {
-    if (!showLogDivider || idx >= mergedLogsCount - 1) return false;
-    const logA = log;
-    const logB = mergedLogs[idx + 1];
-    if (!logB) return false;
+  const getHasDividerBelow = (i: number) => {
+    if (!showLogDivider) return false;
+    if (i < 0 || i >= mergedLogsCount - 1) return false;
+    const logA = mergedLogs[i];
+    const logB = mergedLogs[i + 1];
+    if (!logA || !logB) return false;
 
     const getFormatOf = (l: any) => {
       if (l.isCommand) return 'command';
       const tabSet = tabSettings[l.tabId];
-      const format = tabSet?.format || 'main';
-      if (l.charId === narrationCharacter && format === 'main') {
+      const formatVal = tabSet?.format || 'main';
+      if (l.charId === narrationCharacter && formatVal === 'main') {
         return 'narration';
       }
-      return format;
+      return formatVal;
     };
 
     const formatA = getFormatOf(logA);
     const formatB = getFormatOf(logB);
+
+    const isISA = formatA === 'info' || formatA === 'secret';
+    const isISB = formatB === 'info' || formatB === 'secret';
+    const isTabNameAndMergeA = isISA && showTabNames.has(formatA) && mergeTabStyles.has(formatA);
+    const isTabNameAndMergeB = isISB && showTabNames.has(formatB) && mergeTabStyles.has(formatB);
+
+    // [강제 규칙] 정보/비밀 탭이고 '탭 이름 표시' & '탭별 통합'이 활성화되었을 때, 탭 묶음의 상/하단에는 무조건 구분선 적용
+    if (isTabNameAndMergeA && (logA.tabId !== logB.tabId || logB.isCommand || !isISB)) {
+      return true;
+    }
+    if (isTabNameAndMergeB && (logA.tabId !== logB.tabId || logA.isCommand || !isISA)) {
+      return true;
+    }
 
     // 우선순위 1위: 발언자별 통합 (연속되는 대사 사이사이에는 구분선이 들어가지 않음)
     if (logB.isContinuation) {
@@ -371,8 +385,6 @@ export const LogItem = React.memo(({
     }
 
     // 우선순위 3위: 정보 및 비밀탭
-    const isISA = formatA === 'info' || formatA === 'secret';
-    const isISB = formatB === 'info' || formatB === 'secret';
     if (isISA || isISB) {
       if (isISA && isISB) {
         if (logA.tabId === logB.tabId) {
@@ -414,7 +426,97 @@ export const LogItem = React.memo(({
     }
 
     return true;
-  }, [showLogDivider, idx, mergedLogsCount, log, mergedLogs, tabSettings, narrationCharacter, mergeTabStyles, showTabNames]);
+  };
+
+  const hasDividerBelow = useMemo(() => {
+    return getHasDividerBelow(idx);
+  }, [idx, mergedLogsCount, mergedLogs, tabSettings, narrationCharacter, showTabNames, mergeTabStyles, showLogDivider]);
+
+  const hasDividerAbove = useMemo(() => {
+    return idx > 0 ? getHasDividerBelow(idx - 1) : false;
+  }, [idx, mergedLogsCount, mergedLogs, tabSettings, narrationCharacter, showTabNames, mergeTabStyles, showLogDivider]);
+
+  const prevLog = idx > 0 ? mergedLogs[idx - 1] : null;
+  const prevFormat = useMemo(() => {
+    if (!prevLog) return null;
+    if (prevLog.isCommand) return 'command';
+    const tabSet = tabSettings[prevLog.tabId];
+    const formatVal = tabSet?.format || 'main';
+    if (prevLog.charId === narrationCharacter && formatVal === 'main') {
+      return 'narration';
+    }
+    return formatVal;
+  }, [prevLog, tabSettings, narrationCharacter]);
+
+  const nextLog = idx < mergedLogsCount - 1 ? mergedLogs[idx + 1] : null;
+  const nextFormat = useMemo(() => {
+    if (!nextLog) return null;
+    if (nextLog.isCommand) return 'command';
+    const tabSet = tabSettings[nextLog.tabId];
+    const formatVal = tabSet?.format || 'main';
+    if (nextLog.charId === narrationCharacter && formatVal === 'main') {
+      return 'narration';
+    }
+    return formatVal;
+  }, [nextLog, tabSettings, narrationCharacter]);
+
+  const isSpecialDividerBelow = useMemo(() => {
+    if (!nextLog) return false;
+    if (log.tabId === nextLog.tabId) return false;
+    const isSpecialFormat = (f: string | null) => f === 'info' || f === 'secret' || f === 'other';
+    return isSpecialFormat(format) || isSpecialFormat(nextFormat);
+  }, [log.tabId, nextLog, format, nextFormat]);
+
+  const isSpecialDividerAbove = useMemo(() => {
+    if (!prevLog) return false;
+    if (log.tabId === prevLog.tabId) return false;
+    const isSpecialFormat = (f: string | null) => f === 'info' || f === 'secret' || f === 'other';
+    return isSpecialFormat(format) || isSpecialFormat(prevFormat);
+  }, [log.tabId, prevLog, format, prevFormat]);
+
+  const hasSpecialDividerBelow = useMemo(() => {
+    return hasDividerBelow && isSpecialDividerBelow;
+  }, [hasDividerBelow, isSpecialDividerBelow]);
+
+  const hasSpecialDividerAbove = useMemo(() => {
+    return hasDividerAbove && isSpecialDividerAbove;
+  }, [hasDividerAbove, isSpecialDividerAbove]);
+
+  const nextShouldShowIndex = useMemo(() => {
+    if (!nextLog) return false;
+    const tabSet = tabSettings[nextLog.tabId];
+    const nFormat = tabSet?.format || 'main';
+    const isSameTab = log.tabId === nextLog.tabId;
+    return showTabNames.has(nFormat) && (!isSameTab || hasBlockAfter);
+  }, [nextLog, log.tabId, tabSettings, showTabNames, hasBlockAfter]);
+
+  const dividerMarginTop = useMemo(() => {
+    if (!hasSpecialDividerBelow) return 0;
+    if (format === 'main') {
+      return 0;
+    }
+    return 12;
+  }, [hasSpecialDividerBelow, format]);
+
+  const dividerMarginBottom = useMemo(() => {
+    if (!hasSpecialDividerBelow) return 0;
+    if (nextFormat === 'main') {
+      if (nextShouldShowIndex) {
+        return 12;
+      }
+      return 0;
+    }
+    return 12;
+  }, [hasSpecialDividerBelow, nextFormat, nextShouldShowIndex]);
+
+  const hasSpecialDividerAboveAndNoBadge = useMemo(() => {
+    return hasSpecialDividerAbove && !shouldShowIndex;
+  }, [hasSpecialDividerAbove, shouldShowIndex]);
+
+  const finalItemMarginTop = useMemo(() => {
+    if (hasSpecialDividerAboveAndNoBadge) return '0';
+    return itemMarginTop;
+  }, [hasSpecialDividerAboveAndNoBadge, itemMarginTop]);
 
   return (
     <div 
@@ -427,9 +529,6 @@ export const LogItem = React.memo(({
             : (theme === 'dark' ? "bg-[#e6005c]/10" : "bg-[#e6005c]/5")
         )
       )}
-      style={{
-        paddingBottom: (hasDividerBelow && !mergeWithNext && (format === 'info' || format === 'secret')) ? `${r(12 * scale)}px` : undefined
-      }}
     >
       {idx === 0 && renderBlocks(startBlocks, '__start__', true)}
       {!isEditing && (
@@ -474,7 +573,7 @@ export const LogItem = React.memo(({
       )}
 
         {!log.isHiddenContent && shouldShowIndex && (
-          <div style={{ margin: `12px ${r(paddingHorizontal)}px 4px ${r(paddingHorizontal)}px`, display: 'flex' }}>
+          <div style={{ margin: `${hasSpecialDividerAbove ? 0 : 12}px ${r(paddingHorizontal)}px 8px ${r(paddingHorizontal)}px`, display: 'flex' }}>
             <div style={{ 
               background: getSecretBg(tabColor), 
               color: tabColor,
@@ -492,7 +591,7 @@ export const LogItem = React.memo(({
         {!log.isHiddenContent && (
           <div className="log-item" style={{ 
             marginBottom: itemMarginBottom,
-            marginTop: itemMarginTop
+            marginTop: finalItemMarginTop
           }}>
             {isEditing ? (
             <div 
@@ -581,7 +680,7 @@ export const LogItem = React.memo(({
               border: `1px solid ${theme === 'dark' ? '#444' : '#DDD'}`,
               padding: `${r(12 * scale)}px ${r(paddingHorizontal)}px`,
               borderRadius: '8px',
-              margin: `8px ${r(paddingHorizontal)}px`,
+              margin: `${hasSpecialDividerAboveAndNoBadge ? 0 : 8}px ${r(paddingHorizontal)}px`,
               display: 'flex',
               alignItems: 'center',
               flexWrap: 'wrap',
@@ -625,13 +724,13 @@ export const LogItem = React.memo(({
               isNextContinuation && "pb-1 border-b-0 rounded-b-none"
             )} style={{ 
               paddingTop: log.isContinuation ? undefined : `${r(12 * scale)}px`,
-              paddingBottom: isNextContinuation ? undefined : `${r(mergeWithNext ? (hasDividerBelow ? 10 : 4) : 12 * scale)}px`,
+              paddingBottom: isNextContinuation ? undefined : `${r(mergeWithNext ? 4 : 12 * scale)}px`,
               paddingLeft: `${r(paddingHorizontal)}px`,
               paddingRight: `${r(paddingHorizontal)}px`,
               background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', 
               borderLeft: `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`, 
-              marginTop: mergeWithPrev ? '0' : '4px',
-              marginBottom: mergeWithNext ? '0' : (hasDividerBelow ? '0' : '4px'),
+              marginTop: hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px'),
+              marginBottom: mergeWithNext ? '0' : (hasSpecialDividerBelow ? '0' : '4px'),
               marginLeft: `${r(paddingHorizontal)}px`,
               marginRight: `${r(paddingHorizontal)}px`,
               borderTopLeftRadius: mergeWithPrev ? '0' : '4px',
@@ -656,14 +755,14 @@ export const LogItem = React.memo(({
               display: 'flex',
               gap: hideAllAvatars ? '16px' : `${gapSize}px`, 
               paddingTop: log.isContinuation ? undefined : `${paddingVertical}px`,
-              paddingBottom: isNextContinuation ? undefined : `${mergeWithNext ? (hasDividerBelow ? 10 : 4) : paddingVertical}px`,
+              paddingBottom: isNextContinuation ? undefined : `${mergeWithNext ? 4 : paddingVertical}px`,
               paddingLeft: `${r(paddingHorizontal)}px`,
               paddingRight: `${r(paddingHorizontal)}px`,
               alignItems: 'flex-start',
               background: isSecret ? getSecretBg(tabColor) : 'transparent',
               borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
-              marginTop: isSecret ? (mergeWithPrev ? '0' : '4px') : '0',
-              marginBottom: isSecret ? (mergeWithNext ? '0' : (hasDividerBelow ? '0' : '4px')) : '0',
+              marginTop: isSecret ? (hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px')) : '0',
+              marginBottom: isSecret ? (mergeWithNext ? '0' : (hasSpecialDividerBelow ? '0' : '4px')) : '0',
               marginLeft: isSecret ? `${r(paddingHorizontal)}px` : '0',
               marginRight: isSecret ? `${r(paddingHorizontal)}px` : '0',
               borderTopLeftRadius: mergeWithPrev && isSecret ? '0' : (isSecret ? '4px' : '0'),
@@ -711,17 +810,31 @@ export const LogItem = React.memo(({
 
       {hasDividerBelow && (
         <div 
-          className={cn(
-            "absolute bottom-0 border-b-[1px] pointer-events-none",
-            theme === 'dark' 
-              ? "border-white/15" 
-              : "border-black/10"
-          )}
           style={{
-            left: `${paddingHorizontal + (((format === 'info' || format === 'secret') && mergeWithNext) ? 16 : 0)}px`,
-            right: `${paddingHorizontal + (((format === 'info' || format === 'secret') && mergeWithNext) ? 12 : 0)}px`
+            marginTop: `${r(dividerMarginTop * scale)}px`,
+            marginBottom: `${r(dividerMarginBottom * scale)}px`,
+            marginLeft: ((format === 'info' || format === 'secret') && mergeWithNext) ? `${r(paddingHorizontal)}px` : '0',
+            marginRight: ((format === 'info' || format === 'secret') && mergeWithNext) ? `${r(paddingHorizontal)}px` : '0',
+            background: ((format === 'info' || format === 'secret') && mergeWithNext) 
+              ? (format === 'secret' ? getSecretBg(tabColor) : (theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)')) 
+              : 'transparent',
+            borderLeft: ((format === 'info' || format === 'secret') && mergeWithNext)
+              ? (format === 'secret' ? `4px solid ${tabColor}` : `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`)
+              : 'none',
+            paddingLeft: `${r(paddingHorizontal)}px`,
+            paddingRight: `${r(paddingHorizontal)}px`
           }}
-        />
+          className="w-full flex items-center justify-stretch pointer-events-none"
+        >
+          <div 
+            className={cn(
+              "w-full border-b-[1px]",
+              theme === 'dark' 
+                ? "border-white/15" 
+                : "border-black/10"
+            )}
+          />
+        </div>
       )}
     </div>
   );
