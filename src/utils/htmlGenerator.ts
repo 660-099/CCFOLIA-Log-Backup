@@ -38,7 +38,8 @@ export const generateFinalHtmlStr = (
   letterSpacing: number = 0,
   blockSpacing: number = 2,
   contentPadding: number = 12,
-  avatarSizeValue: number = 46
+  avatarSizeValue: number = 46,
+  showLogDivider: boolean = false
 ) => {
   const isDark = theme === 'dark';
   const bgColor = isDark ? darkBgColor : lightBgColor;
@@ -328,7 +329,7 @@ export const generateFinalHtmlStr = (
     .tab-name-badge { padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; }
 
     .main-row, .secret-row, .command-box, .narration-row { padding: ${paddingVertical}px ${paddingHorizontal}px; }
-    .main-row, .secret-row { display: flex; gap: ${s(12)}px; align-items: flex-start; }
+    .main-row, .secret-row { display: flex; gap: ${s(12)}px; align-items: flex-start; padding-top: ${paddingVertical}px; padding-bottom: ${paddingVertical}px; }
     .main-row.no-avatar-grid, .secret-row.no-avatar-grid { display: flex; gap: 16px; align-items: flex-start; }
     .secret-row { margin: ${s(4)}px ${paddingHorizontal}px; border-radius: 4px; }
 
@@ -438,6 +439,7 @@ export const generateFinalHtmlStr = (
       nextVisibleChunkIdx++;
     }
     const nextVisibleChunk = nextVisibleChunkIdx < chunks.length ? chunks[nextVisibleChunkIdx] : null;
+    const isLastVisibleChunk = nextVisibleChunk === null;
 
     let prevVisibleChunkIdx = chunkIdx - 1;
     while (prevVisibleChunkIdx >= 0 && chunks[prevVisibleChunkIdx].isHidden) {
@@ -454,9 +456,128 @@ export const generateFinalHtmlStr = (
     
     const shouldMergeStyle = mergeTabStyles.has(format) && (isPrevSameTab || isNextSameTab);
 
+    const isSectionEndOuter = !nextVisibleChunk || isNextSameTab === false || hasBlockAfter;
+    const mergeWithNextOuter = shouldMergeStyle && isNextSameTab && !isSectionEndOuter;
+
     const isNarration = log.charId === narrationCharacter && format === 'main';
     const isPrevNarration = prevVisibleChunk ? (!hasBlockBefore && prevVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[prevVisibleChunk.logs[0].tabId]?.format || 'main') === 'main') : false;
     const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && nextVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main') : false;
+
+    // Calculate divider presence and visual properties early
+    let hasDividerBelow = false;
+    if (showLogDivider && nextVisibleChunk) {
+      const logA = log;
+      const logB = nextVisibleChunk.logs[0];
+
+      const getFormatOf = (l: any) => {
+        if (l.isCommand) return 'command';
+        const tabSet = tabSettings[l.tabId];
+        const formatVal = tabSet?.format || 'main';
+        if (l.charId === narrationCharacter && formatVal === 'main') {
+          return 'narration';
+        }
+        return formatVal;
+      };
+
+      const formatA = getFormatOf(logA);
+      const formatB = getFormatOf(logB);
+
+      // 우선순위 1위: 발언자별 통합 (연속되는 대사 사이사이에는 구분선이 들어가지 않음)
+      if (logB.isContinuation) {
+        hasDividerBelow = false;
+      } else if (logA.isCommand || logB.isCommand) {
+        // 우선순위 2위: 다이스 및 매크로 (사이사이나 위 아래에 구분선 없음)
+        hasDividerBelow = false;
+      } else {
+        // 우선순위 3위: 정보 및 비밀탭
+        const isISA = formatA === 'info' || formatA === 'secret';
+        const isISB = formatB === 'info' || formatB === 'secret';
+        if (isISA || isISB) {
+          if (isISA && isISB) {
+            if (logA.tabId === logB.tabId) {
+              // 같은 탭이면 '탭별 통합'이 활성화되어 있을 때만 구분선이 있음
+              hasDividerBelow = mergeTabStyles.has(formatA);
+            } else {
+              // 다른 탭인 경우, '탭별 통합'이 활성화되어 있거나 '탭 이름 표시'가 활성화되어 있으면 구분선이 있음
+              if (mergeTabStyles.has(formatA) || mergeTabStyles.has(formatB)) {
+                hasDividerBelow = true;
+              } else {
+                hasDividerBelow = showTabNames.has(formatB);
+              }
+            }
+          } else if (!isISA && isISB) {
+            // 가장 첫 정보/비밀 위: '탭 이름 표시'가 활성화되어 있다면 구분선이 있음
+            hasDividerBelow = showTabNames.has(formatB);
+          } else if (isISA && !isISB) {
+            // 가장 마지막 정보/비밀 아래: 해당 비밀/정보탭의 '탭 이름 표시'가 활성화되어 있을 때만 구분선이 들어감
+            hasDividerBelow = showTabNames.has(formatA);
+          }
+        } else {
+          // 우선순위 4위: 잡담 탭 (잡담끼리는 하나로 취급해 사이사이에 구분선 없고, 첫 잡담 위와 마지막 잡담 아래에만 선이 있음)
+          const isChatA = formatA === 'other';
+          const isChatB = formatB === 'other';
+          if (isChatA || isChatB) {
+            if (isChatA && isChatB) {
+              hasDividerBelow = false;
+            } else {
+              hasDividerBelow = true;
+            }
+          } else {
+            // 그 외 일반적인 경우 (기본)
+            const isSameTab = logA.tab === logB.tab;
+            const shouldMergeA = mergeTabStyles.has(formatA);
+            if (shouldMergeA && isSameTab) {
+              hasDividerBelow = false;
+            } else {
+              hasDividerBelow = true;
+            }
+          }
+        }
+      }
+    }
+
+    let absoluteDividerHtml = '';
+    if (hasDividerBelow) {
+      const isMainTab = format === 'main' ? 'true' : 'false';
+      const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
+      const isCommandFlag = log.isCommand ? 'true' : 'false';
+      const divAttrs = isFilterEnabled 
+        ? ` data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="ccfolia-log-entry"`
+        : '';
+      const borderStyleColor = isDark 
+        ? `rgba(255, 255, 255, 0.15)` 
+        : `rgba(0, 0, 0, 0.1)`;
+      
+      const isInternalBoxDivider = (format === 'info' || format === 'secret') && mergeWithNextOuter;
+      let leftOffset, rightOffset;
+      if (isInternalBoxDivider) {
+        leftOffset = paddingHorizontal + 16; // 4px colored border + 12px indentation padding
+        rightOffset = paddingHorizontal + 12; // 12px indentation padding
+      } else {
+        leftOffset = paddingHorizontal;
+        rightOffset = paddingHorizontal;
+      }
+      absoluteDividerHtml = `<div${divAttrs} style="position: absolute; bottom: 0; left: ${leftOffset}px; right: ${rightOffset}px; border-bottom: 1px solid ${borderStyleColor}; pointer-events: none; z-index: 10;"></div>`;
+    }
+
+    // Generate blocksAfterHtml early
+    let blocksAfterHtml = '';
+    if (blocksAfter && blocksAfter.length > 0) {
+      blocksAfter.forEach((block: any) => {
+        if (block.type === 'image' && isValidUrl(block.url)) {
+          const align = block.align || 'center';
+          const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
+          const widthStyle = block.width ? `width: ${block.width}px;` : 'max-width: 100%;';
+          const isMainTab = format === 'main' ? 'true' : 'false';
+          const imgAttrs = isFilterEnabled 
+            ? ` data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" class="ccfolia-log-entry"`
+            : '';
+          blocksAfterHtml += `<div${imgAttrs} style="display: flex; justify-content: ${justify}; margin: 10px ${s(15.6)}px;">
+            <img src="${block.url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+          </div>`;
+        }
+      });
+    }
 
     // Combine all contents in this chunk
     let finalHtmlContentPieces = groupedLogs.map((l, i) => {
@@ -556,9 +677,17 @@ export const generateFinalHtmlStr = (
           const prefix = pIdx > 0 ? `<div style="margin-top: 0.8em;"></div>` : '';
           return `${prefix}<div style="white-space: pre-wrap; word-break: break-all;">${piece}</div>`;
         }).join('');
+        if (blocksAfterHtml) {
+          html += blocksAfterHtml;
+        }
+        if (hasDividerBelow) {
+          html += absoluteDividerHtml;
+        }
         html += `</div>`;
       } else {
-        html += `<div${fullFilterAttrs} style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
+        const needsOuterBoxDividerPadding = hasDividerBelow && !mergeWithNext && (format === 'info' || format === 'secret');
+        const wrapperPaddingBottomStyle = needsOuterBoxDividerPadding ? ` padding-bottom: ${s(12)}px;` : '';
+        html += `<div${fullFilterAttrs} style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};${wrapperPaddingBottomStyle}">`;
         if (log.isCommand) {
           const nameHtml = log.name !== 'system' ? `<span style="color: ${color}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; font-size: ${r(textFontSize)}px;">[ ${log.name} ]</span>` : '';
           const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
@@ -576,7 +705,7 @@ export const generateFinalHtmlStr = (
             <div style="${otherContentStyle}">${finalHtmlContent}</div>
           </div>`;
         } else if (format === 'info') {
-          const infoMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(8)}px ${paddingHorizontal}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : s(8)}px ${paddingHorizontal}px`;
+          const infoMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(8)}px ${paddingHorizontal}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : (hasDividerBelow ? '0' : s(8))}px ${paddingHorizontal}px`;
           const infoRadius = shouldMergeStyle 
             ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
             : '4px';
@@ -592,7 +721,7 @@ export const generateFinalHtmlStr = (
           const tabColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(tabColor);
           const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
-          const secretMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(4)}px ${paddingHorizontal}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : s(4)}px ${paddingHorizontal}px`;
+          const secretMargin = `${(shouldMergeStyle && isPrevSameTab && !isSectionStart) ? '0' : s(4)}px ${paddingHorizontal}px ${(shouldMergeStyle && isNextSameTab && !isSectionEnd) ? '0' : (hasDividerBelow ? '0' : s(4))}px ${paddingHorizontal}px`;
           const secretRadius = shouldMergeStyle 
             ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
             : '4px';
@@ -623,6 +752,12 @@ export const generateFinalHtmlStr = (
                 <div style="${contentStyle}">${finalHtmlContent}</div>
               </div>
             </div>`;
+        }
+        if (blocksAfterHtml) {
+          html += blocksAfterHtml;
+        }
+        if (hasDividerBelow) {
+          html += absoluteDividerHtml;
         }
         html += `</div>`;
       }
@@ -662,9 +797,9 @@ export const generateFinalHtmlStr = (
         if (format === 'secret') {
           const tabColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(tabColor);
-          html += `<div class="command-box" style="display: flex; align-items: center; flex-wrap: wrap; background: ${secretBg}; border: 1px solid ${borderColor}; margin: ${s(8)}px ${paddingHorizontal}px; border-radius: 8px; padding-top: ${paddingVertical}px; padding-bottom: ${shouldMergeStyle && isNextSameTab ? Math.max(2, paddingVertical - 6) : paddingVertical}px;">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
+          html += `<div class="command-box" style="display: flex; align-items: center; flex-wrap: wrap; background: ${secretBg}; border: 1px solid ${borderColor}; margin: ${s(8)}px ${paddingHorizontal}px; border-radius: 8px;">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
         } else {
-          html += `<div class="command-box" style="display: flex; align-items: center; flex-wrap: wrap; padding-top: ${paddingVertical}px; padding-bottom: ${shouldMergeStyle && isNextSameTab ? Math.max(2, paddingVertical - 6) : paddingVertical}px;">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
+          html += `<div class="command-box" style="display: flex; align-items: center; flex-wrap: wrap;">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
         }
       } else if (isNarration) {
         const flatPieces = finalHtmlContentPieces.flat();
@@ -683,11 +818,10 @@ export const generateFinalHtmlStr = (
           shouldMergeStyle ? `margin: 0 ${paddingHorizontal}px;` : '',
           rad !== '4px' ? `border-radius: ${rad};` : '',
           shouldMergeStyle && tZ ? 'border-top: none;' : '',
-          shouldMergeStyle && bZ ? 'border-bottom: none;' : '',
-          `padding-top: ${paddingVertical}px; padding-bottom: ${shouldMergeStyle && isNextSameTab ? Math.max(2, paddingVertical - 8) : paddingVertical}px;`
+          shouldMergeStyle && bZ ? 'border-bottom: none;' : ''
         ].filter(Boolean).join(' ');
 
-        html += `<div class="info-row"${st ? ` style="${st}"` : ''}><span class="main-name" style="color: ${color}; display: block;">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div>`;
+        html += `<div class="info-row"${st ? ` style="${st}"` : ''}><span class="main-name" style="color: ${color};">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div>`;
       } else if (format === 'secret') {
         const tabColor = tabSet?.color || '#ffd400';
         const secretBg = getSecretBg(tabColor);
@@ -699,45 +833,32 @@ export const generateFinalHtmlStr = (
           `border-left: 4px solid ${tabColor};`,
           shouldMergeStyle ? `margin: 0 ${paddingHorizontal}px;` : '',
           rad !== '4px' ? `border-radius: ${rad};` : '',
-          shouldMergeStyle && tZ ? 'border-top: none;' : '',
-          `padding-top: ${paddingVertical}px; padding-bottom: ${shouldMergeStyle && isNextSameTab ? Math.max(2, paddingVertical - 6) : paddingVertical}px;`
+          shouldMergeStyle && tZ ? 'border-top: none;' : ''
         ].filter(Boolean).join(' ');
 
         if (hideAllAvatars) {
-          html += `<div class="secret-row no-avatar-grid" style="${st}"><span class="main-name" style="color: ${color}; display: block;">${log.name}:</span><div class="main-body"><div class="main-content">${finalHtmlContent}</div></div></div>`;
+          html += `<div class="secret-row no-avatar-grid" style="${st}"><span class="main-name" style="color: ${color};">${log.name}:</span><div class="main-body"><div class="main-content">${finalHtmlContent}</div></div></div>`;
         } else {
           const avatarHtml = img ? `<img src="${img}" class="main-avatar"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="main-avatar"${avSt ? ` style="${avSt}"` : ''}></div>`;
-          html += `<div class="secret-row" style="${st}">${avatarHtml}<div class="main-body"><span class="main-name" style="color: ${color}; display: block;">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div></div>`;
+          html += `<div class="secret-row" style="${st}">${avatarHtml}<div class="main-body"><span class="main-name" style="color: ${color};">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div></div>`;
         }
       } else {
         const avSt = hideAvatar ? 'background-color: transparent;' : '';
-        const pt = paddingVertical, pb = shouldMergeStyle && isNextSameTab ? Math.max(2, paddingVertical - 6) : paddingVertical;
         if (hideAllAvatars) {
-          html += `<div class="main-row no-avatar-grid" style="padding-top: ${pt}px; padding-bottom: ${pb}px;"><span class="main-name" style="color: ${color}; display: block;">${log.name}:</span><div class="main-body"><div class="main-content">${finalHtmlContent}</div></div></div>`;
+          html += `<div class="main-row no-avatar-grid"><span class="main-name" style="color: ${color};">${log.name}:</span><div class="main-body"><div class="main-content">${finalHtmlContent}</div></div></div>`;
         } else {
           const avatarHtml = img ? `<img src="${img}" class="main-avatar"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="main-avatar"${avSt ? ` style="${avSt}"` : ''}></div>`;
-          html += `<div class="main-row" style="padding-top: ${pt}px; padding-bottom: ${pb}px;">${avatarHtml}<div class="main-body"><span class="main-name" style="color: ${color} ; display: block;">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div></div>`;
+          html += `<div class="main-row">${avatarHtml}<div class="main-body"><span class="main-name" style="color: ${color};">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div></div>`;
         }
+      }
+      if (blocksAfterHtml) {
+        html += blocksAfterHtml;
+      }
+      if (hasDividerBelow) {
+        html += absoluteDividerHtml;
       }
       html += `</div>`;
     }
-    } 
-    
-    if (blocksAfter && blocksAfter.length > 0) {
-      blocksAfter.forEach((block: any) => {
-        if (block.type === 'image' && isValidUrl(block.url)) {
-          const align = block.align || 'center';
-          const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
-          const widthStyle = block.width ? `width: ${block.width}px;` : 'max-width: 100%;';
-          const isMainTab = format === 'main' ? 'true' : 'false';
-          const imgAttrs = isFilterEnabled 
-            ? ` data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="ccfolia-log-entry"`
-            : '';
-          html += `<div${imgAttrs} style="display: flex; justify-content: ${justify}; margin: 10px ${s(15.6)}px;">
-            <img src="${block.url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
-          </div>`;
-        }
-      });
     }
   });
 

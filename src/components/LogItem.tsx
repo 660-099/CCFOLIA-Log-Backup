@@ -17,6 +17,7 @@ export const LogItem = React.memo(({
   isHighlighted = false,
   isCurrentMatch = false,
   searchQuery = '',
+  mergedLogs = [],
   insertedBlocks,
   startBlocks,
   imageInputLoc,
@@ -47,7 +48,8 @@ export const LogItem = React.memo(({
     mergeTabStyles, showTabNames, hideEmptyAvatars, hideAllAvatars,
     narrationCharacter, charSettings: charSettingsFromContext, tabSettings,
     enableSentenceSpacing,
-    lineHeight = 1.6, letterSpacing = 0, blockSpacing = 2, contentPadding = 15.5, avatarSizeValue = 46
+    lineHeight = 1.6, letterSpacing = 0, blockSpacing = 2, contentPadding = 15.5, avatarSizeValue = 46,
+    showLogDivider = false
   } = useSettings();
 
   const charSettings = charSettingsFromProps || charSettingsFromContext;
@@ -339,16 +341,96 @@ export const LogItem = React.memo(({
     return `${start} - ${end}`;
   };
 
+  const hasDividerBelow = useMemo(() => {
+    if (!showLogDivider || idx >= mergedLogsCount - 1) return false;
+    const logA = log;
+    const logB = mergedLogs[idx + 1];
+    if (!logB) return false;
+
+    const getFormatOf = (l: any) => {
+      if (l.isCommand) return 'command';
+      const tabSet = tabSettings[l.tabId];
+      const format = tabSet?.format || 'main';
+      if (l.charId === narrationCharacter && format === 'main') {
+        return 'narration';
+      }
+      return format;
+    };
+
+    const formatA = getFormatOf(logA);
+    const formatB = getFormatOf(logB);
+
+    // 우선순위 1위: 발언자별 통합 (연속되는 대사 사이사이에는 구분선이 들어가지 않음)
+    if (logB.isContinuation) {
+      return false;
+    }
+
+    // 우선순위 2위: 다이스 및 매크로 (사이사이나 위 아래에 구분선 없음)
+    if (logA.isCommand || logB.isCommand) {
+      return false;
+    }
+
+    // 우선순위 3위: 정보 및 비밀탭
+    const isISA = formatA === 'info' || formatA === 'secret';
+    const isISB = formatB === 'info' || formatB === 'secret';
+    if (isISA || isISB) {
+      if (isISA && isISB) {
+        if (logA.tabId === logB.tabId) {
+          // 같은 탭이면 '탭별 통합'이 활성화되어 있을 때만 구분선이 있음
+          return mergeTabStyles.has(formatA);
+        } else {
+          // 다른 탭인 경우, '탭별 통합'이 활성화되어 있거나 '탭 이름 표시'가 활성화되어 있으면 구분선이 있음
+          if (mergeTabStyles.has(formatA) || mergeTabStyles.has(formatB)) {
+            return true;
+          }
+          return showTabNames.has(formatB);
+        }
+      }
+      if (!isISA && isISB) {
+        // 가장 첫 정보/비밀 위: '탭 이름 표시'가 활성화되어 있다면 구분선이 있음
+        return showTabNames.has(formatB);
+      }
+      if (isISA && !isISB) {
+        // 가장 마지막 정보/비밀 아래: 해당 비밀/정보탭의 '탭 이름 표시'가 활성화되어 있을 때만 구분선이 들어감
+        return showTabNames.has(formatA);
+      }
+    }
+
+    // 우선순위 4위: 잡담 탭 (잡담끼리는 하나로 취급해 사이사이에 구분선 없고, 첫 잡담 위와 마지막 잡담 아래에만 선이 있음)
+    const isChatA = formatA === 'other';
+    const isChatB = formatB === 'other';
+    if (isChatA || isChatB) {
+      if (isChatA && isChatB) {
+        return false;
+      }
+      return true;
+    }
+
+    // 그 외 일반적인 경우 (기본)
+    const isSameTab = logA.tab === logB.tab;
+    const shouldMergeA = mergeTabStyles.has(formatA);
+    if (shouldMergeA && isSameTab) {
+      return false;
+    }
+
+    return true;
+  }, [showLogDivider, idx, mergedLogsCount, log, mergedLogs, tabSettings, narrationCharacter, mergeTabStyles, showTabNames]);
+
   return (
-    <div className={cn(
-      "log-item-wrapper group/item relative min-h-[30px] flex flex-col justify-center",
-      isEditing && "is-editing",
-      isHighlighted && searchQuery && (
-        isCurrentMatch 
-          ? (theme === 'dark' ? "bg-[#ff9900]/20" : "bg-[#ff9900]/10")
-          : (theme === 'dark' ? "bg-[#e6005c]/10" : "bg-[#e6005c]/5")
-      )
-    )}>
+    <div 
+      className={cn(
+        "log-item-wrapper group/item relative min-h-[30px] flex flex-col justify-center",
+        isEditing && "is-editing",
+        isHighlighted && searchQuery && (
+          isCurrentMatch 
+            ? (theme === 'dark' ? "bg-[#ff9900]/20" : "bg-[#ff9900]/10")
+            : (theme === 'dark' ? "bg-[#e6005c]/10" : "bg-[#e6005c]/5")
+        )
+      )}
+      style={{
+        paddingBottom: (hasDividerBelow && !mergeWithNext && (format === 'info' || format === 'secret')) ? `${r(12 * scale)}px` : undefined
+      }}
+    >
       {idx === 0 && renderBlocks(startBlocks, '__start__', true)}
       {!isEditing && (
         <div 
@@ -543,13 +625,13 @@ export const LogItem = React.memo(({
               isNextContinuation && "pb-1 border-b-0 rounded-b-none"
             )} style={{ 
               paddingTop: log.isContinuation ? undefined : `${r(12 * scale)}px`,
-              paddingBottom: isNextContinuation ? undefined : `${r(mergeWithNext ? 4 : 12 * scale)}px`,
+              paddingBottom: isNextContinuation ? undefined : `${r(mergeWithNext ? (hasDividerBelow ? 10 : 4) : 12 * scale)}px`,
               paddingLeft: `${r(paddingHorizontal)}px`,
               paddingRight: `${r(paddingHorizontal)}px`,
               background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', 
               borderLeft: `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`, 
               marginTop: mergeWithPrev ? '0' : '4px',
-              marginBottom: mergeWithNext ? '0' : '4px',
+              marginBottom: mergeWithNext ? '0' : (hasDividerBelow ? '0' : '4px'),
               marginLeft: `${r(paddingHorizontal)}px`,
               marginRight: `${r(paddingHorizontal)}px`,
               borderTopLeftRadius: mergeWithPrev ? '0' : '4px',
@@ -574,14 +656,14 @@ export const LogItem = React.memo(({
               display: 'flex',
               gap: hideAllAvatars ? '16px' : `${gapSize}px`, 
               paddingTop: log.isContinuation ? undefined : `${paddingVertical}px`,
-              paddingBottom: isNextContinuation ? undefined : `${mergeWithNext ? 4 : paddingVertical}px`,
+              paddingBottom: isNextContinuation ? undefined : `${mergeWithNext ? (hasDividerBelow ? 10 : 4) : paddingVertical}px`,
               paddingLeft: `${r(paddingHorizontal)}px`,
               paddingRight: `${r(paddingHorizontal)}px`,
               alignItems: 'flex-start',
               background: isSecret ? getSecretBg(tabColor) : 'transparent',
               borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
               marginTop: isSecret ? (mergeWithPrev ? '0' : '4px') : '0',
-              marginBottom: isSecret ? (mergeWithNext ? '0' : '4px') : '0',
+              marginBottom: isSecret ? (mergeWithNext ? '0' : (hasDividerBelow ? '0' : '4px')) : '0',
               marginLeft: isSecret ? `${r(paddingHorizontal)}px` : '0',
               marginRight: isSecret ? `${r(paddingHorizontal)}px` : '0',
               borderTopLeftRadius: mergeWithPrev && isSecret ? '0' : (isSecret ? '4px' : '0'),
@@ -626,6 +708,21 @@ export const LogItem = React.memo(({
       )}
 
       {renderBlocks(insertedBlocks, stableId)}
+
+      {hasDividerBelow && (
+        <div 
+          className={cn(
+            "absolute bottom-0 border-b-[1px] pointer-events-none",
+            theme === 'dark' 
+              ? "border-white/15" 
+              : "border-black/10"
+          )}
+          style={{
+            left: `${paddingHorizontal + (((format === 'info' || format === 'secret') && mergeWithNext) ? 16 : 0)}px`,
+            right: `${paddingHorizontal + (((format === 'info' || format === 'secret') && mergeWithNext) ? 12 : 0)}px`
+          }}
+        />
+      )}
     </div>
   );
 });

@@ -591,6 +591,7 @@ export default function App() {
   const [hideAllAvatars, setHideAllAvatars] = useLocalStorage<boolean>('ccfolia_hideAllAvatars', false, undefined, undefined, rememberSettings);
   const [enableSentenceSpacing, setEnableSentenceSpacing] = useLocalStorage<boolean>('ccfolia_enableSentenceSpacing', false, undefined, undefined, rememberSettings);
   const [narrationCharacter, setNarrationCharacter] = useLocalStorage<string | null>('ccfolia_narrationCharacter', null, undefined, undefined, rememberSettings);
+  const [showLogDivider, setShowLogDivider] = useLocalStorage<boolean>('ccfolia_showLogDivider', false, undefined, undefined, rememberSettings);
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -745,6 +746,7 @@ export default function App() {
       hideAllAvatars,
       narrationCharacter,
       enableSentenceSpacing,
+      showLogDivider,
       ...state
     };
     const newHistory = history.slice(0, historyIndex + 1);
@@ -838,6 +840,7 @@ export default function App() {
     if (state.hideAllAvatars !== undefined) setHideAllAvatars(state.hideAllAvatars);
     if (state.narrationCharacter !== undefined) setNarrationCharacter(state.narrationCharacter);
     if (state.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(state.enableSentenceSpacing);
+    if (state.showLogDivider !== undefined) setShowLogDivider(state.showLogDivider);
   };
 
   const resetSettings = () => {
@@ -873,6 +876,7 @@ export default function App() {
         setHideAllAvatars(state.hideAllAvatars || false);
         setNarrationCharacter(state.narrationCharacter || null);
         setEnableSentenceSpacing(state.enableSentenceSpacing || false);
+        setShowLogDivider(state.showLogDivider || false);
         saveToHistory(state);
       } else {
         setCssFormat('internal');
@@ -893,6 +897,7 @@ export default function App() {
         setHideEmptyAvatars(false);
         setHideAllAvatars(false);
         setEnableSentenceSpacing(false);
+        setShowLogDivider(false);
       }
     }
   };
@@ -1069,7 +1074,8 @@ export default function App() {
       showTabNames: ['secret'],
       mergeTabStyles: ['secret'],
       hideEmptyAvatars: false,
-      hideAllAvatars: false
+      hideAllAvatars: false,
+      showLogDivider: false
     };
     setInitialState(initial);
     setHistory([initial]);
@@ -1130,6 +1136,7 @@ export default function App() {
       if (json.filterBarMode !== undefined) setFilterBarMode(json.filterBarMode);
       if (json.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(json.enableSentenceSpacing);
       if (json.disableOtherColor !== undefined) setDisableOtherColor(json.disableOtherColor);
+      if (json.showLogDivider !== undefined) setShowLogDivider(json.showLogDivider);
       
       if (json.insertedBlocks) {
         setInsertedBlocks(json.insertedBlocks);
@@ -1190,6 +1197,7 @@ export default function App() {
       data.lightBgColor = lightBgColor;
       data.filterBarMode = filterBarMode;
       data.enableSentenceSpacing = enableSentenceSpacing;
+      data.showLogDivider = showLogDivider;
     }
     
     if (saveOptions.splits || saveOptions.images) {
@@ -1688,7 +1696,8 @@ export default function App() {
       letterSpacing,
       blockSpacing,
       contentPadding,
-      avatarSizeValue
+      avatarSizeValue,
+      showLogDivider
     );
   };
 
@@ -1750,7 +1759,8 @@ export default function App() {
         letterSpacing,
         blockSpacing,
         contentPadding,
-        avatarSizeValue
+        avatarSizeValue,
+        showLogDivider
       );
       
       const finalName = s.name ? `${fileName}_${s.name}` : `${fileName}_section_${i + 1}`;
@@ -1810,7 +1820,8 @@ export default function App() {
       letterSpacing,
       blockSpacing,
       contentPadding,
-      avatarSizeValue
+      avatarSizeValue,
+      showLogDivider
     }}>
       <div 
         className="flex flex-col md:flex-row h-[100dvh] bg-[#121212] font-sans text-stone-200 overflow-hidden relative"
@@ -2073,11 +2084,6 @@ export default function App() {
               >
                 <Section>
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm">
-                      <span className="text-[11px] font-bold text-white/70">잡담 색상을 회색으로 통일</span>
-                      <Toggle enabled={disableOtherColor} onChange={(val) => { setDisableOtherColor(val); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor: val }); }} />
-                    </div>
-                    
                     <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] font-bold text-white/70">탭 이름 표시</span>
@@ -2301,28 +2307,6 @@ export default function App() {
               >
                 <Section>
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/70">이미지 배경 숨김</span>
-                      <Toggle 
-                        enabled={hideEmptyAvatars} 
-                        onChange={(val) => {
-                          setHideEmptyAvatars(val);
-                          saveToHistory({ hideEmptyAvatars: val });
-                        }} 
-                      />
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/70">캐릭터 이미지 숨김</span>
-                      <Toggle 
-                        enabled={hideAllAvatars} 
-                        onChange={(val) => {
-                          setHideAllAvatars(val);
-                          saveToHistory({ hideAllAvatars: val });
-                        }} 
-                      />
-                    </div>
-
                     <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm relative h-11" ref={narrationDropdownRef}>
                       <span className="text-[11px] font-bold text-white/70">나레이션 캐릭터</span>
                       <div className="relative">
@@ -2984,6 +2968,52 @@ export default function App() {
                 </Section>
 
                 <Section>
+                  <SectionTitle icon={Eye} title="로그 표시 설정" />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
+                      <span className="text-[11px] font-bold text-white/70">로그 구분선 표시</span>
+                      <Toggle 
+                        enabled={showLogDivider} 
+                        onChange={(val) => {
+                          setShowLogDivider(val);
+                          saveToHistory({ showLogDivider: val });
+                        }} 
+                      />
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
+                      <span className="text-[11px] font-bold text-white/70">잡담 색상을 회색으로 통일</span>
+                      <Toggle 
+                        enabled={disableOtherColor} 
+                        onChange={(val) => {
+                          setDisableOtherColor(val);
+                          saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor: val });
+                        }} 
+                      />
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
+                      <span className="text-[11px] font-bold text-white/70">이미지 배경 숨김</span>
+                      <Toggle 
+                        enabled={hideEmptyAvatars} 
+                        onChange={(val) => {
+                          setHideEmptyAvatars(val);
+                          saveToHistory({ hideEmptyAvatars: val });
+                        }} 
+                      />
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
+                      <span className="text-[11px] font-bold text-white/70">캐릭터 이미지 숨김</span>
+                      <Toggle 
+                        enabled={hideAllAvatars} 
+                        onChange={(val) => {
+                          setHideAllAvatars(val);
+                          saveToHistory({ hideAllAvatars: val });
+                        }} 
+                      />
+                    </div>
+                  </div>
+                </Section>
+
+                <Section>
                   <SectionTitle icon={Type} title="폰트 설정" />
                   <div className="relative" ref={fontDropdownRef}>
                     <button
@@ -3247,7 +3277,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.6.2</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.6.4</span>
           </div>
         </div>
       </aside>
@@ -3595,20 +3625,20 @@ export default function App() {
         {/* Preview Area */}
         <div 
           ref={previewContainerRef}
-          className={cn(
-            "flex-1 overflow-y-auto custom-scrollbar relative min-w-0 transition-colors",
-            theme === 'dark' ? "bg-[#252525]" : "bg-stone-50"
-          )}
-          style={{ '--name-col-width': `${displayItemsNameWidth}px` } as React.CSSProperties}
+          className="flex-1 overflow-y-auto custom-scrollbar relative min-w-0 transition-colors"
+          style={{ 
+            '--name-col-width': `${displayItemsNameWidth}px`,
+            backgroundColor: theme === 'dark' ? darkBgColor : lightBgColor
+          } as React.CSSProperties}
         >
           <div className="w-full min-w-0 min-h-full flex flex-col">
             {logs.length > 0 ? (
               <div className="relative group/preview">
                 <div 
-                  className={cn(
-                    "min-h-screen relative transition-colors",
-                    theme === 'dark' ? "bg-[#252525]" : "bg-stone-50"
-                  )}
+                  className="min-h-screen relative transition-colors"
+                  style={{
+                    backgroundColor: theme === 'dark' ? darkBgColor : lightBgColor
+                  }}
                 >
                   {/* Top Section Name Input */}
                   <div id="section-0" className="max-w-[800px] mx-auto px-4 pt-2 font-sans relative">
@@ -3754,6 +3784,7 @@ export default function App() {
                               searchQuery={searchQuery}
                               stableId={stableId}
                               log={log}
+                              mergedLogs={mergedLogs}
                               insertedBlocks={insertedBlocks[stableId] || []}
                               startBlocks={idx === 0 ? (insertedBlocks['__start__'] || []) : []}
                               imageInputLoc={imageInputLoc}

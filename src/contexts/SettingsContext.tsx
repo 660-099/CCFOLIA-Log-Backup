@@ -21,6 +21,7 @@ export type SettingsContextType = {
   blockSpacing: number;
   contentPadding: number;
   avatarSizeValue: number;
+  showLogDivider: boolean;
 };
 
 export const SettingsContext = createContext<SettingsContextType | null>(null);
@@ -58,7 +59,8 @@ export const SettingsProvider: React.FC<{
     settings.letterSpacing,
     settings.blockSpacing,
     settings.contentPadding,
-    settings.avatarSizeValue
+    settings.avatarSizeValue,
+    settings.showLogDivider
   ]);
   
   return (
