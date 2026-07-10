@@ -1968,7 +1968,7 @@ export default function App() {
                 </a>
               </p>
               <a 
-                href="https://posty.pe/7oldqj" 
+                href="https://posty.pe/7s025t" 
                 target="_blank" 
                 rel="noopener noreferrer" 
                 className="text-[9px] font-bold text-white/40 hover:text-white transition-all flex items-center gap-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-2 py-1"
