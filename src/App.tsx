@@ -455,6 +455,15 @@ export default function App() {
   useEffect(() => {
     setTempTitle(pageTitle);
   }, [pageTitle]);
+
+  // Reset bulk Imgur registration popup states when closed
+  useEffect(() => {
+    if (!isBulkImgurModalOpen) {
+      setBulkImgurUrl('');
+      setBulkImages([]);
+      setBulkImageMapping({});
+    }
+  }, [isBulkImgurModalOpen]);
   const [originalFileName, setOriginalFileName] = useState('');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [charSettings, setCharSettings] = useState<Record<string, CharSetting>>({});
@@ -487,7 +496,7 @@ export default function App() {
   const [newCharName, setNewCharName] = useState('');
   const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
   const [colorPickerRect, setColorPickerRect] = useState<DOMRect | null>(null);
-  const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'settings'>('files');
+  const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'illustrations' | 'settings'>('files');
   const scrollPositions = useRef<Record<string, number>>({});
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
@@ -675,12 +684,22 @@ export default function App() {
         const normalizedFileName = normalize(nameToMatch);
         let matchedCharId = Object.keys(charSettings).find(id => normalize(charSettings[id].name) === normalizedFileName);
         
-        // Advanced matching: if no exact match, check if filename contains the character name
+        // Advanced matching: check both ways (filename contains character name OR character name contains filename)
         if (!matchedCharId) {
           const sortedIds = Object.keys(charSettings).sort((a, b) => charSettings[b].name.length - charSettings[a].name.length);
           matchedCharId = sortedIds.find(id => {
             const normalizedCharName = normalize(charSettings[id].name);
-            return normalizedCharName.length > 0 && normalizedFileName.includes(normalizedCharName);
+            if (normalizedCharName.length === 0 || normalizedFileName.length === 0) return false;
+            
+            const fileLower = nameToMatch.toLowerCase();
+            const charLower = charSettings[id].name.toLowerCase();
+            
+            return (
+              normalizedFileName.includes(normalizedCharName) || 
+              normalizedCharName.includes(normalizedFileName) ||
+              fileLower.includes(charLower) ||
+              charLower.includes(fileLower)
+            );
           });
         }
 
@@ -1153,7 +1172,12 @@ export default function App() {
       const jsonTargetName = json.pageTitle || json.originalFileName;
       const currentTargetName = pageTitle || originalFileName;
       
-      if (jsonTargetName && currentTargetName && jsonTargetName !== currentTargetName) {
+      const cleanName = (name: string) => {
+        if (!name) return "";
+        return name.replace(/\.(html|htm|json)$/i, "").trim().toLowerCase();
+      };
+      
+      if (jsonTargetName && currentTargetName && cleanName(jsonTargetName) !== cleanName(currentTargetName)) {
         confirmMessage += `\n주의: 이 프로젝트 파일은 "${jsonTargetName}" 프로젝트용입니다.\n현재 작업 중인 문서("${currentTargetName}")와 이름이 다릅니다.`;
       }
       
@@ -1847,7 +1871,7 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const handleTabChange = (newTab: 'files' | 'tabs' | 'chars' | 'settings') => {
+  const handleTabChange = (newTab: 'files' | 'tabs' | 'chars' | 'illustrations' | 'settings') => {
     if (newTab === activeTab) return;
     if (sidebarScrollRef.current) {
       scrollPositions.current[activeTab] = sidebarScrollRef.current.scrollTop;
@@ -1986,6 +2010,7 @@ export default function App() {
             { id: 'files', icon: Upload, label: '파일' },
             { id: 'tabs', icon: Settings, label: '탭' },
             { id: 'chars', icon: User, label: '캐릭터' },
+            { id: 'illustrations', icon: ImageIcon, label: '삽화' },
             { id: 'settings', icon: Palette, label: '디자인' }
           ].map(tab => (
             <button
@@ -2987,6 +3012,18 @@ export default function App() {
               </motion.div>
             )}
 
+            {activeTab === 'illustrations' && (
+              <motion.div 
+                key="illustrations"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="flex items-center justify-center min-h-[400px]"
+              >
+                <span className="text-xs font-bold text-white/30 tracking-[0.2em] uppercase">준비 중...</span>
+              </motion.div>
+            )}
+
             {activeTab === 'settings' && (
               <motion.div 
                 key="settings"
@@ -3373,7 +3410,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.7.10</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.8.0</span>
           </div>
         </div>
       </aside>
@@ -4082,9 +4119,12 @@ export default function App() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <p className="text-[11px] text-white/50 leading-relaxed">
-                Imgur 앨범 링크를 입력하면 앨범 내의 이미지들을 한 번에 불러옵니다.
-              </p>
+              {bulkImages.length === 0 && !isBulkImgurLoading && (
+                <p className="text-[11px] text-white/50 leading-relaxed">
+                  Imgur 앨범 링크를 입력하면 앨범 내의 이미지들을 한 번에 불러옵니다.<br />
+                  이미지 파일 이름에 캐릭터 이름이 포함되어 있을 경우 자동으로 매칭됩니다.
+                </p>
+              )}
             </div>
             
             <div className="border-b border-white/5" />
