@@ -305,7 +305,9 @@ export const LogItem = React.memo(({
   const textScale = scaledTextFontSize / 14;
   const nameSize = Math.round(13.44 * textScale); // 0.96em of 14px
 
-  const currentBlocks = insertedBlocks[stableId] || [];
+  const currentBlocks = Array.isArray(insertedBlocks)
+    ? insertedBlocks
+    : (insertedBlocks[stableId] || []);
   const hasBlockAfter = currentBlocks.length > 0;
   
   const isSplit = hasBlockAfter && currentBlocks.some((b: any) => b.type === 'split');
@@ -808,7 +810,7 @@ export const LogItem = React.memo(({
 
       {renderBlocks(insertedBlocks, stableId)}
 
-      {hasDividerBelow && (
+      {hasDividerBelow && !isSplit && (
         <div 
           style={{
             marginTop: `${r(dividerMarginTop * scale)}px`,
@@ -830,7 +832,7 @@ export const LogItem = React.memo(({
             className={cn(
               "w-full border-b-[1px]",
               theme === 'dark' 
-                ? "border-white/15" 
+                ? "border-white/8" 
                 : "border-black/10"
             )}
           />

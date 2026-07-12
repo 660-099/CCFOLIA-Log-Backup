@@ -42,6 +42,42 @@ export const generateFinalHtmlStr = (
   showLogDivider: boolean = false
 ) => {
   const isDark = theme === 'dark';
+  const cleanStyle = (styleStr: string) => {
+    if (!styleStr) return '';
+    let clean = styleStr
+      .replace(/background-color:/gi, 'background:')
+      // Compress 4-directional margin/padding into shorthand formats
+      .replace(/(margin|padding):\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/gi, (match, prop, top, right, bottom, left) => {
+        if (top === bottom && right === left) {
+          if (top === right) return `${prop}:${top}`;
+          return `${prop}:${top} ${right}`;
+        }
+        if (right === left) return `${prop}:${top} ${right} ${bottom}`;
+        return match;
+      })
+      .replace(/:\s+/g, ':')
+      .replace(/;\s+/g, ';')
+      .trim();
+    
+    // Hex code compression (#ffffff -> #fff, #000000 -> #000, etc.)
+    clean = clean.replace(/#([0-9a-fA-F])\1([0-9a-fA-F])\2([0-9a-fA-F])\3(?![0-9a-fA-F])/g, '#$1$2$3');
+    
+    if (clean.endsWith(';')) {
+      clean = clean.slice(0, -1);
+    }
+    return clean;
+  };
+  const shortenId = (id: string) => {
+    if (!id) return '';
+    if (id === '__NARRATION__') return 'cn';
+    const clean = id.replace(/^tab_/, 't').replace(/^char_/, 'c').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (/^[0-9]/.test(clean)) {
+      return 'c' + clean;
+    }
+    return clean;
+  };
+  const sectionIds = new Set(filteredLogs.map(l => l.sectionId).filter(Boolean));
+  const isFullExport = sectionIds.size > 1;
   const bgColor = isDark ? darkBgColor : lightBgColor;
   const textColor = isDark ? '#EEEEEE' : '#1a1a1a';
   const otherTextColor = isDark ? '#AAAAAA' : '#757575';
@@ -81,10 +117,29 @@ export const generateFinalHtmlStr = (
   const fontData = fonts.find(f => f.name === fontFamily);
   const fontImport = fontData?.import || '';
 
+  const isFilterEnabled = filterBarMode !== 'none';
+  const getFilterAttrs = (logEntry: LogEntry, forceClass: string = '') => {
+    if (!isFilterEnabled) {
+      return forceClass ? ` class="${forceClass}"` : '';
+    }
+    const isMainTab = (tabSettings[logEntry.tabId]?.format || 'main') === 'main';
+    const isNarrationCharacterTag = logEntry.charId === narrationCharacter;
+    const isCommandFlag = logEntry.isCommand;
+
+    let attrs = ` d-t="${shortenId(logEntry.tabId)}" d-c="${shortenId(logEntry.charId)}"`;
+    if (isMainTab) attrs += ' d-mt="1"';
+    if (isNarrationCharacterTag) attrs += ' d-nc="1"';
+    if (isCommandFlag) attrs += ' d-cm="1"';
+
+    const classes = ['c-e', forceClass].filter(Boolean).join(' ');
+    attrs += ` class="${classes}"`;
+    return attrs;
+  };
+
   const activeTabs = new Map<string, { id: string, name: string }>();
   const activeChars = new Map<string, { id: string, name: string, color: string }>();
 
-  if (filterBarMode !== 'none') {
+  if (isFilterEnabled) {
     filteredLogs.forEach(log => {
       // Find actual character settings color if available
       const charColor = charSettings[log.charId]?.color || log.color;
@@ -99,7 +154,7 @@ export const generateFinalHtmlStr = (
 
   if (filterBarMode !== 'none') {
     const tabBtns = Array.from(activeTabs.values()).map(t => 
-      `<label class="i"><input type="checkbox" checked value="${t.id}" data-type="tab"><span class="c"></span>${t.name}</label>`
+      `<label class="i"><input type="checkbox" checked value="${shortenId(t.id)}" class="f-t"><span class="c"></span>${t.name}</label>`
     ).join('');
     
     let charsArray = Array.from(activeChars.values());
@@ -115,7 +170,7 @@ export const generateFinalHtmlStr = (
     }
 
     const charBtns = charsArray.map(c => 
-      `<label class="i"><input type="checkbox" checked value="${c.id}" data-type="char"><span class="c"></span>${c.name}</label>`
+      `<label class="i"><input type="checkbox" checked value="${shortenId(c.id)}" class="f-c"><span class="c"></span>${c.name}</label>`
     ).join('');
 
     const isFixed = filterBarMode === 'fixed';
@@ -201,8 +256,8 @@ export const generateFinalHtmlStr = (
       <script>
         document.addEventListener('DOMContentLoaded', () => {
           const qs = s => Array.from(document.querySelectorAll(s)), id = i => document.getElementById(i);
-          const tC = qs('input[data-type="tab"]'), cC = qs('input[data-type="char"]');
-          const aT = id('aT'), aC = id('aC'), items = qs('.ccfolia-log-entry');
+          const tC = qs('input.f-t'), cC = qs('input.f-c');
+          const aT = id('aT'), aC = id('aC'), items = qs('.c-e');
           
           ${!isFixed ? `
           const b = id('f-btn'), m = id('f-menu');
@@ -216,21 +271,24 @@ export const generateFinalHtmlStr = (
             const hChs = new Set(cC.filter(c => !c.checked).map(c => c.value));
             
             items.forEach(i => {
-              const { tab, char, isMainTab, isNarrationCharacter } = i.dataset;
+              const t = i.getAttribute('d-t');
+              const c = i.getAttribute('d-c');
+              const mt = i.getAttribute('d-mt');
+              const nc = i.getAttribute('d-nc');
               
-              if (tab && hTbs.has(tab)) {
+              if (t && hTbs.has(t)) {
                 i.style.display = 'none';
                 return;
               }
 
-              if (char) {
-                if (isNarrationCharacter === 'true' && isMainTab === 'true') {
-                  if (hChs.has('__NARRATION__')) {
+              if (c) {
+                if (nc === '1' && mt === '1') {
+                  if (hChs.has('cn')) {
                     i.style.display = 'none';
                     return;
                   }
                 } else {
-                  if (hChs.has(char)) {
+                  if (hChs.has(c)) {
                     i.style.display = 'none';
                     return;
                   }
@@ -248,7 +306,7 @@ export const generateFinalHtmlStr = (
               if (e.altKey) {
                 e.preventDefault();
                 e.stopPropagation();
-                const group = c.dataset.type === 'tab' ? tC : cC;
+                const group = c.classList.contains('f-t') ? tC : cC;
                 setTimeout(() => {
                   const isSolo = group.every(x => x === c ? x.checked : !x.checked);
                   if (isSolo) {
@@ -274,10 +332,28 @@ export const generateFinalHtmlStr = (
   }
 
   const textResetCSS = `
-    .log-container :is(p, span, a, b, strong, i, em, h1, h2, h3, h4, h5, h6, [class$="-content"], [class$="-name"], .narration-row, .narration-split-row, .command-text) {
+    .c-ct :is(p, span, a, b, strong, i, em, h1, h2, h3, h4, h5, h6, .m-c, .o-c, .m-nm, .o-nm, .n-r, .n-sr, .c-tx) {
       background-color: transparent !important;
     }
+    .s-p { margin-top: 4px; }
+    .s-p-nr { margin-top: 10px; }
+    .s-p-ob { margin-top: 0.8em; }
   `;
+
+  const activeCharColors = new Map<string, string>();
+  filteredLogs.forEach(log => {
+    const cid = shortenId(log.charId);
+    if (cid) {
+      const charColor = charSettings[log.charId]?.color || log.color;
+      if (charColor) {
+        activeCharColors.set(cid, charColor);
+      }
+    }
+  });
+
+  const dynamicColorsCss = Array.from(activeCharColors.entries())
+    .map(([cid, color]) => `.${cid} { color: ${color} !important; }`)
+    .join('\n');
 
   let computedNameWidth = 120;
   if (hideAllAvatars && typeof document !== 'undefined') {
@@ -302,9 +378,10 @@ export const generateFinalHtmlStr = (
     ${fontImport}
     ${filterBarCSS}
     ${textResetCSS}
-    .log-main-container { background-color: ${bgColor}; margin: 0; padding: 0; }
-    .log-container * { box-sizing: border-box; min-width: 0; }
-    .log-container { 
+    ${dynamicColorsCss}
+    .c-mc { background-color: ${bgColor}; margin: 0; padding: 0; }
+    .c-ct * { box-sizing: border-box; min-width: 0; }
+    .c-ct { 
       width: 100%; max-width: 800px; margin: 0 auto; 
       display: flex; flex-direction: column;
       ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''}
@@ -316,54 +393,59 @@ export const generateFinalHtmlStr = (
       overflow-x: hidden;
     }
     
-    .log-item { position: relative; }
-    .log-item.mb-0 { margin-bottom: 0 !important; }
-    .log-item.mt-0 { margin-top: 0 !important; }
-    .log-item.mb-normal { margin-bottom: ${Math.ceil(effectiveBlockSpacing / 2)}px !important; }
-    .log-item.mt-normal { margin-top: ${Math.floor(effectiveBlockSpacing / 2)}px !important; }
-    .log-item.mb-narr { margin-bottom: ${Math.ceil(narrationMargin / 2)}px !important; }
-    .log-item.mt-narr { margin-top: ${Math.floor(narrationMargin / 2)}px !important; }
-    .log-item.mb-cmd { margin-bottom: ${effectiveBlockSpacing}px !important; }
-    .log-item div:not(.log-divider) { margin-bottom: 0 !important; }
-    .mt-0-force { margin-top: 0 !important; }
-    .mt-0-force .secret-row, .mt-0-force .info-row, .mt-0-force .command-box { margin-top: 0 !important; }
+    .c-i { position: relative; }
+    .c-i.c-mb0 { margin-bottom: 0 !important; }
+    .c-i.c-mt0 { margin-top: 0 !important; }
+    .c-i.c-mb-n { margin-bottom: ${Math.ceil(effectiveBlockSpacing / 2)}px !important; }
+    .c-i.c-mt-n { margin-top: ${Math.floor(effectiveBlockSpacing / 2)}px !important; }
+    .c-i.c-mb-nr { margin-bottom: ${Math.ceil(narrationMargin / 2)}px !important; }
+    .c-i.c-mt-nr { margin-top: ${Math.floor(narrationMargin / 2)}px !important; }
+    .c-i.c-mb-c { margin-bottom: ${effectiveBlockSpacing}px !important; }
+    .c-i div:not(.c-dv) { margin-bottom: 0 !important; }
+    .c-mt-f { margin-top: 0 !important; }
+    .c-mt-f .s-r, .c-mt-f .i-r, .c-mt-f .c-bx { margin-top: 0 !important; }
 
-    .tab-name-block { margin: ${s(12)}px ${paddingHorizontal}px ${s(8)}px; display: flex; }
-    .tab-name-badge { padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; }
+    .t-bl { margin: ${s(12)}px ${paddingHorizontal}px ${s(8)}px; display: flex; }
+    .t-bd { display: inline-block; white-space: nowrap; padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; }
 
-    .main-row, .secret-row, .command-box, .narration-row { padding: ${paddingVertical}px ${paddingHorizontal}px; }
-    .main-row, .secret-row { display: flex; gap: ${s(12)}px; align-items: flex-start; padding-top: ${paddingVertical}px; padding-bottom: ${paddingVertical}px; }
-    .main-row.no-avatar-grid, .secret-row.no-avatar-grid { display: flex; gap: 16px; align-items: flex-start; }
-    .secret-row { margin: ${s(4)}px ${paddingHorizontal}px; border-radius: 4px; }
+    .m-r, .s-r, .c-bx, .n-r { padding: ${paddingVertical}px ${paddingHorizontal}px; }
+    .m-r, .s-r { display: flex; gap: ${s(12)}px; align-items: flex-start; padding-top: ${paddingVertical}px; padding-bottom: ${paddingVertical}px; }
+    .m-r.no-avatar-grid, .s-r.no-avatar-grid { display: flex; gap: 16px; align-items: flex-start; }
+    .s-r { margin: ${s(4)}px ${paddingHorizontal}px; border-radius: 4px; }
 
-    .main-avatar { 
+    .m-a { 
       width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; 
       background-color: ${avatarPlaceholder}; border-radius: 4px; object-fit: contain;
     }
-    .main-body { flex-grow: 1; line-height: ${lineHeight}; }
-    .main-name { font-weight: bold; font-size: ${r(textFontSize * 0.96)}px; margin-bottom: ${Math.max(4, Math.ceil(textFontSize * (lineHeight >= 1.4 ? 0.3 : 0.5)))}px; display: block; }
-    .no-avatar-grid .main-name { width: ${computedNameWidth}px; flex-shrink: 0; margin-bottom: 0; text-align: right; }
-    .no-avatar-grid .main-body { flex: 1; min-width: 0; }
-    .main-content, .other-content { font-size: ${r(textFontSize)}px; white-space: pre-wrap; word-break: keep-all; overflow-wrap: break-word; }
-    .main-content { color: ${textColor}; }
+    .m-b { flex-grow: 1; line-height: ${lineHeight}; }
+    .m-nm { font-weight: bold; font-size: ${r(textFontSize * 0.96)}px; margin-bottom: ${Math.max(4, Math.ceil(textFontSize * (lineHeight >= 1.4 ? 0.3 : 0.5)))}px; display: block; }
+    .no-avatar-grid .m-nm { width: ${computedNameWidth}px; flex-shrink: 0; margin-bottom: 0; text-align: right; }
+    .no-avatar-grid .m-b { flex: 1; min-width: 0; }
+    .m-c, .o-c { font-size: ${r(textFontSize)}px; white-space: pre-wrap; word-break: keep-all; overflow-wrap: break-word; }
+    .m-c { color: ${textColor}; }
 
-    .other-row { padding: ${s(4)}px ${paddingHorizontal}px; display: flex; gap: ${s(8)}px; align-items: baseline; }
-    .other-name { font-weight: bold; flex-shrink: 0; font-size: ${r(textFontSize * 0.96)}px; }
-    .other-content { color: ${otherTextColor}; }
+    .o-r { padding: ${s(4)}px ${paddingHorizontal}px; display: flex; gap: ${s(8)}px; align-items: baseline; }
+    .o-nm { font-weight: bold; flex-shrink: 0; font-size: ${r(textFontSize * 0.96)}px; }
+    .o-c { color: ${otherTextColor}; }
 
-    .info-row { 
+    .i-r { 
       padding: ${paddingVertical}px ${paddingHorizontal}px; background: ${infoBg};
       border-left: 4px solid ${borderColor}; margin: ${s(8)}px ${paddingHorizontal}px; border-radius: 4px;
     }
     
-    .command-box { 
+    .c-bx { 
       background: ${commandBg}; border: 1px solid ${borderColor}; 
       border-radius: 8px; margin: ${s(8)}px ${paddingHorizontal}px; 
+      display: flex; align-items: center; flex-wrap: wrap;
     }
-    .command-text { font-family: 'NanumGothicCodingLigature', monospace; color: ${textColor}; font-weight: bold; line-height: 1.6; }
+    .c-tx { font-family: 'NanumGothicCodingLigature', monospace; color: ${textColor}; font-weight: bold; line-height: 1.6; }
 
-    .narration-row { text-align: center; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: italic; }
-    .narration-split-row { text-align: center; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: italic; padding: ${s(2)}px ${paddingHorizontal}px; margin-bottom: 0px; }
+    .n-r { text-align: center; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: italic; }
+    .n-sr { text-align: center; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: italic; padding: ${s(2)}px ${paddingHorizontal}px; margin-bottom: 0px; }
+
+    .c-dv { display: flex; align-items: center; justify-content: stretch; pointer-events: none; margin-left: 0; margin-right: 0; padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px; }
+    .c-dv-ib { margin-left: ${paddingHorizontal}px; margin-right: ${paddingHorizontal}px; padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px; }
+    .c-dv-in { width: 100%; border-bottom: 1px solid; }
   `;
 
   const isInline = cssFormat === 'inline';
@@ -397,8 +479,8 @@ export const generateFinalHtmlStr = (
         const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
         const width = typeof block === 'string' ? undefined : block.width;
         const widthStyle = width ? `width: ${width}px;` : 'max-width: 100%;';
-        html += `<div class="ccfolia-log-entry" style="display: flex; justify-content: ${justify}; margin: 10px ${s(15.6)}px;">
-          <img src="${url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+        html += `<div class="c-e" style="${cleanStyle(`display: flex; justify-content: ${justify}; margin: 10px ${s(15.6)}px`)}">
+          <img src="${url}" style="${cleanStyle(`${widthStyle} border-radius: 8px; display: block`)}" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
         </div>`;
       }
     });
@@ -429,6 +511,11 @@ export const generateFinalHtmlStr = (
     if (!chunkA || !chunkB) return false;
     const logA = chunkA.logs[0];
     const logB = chunkB.logs[0];
+
+    // 만약 전체 내보내기이고, 두 로그의 섹션 ID가 서로 다르다면 무조건 구분선 적용
+    if (isFullExport && logA.sectionId && logB.sectionId && logA.sectionId !== logB.sectionId) {
+      return true;
+    }
 
     const getFormatOf = (l: any) => {
       if (l.isCommand) return 'command';
@@ -620,11 +707,20 @@ export const generateFinalHtmlStr = (
       const isMainTab = format === 'main' ? 'true' : 'false';
       const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
       const isCommandFlag = log.isCommand ? 'true' : 'false';
-      const divAttrs = isFilterEnabled 
-        ? ` data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="ccfolia-log-entry log-divider"`
-        : ` class="log-divider"`;
+      
+      let divAttrs = '';
+      if (isFilterEnabled) {
+        divAttrs = ` d-t="${shortenId(log.tabId)}" d-c="${shortenId(log.charId)}"`;
+        if (isMainTab === 'true') divAttrs += ' d-mt="1"';
+        if (isNarrationCharacterTag === 'true') divAttrs += ' d-nc="1"';
+        if (isCommandFlag === 'true') divAttrs += ' d-cm="1"';
+        divAttrs += ' class="c-e c-dv"';
+      } else {
+        divAttrs = ' class="c-dv"';
+      }
+
       const borderStyleColor = isDark 
-        ? `rgba(255, 255, 255, 0.15)` 
+        ? `rgba(255, 255, 255, 0.08)` 
         : `rgba(0, 0, 0, 0.1)`;
       
       const isInternalBoxDivider = (format === 'info' || format === 'secret') && mergeWithNextOuter;
@@ -652,16 +748,28 @@ export const generateFinalHtmlStr = (
         }
       }
       
-      let styleStr = `margin-top: ${s(marginTopVal)}px; margin-bottom: ${s(marginBottomVal)}px; margin-left: 0; margin-right: 0;`;
+      let styleStr = `margin-top:${s(marginTopVal)}px;margin-bottom:${s(marginBottomVal)}px;`;
+      if (isInline) {
+        styleStr += `display:flex;align-items:center;justify-content:stretch;pointer-events:none;`;
+        if (isInternalBoxDivider) {
+          styleStr += `margin-left:${paddingHorizontal}px;margin-right:${paddingHorizontal}px;padding-left:${paddingHorizontal}px;padding-right:${paddingHorizontal}px;`;
+        } else {
+          styleStr += `margin-left:0;margin-right:0;padding-left:${paddingHorizontal}px;padding-right:${paddingHorizontal}px;`;
+        }
+      }
       if (isInternalBoxDivider) {
         const bg = format === 'secret' ? getSecretBg(tabColor) : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)');
         const bLeft = format === 'secret' ? `4px solid ${tabColor}` : `4px solid ${isDark ? '#444' : '#DDD'}`;
-        styleStr = `margin-top: ${s(marginTopVal)}px; margin-bottom: ${s(marginBottomVal)}px; margin-left: ${paddingHorizontal}px; margin-right: ${paddingHorizontal}px; background: ${bg}; border-left: ${bLeft}; padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px;`;
-      } else {
-        styleStr += ` padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px;`;
+        styleStr += `background:${bg};border-left:${bLeft};`;
+        if (isFilterEnabled) {
+          divAttrs = divAttrs.replace('class="c-e c-dv"', 'class="c-e c-dv c-dv-ib"');
+        } else {
+          divAttrs = ' class="c-dv c-dv-ib"';
+        }
       }
 
-      dividerHtml = `<div${divAttrs} style="${styleStr} display: flex; align-items: center; justify-content: stretch; pointer-events: none;"><div style="width: 100%; border-bottom: 1px solid ${borderStyleColor};"></div></div>`;
+      const dividerInStyle = isInline ? `width:100%;border-bottom:1px solid;border-color:${borderStyleColor};` : `border-color:${borderStyleColor};`;
+      dividerHtml = `<div${divAttrs} style="${cleanStyle(styleStr)}"><div class="c-dv-in" style="${cleanStyle(dividerInStyle)}"></div></div>`;
     }
 
     // Generate blocksAfterHtml early
@@ -671,13 +779,13 @@ export const generateFinalHtmlStr = (
         if (block.type === 'image' && isValidUrl(block.url)) {
           const align = block.align || 'center';
           const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
-          const widthStyle = block.width ? `width: ${block.width}px;` : 'max-width: 100%;';
-          const isMainTab = format === 'main' ? 'true' : 'false';
+          const widthStyle = block.width ? `width:${block.width}px;` : 'max-width:100%;';
+          const isMainTab = format === 'main';
           const imgAttrs = isFilterEnabled 
-            ? ` data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" class="ccfolia-log-entry"`
+            ? ` d-t="${shortenId(log.tabId)}" d-c="${shortenId(log.charId)}"${isMainTab ? ' d-mt="1"' : ''} class="c-e"`
             : '';
-          blocksAfterHtml += `<div${imgAttrs} style="display: flex; justify-content: ${justify}; margin: 10px ${s(15.6)}px;">
-            <img src="${block.url}" style="${widthStyle} border-radius: 8px; display: block;" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+          blocksAfterHtml += `<div${imgAttrs} style="${cleanStyle(`display:flex;justify-content:${justify};margin:10px ${s(15.6)}px`)}">
+            <img src="${block.url}" style="${cleanStyle(`${widthStyle}border-radius:8px;display:block`)}" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
           </div>`;
         }
       });
@@ -710,7 +818,8 @@ export const generateFinalHtmlStr = (
       return htmlPieces;
     });
 
-    let finalHtmlContent = finalHtmlContentPieces.map(pieces => pieces.join(`<div style="margin-top: ${isNarration ? '10px' : (format === 'other' ? '4px' : '0.8em')};"></div>`)).join(`<div style="margin-top: ${isNarration ? '10px' : (format === 'other' ? '4px' : '0.8em')};"></div>`);
+    const spacingClass = isNarration ? 's-p-nr' : (format === 'other' ? 's-p' : 's-p-ob');
+    let finalHtmlContent = finalHtmlContentPieces.map(pieces => pieces.join(`<div class="${spacingClass}"></div>`)).join(`<div class="${spacingClass}"></div>`);
 
     if (!isHidden) {
       const hasSpecialDividerAboveAndNoBadge = hasSpecialDividerAbove && !(showTabNames.has(format) && !isPrevSameTab);
@@ -722,18 +831,20 @@ export const generateFinalHtmlStr = (
       
       const isMainTab = format === 'main' ? 'true' : 'false';
       if (isInline) {
-        const fAttrs = isFilterEnabled ? ` data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="ccfolia-log-entry"` : '';
+        const fAttrs = isFilterEnabled ? ` d-t="${shortenId(log.tabId)}"${isMainTab === 'true' ? ' d-mt="1"' : ''} class="c-e"` : '';
         const tabMarginTop = hasSpecialDividerAbove ? '0' : `${s(12)}px`;
-        html += `<div${fAttrs} style="margin: ${tabMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px; display: flex;">
-          <div style="background: ${tabBg}; color: ${tabColor}; padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; border: 1px solid ${tabColor}44;">
+        const outerStyle = `margin: ${tabMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px; display: flex;`;
+        const badgeStyle = `background: ${tabBg}; color: ${tabColor}; padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; border: 1px solid ${tabColor}44; display: inline-block; white-space: nowrap;`;
+        html += `<div${fAttrs} style="${cleanStyle(outerStyle)}">
+          <div style="${cleanStyle(badgeStyle)}">
             ${tabName}
           </div>
         </div>`;
       } else {
-        const fAttrs = isFilterEnabled ? ` data-tab="${log.tabId}" data-is-main-tab="${isMainTab}" class="tab-name-block ccfolia-log-entry"` : ` class="tab-name-block"`;
+        const fAttrs = isFilterEnabled ? ` d-t="${shortenId(log.tabId)}"${isMainTab === 'true' ? ' d-mt="1"' : ''} class="t-bl c-e"` : ` class="t-bl"`;
         const badgeStyle = hasSpecialDividerAbove ? ' style="margin-top: 0 !important;"' : '';
         html += `<div${fAttrs}${badgeStyle}>
-          <div class="tab-name-badge" style="background: ${tabBg}; color: ${tabColor}; border: 1px solid ${tabColor}44;">
+          <div class="t-bd" style="background: ${tabBg}; color: ${tabColor}; border: 1px solid ${tabColor}44;">
             ${tabName}
           </div>
         </div>`;
@@ -741,11 +852,12 @@ export const generateFinalHtmlStr = (
     }
 
     if (isInline) {
-      const avatarStyle = `width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; background-color: ${hideAvatar ? 'transparent' : avatarPlaceholder}; border-radius: 4px; object-fit: contain;`;
-      const bodyStyle = `flex-grow: 1; line-height: ${lineHeight}; ${letterSpacing === 0 ? '' : `letter-spacing: ${letterSpacing}px;`}`;
-      const nameStyle = `font-weight: bold; color: ${color}; font-size: ${r(textFontSize * 0.96)}px; margin-bottom: ${Math.max(4, Math.ceil(textFontSize * (lineHeight >= 1.4 ? 0.3 : 0.5)))}px; display: block;`;
-      const contentStyle = `font-size: ${r(textFontSize)}px; color: ${textColor}; white-space: pre-wrap; word-break: break-all;`;
-      const otherContentStyle = `font-size: ${r(textFontSize)}px; color: ${otherTextColor}; white-space: pre-wrap; word-break: break-all;`;
+      const charClass = shortenId(log.charId);
+      const avatarStyle = `width:${avatarSize}px;height:${avatarSize}px;flex-shrink:0;background-color:${hideAvatar ? 'transparent' : avatarPlaceholder};border-radius:4px;object-fit:contain;`;
+      const bodyStyle = `flex:1;`;
+      const nameStyle = `font-size:0.96em;margin-bottom:${Math.max(4, Math.ceil(textFontSize * (lineHeight >= 1.4 ? 0.3 : 0.5)))}px;display:block;`;
+      const contentStyle = `white-space:pre-wrap;word-break:break-all;`;
+      const otherContentStyle = `color:${otherTextColor};white-space:pre-wrap;word-break:break-all;`;
       
       const isSectionStart = chunkIdx === 0 || hasBlockBefore;
       const mergeWithPrev = shouldMergeStyle && isPrevSameTab && !isSectionStart;
@@ -774,20 +886,18 @@ export const generateFinalHtmlStr = (
         itemMarginTop = '0';
       }
 
-      const isMainTab = format === 'main' ? 'true' : 'false';
-      const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
-      const isCommandFlag = log.isCommand ? 'true' : 'false';
-      const fullFilterAttrs = isFilterEnabled 
-        ? ` data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="ccfolia-log-entry"`
-        : '';
+      const fullFilterAttrs = getFilterAttrs(log);
         
       if (isNarration) {
-        html += `<div${fullFilterAttrs} style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop}; padding: ${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px; text-align: center; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; ${letterSpacing === 0 ? '' : `letter-spacing: ${letterSpacing}px;`} font-weight: bold; font-style: italic;">`;
+        const narrStyle = `padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;text-align:center;`;
+        html += `<div${fullFilterAttrs} style="position:relative;margin-bottom:${itemMarginBottom};margin-top:${itemMarginTop};">`;
+        html += `<div style="${cleanStyle(narrStyle)}">`;
         const flatPieces = finalHtmlContentPieces.flat();
         html += flatPieces.map((piece, pIdx) => {
-          const prefix = pIdx > 0 ? `<div style="margin-top: 0.8em;"></div>` : '';
-          return `${prefix}<div style="white-space: pre-wrap; word-break: break-all;">${piece}</div>`;
+          const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
+          return `${prefix}<div style="white-space:pre-wrap;word-break:break-all;"><b><i>${piece}</i></b></div>`;
         }).join('');
+        html += `</div>`;
         if (blocksAfterHtml) {
           html += blocksAfterHtml;
         }
@@ -796,23 +906,23 @@ export const generateFinalHtmlStr = (
         }
         html += `</div>`;
       } else {
-        html += `<div${fullFilterAttrs} style="position: relative; margin-bottom: ${itemMarginBottom}; margin-top: ${itemMarginTop};">`;
+        html += `<div${fullFilterAttrs} style="position:relative;margin-bottom:${itemMarginBottom};margin-top:${itemMarginTop};">`;
         if (log.isCommand) {
-          const nameHtml = log.name !== 'system' ? `<span style="color: ${color}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; font-size: ${r(textFontSize)}px;">[ ${log.name} ]</span>` : '';
-          const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
-          const lsStyle = letterSpacing === 0 ? '' : `letter-spacing: ${letterSpacing}px;`;
+          const nameHtml = log.name !== 'system' ? `<b class="c-tx ${charClass}">[ ${log.name} ]</b>` : '';
+          const marginLeft = log.name !== 'system' ? 'margin-left:8px;' : '';
           const cmdMarginTop = hasSpecialDividerAboveAndNoBadge ? '0' : `${s(8)}px`;
           if (format === 'secret') {
             const tabColor = tabSet?.color || '#ffd400';
             const secretBg = getSecretBg(tabColor);
-            html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${secretBg}; border: 1px solid ${borderColor}; padding: ${paddingVertical}px ${paddingHorizontal}px; border-radius: 8px; margin: ${cmdMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; font-size: ${r(textFontSize)}px; ${lsStyle} ${marginLeft}">${finalHtmlContent}</span></div>`;
+            html += `<div style="${cleanStyle(`display:flex;align-items:center;flex-wrap:wrap;background:${secretBg};border:1px solid ${borderColor};padding:${paddingVertical}px ${paddingHorizontal}px;border-radius:8px;margin:${cmdMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px`)}">${nameHtml}<b><span style="${cleanStyle(`color:${textColor};font-family:'NanumGothicCodingLigature',monospace;${marginLeft}`)}">${finalHtmlContent}</span></b></div>`;
           } else {
-            html += `<div style="display: flex; align-items: center; flex-wrap: wrap; background: ${commandBg}; border: 1px solid ${borderColor}; padding: ${paddingVertical}px ${paddingHorizontal}px; border-radius: 8px; margin: ${cmdMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px;">${nameHtml}<span style="color: ${textColor}; font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; font-size: ${r(textFontSize)}px; ${lsStyle} ${marginLeft}">${finalHtmlContent}</span></div>`;
+            html += `<div style="${cleanStyle(`display:flex;align-items:center;flex-wrap:wrap;background:${commandBg};border:1px solid ${borderColor};padding:${paddingVertical}px ${paddingHorizontal}px;border-radius:8px;margin:${cmdMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px`)}">${nameHtml}<b><span style="${cleanStyle(`color:${textColor};font-family:'NanumGothicCodingLigature',monospace;${marginLeft}`)}">${finalHtmlContent}</span></b></div>`;
           }
         } else if (format === 'other') {
-          html += `<div style="padding: ${s(2)}px ${paddingHorizontal}px; display: flex; gap: ${gapSize / 1.5}px; align-items: baseline; line-height: ${lineHeight}; ${letterSpacing === 0 ? '' : `letter-spacing: ${letterSpacing}px;`}">
-            <span style="font-weight: bold; flex-shrink: 0; font-size: ${r(textFontSize * 0.96)}px; color: ${otherNameColor};">${log.name}</span>
-            <div style="${otherContentStyle}">${finalHtmlContent}</div>
+          const rowStyle = `padding:${s(2)}px ${paddingHorizontal}px;display:flex;gap:${gapSize / 1.5}px;align-items:baseline;`;
+          html += `<div style="${cleanStyle(rowStyle)}">
+            <b><span style="${cleanStyle(`flex-shrink:0;font-size:0.96em;color:${otherNameColor}`)}">${log.name}</span></b>
+            <div style="${cleanStyle(otherContentStyle)}">${finalHtmlContent}</div>
           </div>`;
         } else if (format === 'info') {
           const infoMarginTop = hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px');
@@ -823,16 +933,16 @@ export const generateFinalHtmlStr = (
             : '4px';
           const infoBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : '';
           const infoBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : '';
-
-          const lsStyle = letterSpacing === 0 ? '' : `letter-spacing: ${letterSpacing}px;`;
-          html += `<div style="padding: ${paddingVertical}px ${paddingHorizontal}px; background: ${infoBg}; border-left: 4px solid ${borderColor}; margin: ${infoMargin}; border-radius: ${infoRadius}; ${infoBorderTop ? `border-top: ${infoBorderTop}; ` : ''}${infoBorderBottom ? `border-bottom: ${infoBorderBottom}; ` : ''} line-height: ${lineHeight}; ${lsStyle}">
-            <span style="${nameStyle}">${log.name}</span>
-            <div style="${contentStyle}">${finalHtmlContent}</div>
+ 
+          const wrapperStyle = `padding:${paddingVertical}px ${paddingHorizontal}px;background:${infoBg};border-left:4px solid ${borderColor};margin:${infoMargin};border-radius:${infoRadius};${infoBorderTop ? `border-top:${infoBorderTop};` : ''}${infoBorderBottom ? `border-bottom:${infoBorderBottom};` : ''}`;
+          html += `<div style="${cleanStyle(wrapperStyle)}">
+            <b><span class="${charClass}" style="${cleanStyle(nameStyle)}">${log.name}</span></b>
+            <div style="${cleanStyle(contentStyle)}">${finalHtmlContent}</div>
           </div>`;
         } else if (format === 'secret') {
           const tabColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(tabColor);
-          const imgTag = img ? `<img src="${img}" style="${avatarStyle}" />` : `<div style="${avatarStyle}"></div>`;
+          const imgTag = img ? `<img src="${img}" style="${cleanStyle(avatarStyle)}" />` : `<div style="${cleanStyle(avatarStyle)}"></div>`;
           const secretMarginTop = hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px');
           const secretMarginBottomVal = mergeWithNext ? '0' : (hasSpecialDividerBelow ? '0' : '4px');
           const secretMargin = `${secretMarginTop} ${paddingHorizontal}px ${secretMarginBottomVal} ${paddingHorizontal}px`;
@@ -841,29 +951,31 @@ export const generateFinalHtmlStr = (
             : '4px';
           const secretBorderTop = shouldMergeStyle && isPrevSameTab && !isSectionStart ? 'none' : '';
           const secretBorderBottom = shouldMergeStyle && isNextSameTab && !isSectionEnd ? 'none' : '';
-
-          const borderTopStyle = secretBorderTop ? `border-top: ${secretBorderTop}; ` : '';
-          const borderBottomStyle = secretBorderBottom ? `border-bottom: ${secretBorderBottom}; ` : '';
-
+ 
+          const borderTopStyle = secretBorderTop ? `border-top:${secretBorderTop};` : '';
+          const borderBottomStyle = secretBorderBottom ? `border-bottom:${secretBorderBottom};` : '';
+ 
+          const wrapperStyle = `display:flex;gap:${gapSize}px;padding:${paddingVertical}px ${paddingHorizontal}px;align-items:flex-start;background:${secretBg};border-left:4px solid ${tabColor};margin:${secretMargin};border-radius:${secretRadius};${borderTopStyle}${borderBottomStyle}`;
           html += `
-            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingVertical}px ${paddingHorizontal}px; align-items: flex-start; background: ${secretBg}; border-left: 4px solid ${tabColor}; margin: ${secretMargin}; border-radius: ${secretRadius}; ${borderTopStyle}${borderBottomStyle}">
+            <div style="${cleanStyle(wrapperStyle)}">
               ${imgTag}
-              <div style="${bodyStyle}">
-                <span style="${nameStyle}">${log.name}</span>
-                <div style="${contentStyle}">${finalHtmlContent}</div>
+              <div style="${cleanStyle(bodyStyle)}">
+                <b><span class="${charClass}" style="${cleanStyle(nameStyle)}">${log.name}</span></b>
+                <div style="${cleanStyle(contentStyle)}">${finalHtmlContent}</div>
               </div>
             </div>`;
         } else {
           const avatarHtml = img 
-            ? `<img src="${img}" style="${avatarStyle}" />` 
-            : `<div style="${avatarStyle}"></div>`;
+            ? `<img src="${img}" style="${cleanStyle(avatarStyle)}" />` 
+            : `<div style="${cleanStyle(avatarStyle)}"></div>`;
           
+          const wrapperStyle = `display:flex;gap:${gapSize}px;padding:${paddingVertical}px ${paddingHorizontal}px;align-items:flex-start;`;
           html += `
-            <div style="display: flex; gap: ${gapSize}px; padding: ${paddingVertical}px ${paddingHorizontal}px; align-items: flex-start;">
+            <div style="${cleanStyle(wrapperStyle)}">
               ${avatarHtml}
-              <div style="${bodyStyle}">
-                <span style="${nameStyle}">${log.name}</span>
-                <div style="${contentStyle}">${finalHtmlContent}</div>
+              <div style="${cleanStyle(bodyStyle)}">
+                <b><span class="${charClass}" style="${cleanStyle(nameStyle)}">${log.name}</span></b>
+                <div style="${cleanStyle(contentStyle)}">${finalHtmlContent}</div>
               </div>
             </div>`;
         }
@@ -876,54 +988,49 @@ export const generateFinalHtmlStr = (
         html += `</div>`;
       }
     } else {
+      const charClass = shortenId(log.charId);
       const isSectionStart = !prevVisibleChunk || hasBlockBefore;
       const isSectionEnd = !nextVisibleChunk || isNextSameTab === false || hasBlockAfter;
       let mb = '';
       let mt = '';
 
       if (log.isCommand || format === 'secret') {
-        mb = isNextSameTab && !hasBlockAfter && shouldMergeStyle ? 'mb-0' : 'mb-cmd';
+        mb = isNextSameTab && !hasBlockAfter && shouldMergeStyle ? 'c-mb0' : 'c-mb-c';
       } else if (isNarration) {
-        mt = isPrevNarration ? 'mt-0' : 'mt-narr';
-        mb = isNextNarration ? 'mb-0' : 'mb-narr';
+        mt = isPrevNarration ? 'c-mt0' : 'c-mt-nr';
+        mb = isNextNarration ? 'c-mb0' : 'c-mb-nr';
       } else {
-        mt = isPrevSameTab && !hasBlockBefore && shouldMergeStyle ? 'mt-0' : 'mt-normal';
-        mb = isNextSameTab && !hasBlockAfter && shouldMergeStyle ? 'mb-0' : 'mb-normal';
+        mt = isPrevSameTab && !hasBlockBefore && shouldMergeStyle ? 'c-mt0' : 'c-mt-n';
+        mb = isNextSameTab && !hasBlockAfter && shouldMergeStyle ? 'c-mb0' : 'c-mb-n';
       }
 
       const cl = [mb, mt].filter(Boolean).join(' ');
-      const clStr = `log-item${cl ? ` ${cl}` : ''}${hasSpecialDividerAboveAndNoBadge ? ' mt-0-force' : ''}`;
+      const clStr = `c-i${cl ? ` ${cl}` : ''}${hasSpecialDividerAboveAndNoBadge ? ' c-mt-f' : ''}`;
       
-      const isMainTab = format === 'main' ? 'true' : 'false';
-      const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
-      const isCommandFlag = log.isCommand ? 'true' : 'false';
-      
-      const fullFilterAttrs = isFilterEnabled
-        ? ` data-tab="${log.tabId}" data-char="${log.charId}" data-is-main-tab="${isMainTab}" data-is-narration-character="${isNarrationCharacterTag}" data-is-command="${isCommandFlag}" class="${clStr} ccfolia-log-entry"`
-        : ` class="${clStr}"`;
+      const fullFilterAttrs = getFilterAttrs(log, clStr);
 
       html += `<div${fullFilterAttrs}>`;
 
       if (log.isCommand) {
-        const nameHtml = log.name !== 'system' ? `<span class="command-text" style="color: ${color}; font-weight: bold;">[ ${log.name} ]</span> ` : '';
+        const nameHtml = log.name !== 'system' ? `<b class="c-tx ${charClass}">[ ${log.name} ]</b> ` : '';
         const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
         if (format === 'secret') {
           const tabColor = tabSet?.color || '#ffd400';
           const secretBg = getSecretBg(tabColor);
-          html += `<div class="command-box" style="display: flex; align-items: center; flex-wrap: wrap; background: ${secretBg}; border: 1px solid ${borderColor}; margin: ${s(8)}px ${paddingHorizontal}px; border-radius: 8px;">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
+          html += `<div class="c-bx" style="display: flex; align-items: center; flex-wrap: wrap; background: ${secretBg}; border: 1px solid ${borderColor}; margin: ${s(8)}px ${paddingHorizontal}px; border-radius: 8px;">${nameHtml}<span class="c-tx" style="${marginLeft}">${finalHtmlContent}</span></div>`;
         } else {
-          html += `<div class="command-box" style="display: flex; align-items: center; flex-wrap: wrap;">${nameHtml}<span class="command-text" style="${marginLeft}">${finalHtmlContent}</span></div>`;
+          html += `<div class="c-bx" style="display: flex; align-items: center; flex-wrap: wrap;">${nameHtml}<span class="c-tx" style="${marginLeft}">${finalHtmlContent}</span></div>`;
         }
       } else if (isNarration) {
         const flatPieces = finalHtmlContentPieces.flat();
-        html += `<div class="narration-row" style="padding: ${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;">`;
+        html += `<div class="n-r" style="padding: ${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;">`;
         html += flatPieces.map((piece, pIdx) => {
-          const prefix = pIdx > 0 ? `<div style="margin-top: 0.8em;"></div>` : '';
+          const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
           return `${prefix}<div style="white-space: pre-wrap; word-break: keep-all; overflow-wrap: break-word;">${piece}</div>`;
         }).join('');
         html += `</div>`;
       } else if (format === 'other') {
-        html += `<div class="other-row" style="padding-top: ${s(2)}px; padding-bottom: ${s(2)}px;"><span class="other-name" style="color: ${otherNameColor}">${log.name}</span><div class="other-content">${finalHtmlContent}</div></div>`;
+        html += `<div class="o-r" style="padding-top: ${s(2)}px; padding-bottom: ${s(2)}px;"><span class="o-nm" style="color: ${otherNameColor}">${log.name}</span><div class="o-c">${finalHtmlContent}</div></div>`;
       } else if (format === 'info') {
         const tZ = isPrevSameTab && !isSectionStart, bZ = isNextSameTab && !isSectionEnd;
         const rad = shouldMergeStyle ? `${tZ ? 0 : 4}px ${tZ ? 0 : 4}px ${bZ ? 0 : 4}px ${bZ ? 0 : 4}px` : '4px';
@@ -934,7 +1041,7 @@ export const generateFinalHtmlStr = (
           shouldMergeStyle && bZ ? 'border-bottom: none;' : ''
         ].filter(Boolean).join(' ');
 
-        html += `<div class="info-row"${st ? ` style="${st}"` : ''}><span class="main-name" style="color: ${color};">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div>`;
+        html += `<div class="i-r"${st ? ` style="${st}"` : ''}><span class="m-nm ${charClass}">${log.name}</span><div class="m-c">${finalHtmlContent}</div></div>`;
       } else if (format === 'secret') {
         const tabColor = tabSet?.color || '#ffd400';
         const secretBg = getSecretBg(tabColor);
@@ -950,18 +1057,18 @@ export const generateFinalHtmlStr = (
         ].filter(Boolean).join(' ');
 
         if (hideAllAvatars) {
-          html += `<div class="secret-row no-avatar-grid" style="${st}"><span class="main-name" style="color: ${color};">${log.name}:</span><div class="main-body"><div class="main-content">${finalHtmlContent}</div></div></div>`;
+          html += `<div class="s-r no-avatar-grid" style="${st}"><span class="m-nm ${charClass}">${log.name}:</span><div class="m-b"><div class="m-c">${finalHtmlContent}</div></div></div>`;
         } else {
-          const avatarHtml = img ? `<img src="${img}" class="main-avatar"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="main-avatar"${avSt ? ` style="${avSt}"` : ''}></div>`;
-          html += `<div class="secret-row" style="${st}">${avatarHtml}<div class="main-body"><span class="main-name" style="color: ${color};">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div></div>`;
+          const avatarHtml = img ? `<img src="${img}" class="m-a"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="m-a"${avSt ? ` style="${avSt}"` : ''}></div>`;
+          html += `<div class="s-r" style="${st}">${avatarHtml}<div class="m-b"><span class="m-nm ${charClass}">${log.name}</span><div class="m-c">${finalHtmlContent}</div></div></div>`;
         }
       } else {
         const avSt = hideAvatar ? 'background-color: transparent;' : '';
         if (hideAllAvatars) {
-          html += `<div class="main-row no-avatar-grid"><span class="main-name" style="color: ${color};">${log.name}:</span><div class="main-body"><div class="main-content">${finalHtmlContent}</div></div></div>`;
+          html += `<div class="m-r no-avatar-grid"><span class="m-nm ${charClass}">${log.name}:</span><div class="m-b"><div class="m-c">${finalHtmlContent}</div></div></div>`;
         } else {
-          const avatarHtml = img ? `<img src="${img}" class="main-avatar"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="main-avatar"${avSt ? ` style="${avSt}"` : ''}></div>`;
-          html += `<div class="main-row">${avatarHtml}<div class="main-body"><span class="main-name" style="color: ${color};">${log.name}</span><div class="main-content">${finalHtmlContent}</div></div></div>`;
+          const avatarHtml = img ? `<img src="${img}" class="m-a"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="m-a"${avSt ? ` style="${avSt}"` : ''}></div>`;
+          html += `<div class="m-r">${avatarHtml}<div class="m-b"><span class="m-nm ${charClass}">${log.name}</span><div class="m-c">${finalHtmlContent}</div></div></div>`;
         }
       }
       if (blocksAfterHtml) {
@@ -975,7 +1082,7 @@ export const generateFinalHtmlStr = (
     }
   });
 
-  return `
+  const finalHtml = `
     <!DOCTYPE html>
     <html lang="ko">
     <head>
@@ -987,16 +1094,47 @@ export const generateFinalHtmlStr = (
         ${fontImport}
         ${filterBarCSS}
         ${textResetCSS}
-        .log-container * { box-sizing: border-box; min-width: 0; }
+        ${dynamicColorsCss}
+        .c-tx { font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; }
+        .c-ct * { box-sizing: border-box; min-width: 0; }
       </style>` : `<style>${css}</style>`}
     </head>
     <body>
-      <div class="log-main-container"${isInline ? ` style="background-color: ${bgColor}; margin: 0; padding: 0;"` : ''}>
+      <div class="c-mc"${isInline ? ` style="${cleanStyle(`background-color: ${bgColor}; margin: 0; padding: 0`)}"` : ''}>
         ${filterBarHtml}
-        ${isInline ? `<div class="log-container" style="width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: ${lineHeight}; letter-spacing: ${letterSpacing === 0 ? 'normal' : `${letterSpacing}px`}; padding: 20px 0; font-size: ${textFontSize}px; overflow-x: hidden;">\n${html}\n</div>` : `<div class="log-container">\n${html}\n</div>`}
+        ${isInline ? `<div class="c-ct" style="${cleanStyle(`width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: ${lineHeight}; letter-spacing: ${letterSpacing === 0 ? 'normal' : `${letterSpacing}px`}; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden`)}">\n${html}\n</div>` : `<div class="c-ct">\n${html}\n</div>`}
       </div>
       ${filterBarScript}
     </body>
     </html>
   `;
+
+  return minifyHtml(finalHtml);
+};
+
+const minifyHtml = (html: string): string => {
+  let minified = html;
+  
+  // 1. 주석 제거
+  minified = minified.replace(/<!--[\s\S]*?-->/g, '');
+
+  // 2. 태그와 태그 사이의 공백(줄바꿈 포함) 제거
+  minified = minified.replace(/>\s+</g, '><');
+
+  // 3. CSS 축소 (style="..." 속성 내부의 ': ' 및 '; ' 등을 ':' 및 ';'로 치환)
+  minified = minified.replace(/style="([^"]*)"/gi, (match, p1) => {
+    const cleaned = p1
+      .replace(/:\s+/g, ':')
+      .replace(/;\s+/g, ';')
+      .trim();
+    return `style="${cleaned}"`;
+  });
+
+  // 4. HTML 클래스명 사이의 다중 공백 단일화
+  minified = minified.replace(/class="([^"]*)"/gi, (match, p1) => {
+    const cleaned = p1.replace(/\s+/g, ' ').trim();
+    return `class="${cleaned}"`;
+  });
+
+  return minified.trim();
 };

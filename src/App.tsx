@@ -3213,19 +3213,19 @@ export default function App() {
                         >좁게</button>
                         <button 
                           onClick={() => {
-                            setTextFontSize(14); setLineHeight(1.6); setLetterSpacing(0); setBlockSpacing(2); setContentPadding(12);
-                            saveToHistory({ textFontSize: 14, lineHeight: 1.6, letterSpacing: 0, blockSpacing: 2, contentPadding: 12 });
+                            setTextFontSize(14); setLineHeight(1.6); setLetterSpacing(0); setBlockSpacing(2); setContentPadding(12); setAvatarSizeValue(46);
+                            saveToHistory({ textFontSize: 14, lineHeight: 1.6, letterSpacing: 0, blockSpacing: 2, contentPadding: 12, avatarSizeValue: 46 });
                           }}
-                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (textFontSize === 14 && lineHeight === 1.6 && letterSpacing === 0 && blockSpacing === 2 && contentPadding === 12) ? "bg-white/15 text-white shadow-sm" : "text-white/30 hover:text-white/60")}
+                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (textFontSize === 14 && lineHeight === 1.6 && letterSpacing === 0 && blockSpacing === 2 && contentPadding === 12 && avatarSizeValue === 46) ? "bg-white/15 text-white shadow-sm" : "text-white/30 hover:text-white/60")}
                         >
                           기본
                         </button>
                         <button 
                           onClick={() => {
-                            setTextFontSize(14); setLineHeight(2.0); setLetterSpacing(0); setBlockSpacing(6); setContentPadding(20);
-                            saveToHistory({ textFontSize: 14, lineHeight: 2.0, letterSpacing: 0, blockSpacing: 6, contentPadding: 20 });
+                            setTextFontSize(14); setLineHeight(2.0); setLetterSpacing(0); setBlockSpacing(6); setContentPadding(20); setAvatarSizeValue(46);
+                            saveToHistory({ textFontSize: 14, lineHeight: 2.0, letterSpacing: 0, blockSpacing: 6, contentPadding: 20, avatarSizeValue: 46 });
                           }}
-                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (textFontSize === 14 && lineHeight === 2.0 && letterSpacing === 0 && blockSpacing === 6 && contentPadding === 20) ? "bg-white/15 text-white shadow-sm" : "text-white/30 hover:text-white/60")}
+                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (textFontSize === 14 && lineHeight === 2.0 && letterSpacing === 0 && blockSpacing === 6 && contentPadding === 20 && avatarSizeValue === 46) ? "bg-white/15 text-white shadow-sm" : "text-white/30 hover:text-white/60")}
                         >넓게</button>
                       </div>
                       
@@ -3410,7 +3410,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.8.0</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.8.1</span>
           </div>
         </div>
       </aside>
