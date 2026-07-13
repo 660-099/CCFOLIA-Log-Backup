@@ -25,6 +25,11 @@ export const LogItem = React.memo(({
   onUpdateBlock,
   onRemoveBlock,
   onToggleImageInput,
+  onAddIllustration,
+  onUpdateIllustration,
+  onRemoveIllustration,
+  originalLogIndex,
+  illustrations = [],
   onEditLog,
   onDeleteLog,
   insertLogBlock,
@@ -69,6 +74,28 @@ export const LogItem = React.memo(({
   const [editCharId, setEditCharId] = useState(log.charId);
   const [editTabId, setEditTabId] = useState(log.tabId);
   const [isHoveringButton, setIsHoveringButton] = useState(false);
+  const orderedTabs = useMemo(() => {
+    if (tabOrder && tabOrder.length > 0) {
+      return tabOrder.map((id: string) => tabSettings[id]).filter(Boolean);
+    }
+    return Object.values(tabSettings);
+  }, [tabOrder, tabSettings]);
+
+  const [tabOverrideValue, setTabOverrideValue] = useState(() => {
+    const initialTabId = log.tabId || '';
+    const hasTab = orderedTabs.some((tab: any) => tab.id === initialTabId);
+    return hasTab ? initialTabId : (orderedTabs[0]?.id || '');
+  });
+  const [imageInputVal, setImageInputVal] = useState('');
+
+  useEffect(() => {
+    if (!imageInputLoc || imageInputLoc.logId !== stableId) {
+      setImageInputVal('');
+    }
+    const initialTabId = log.tabId || '';
+    const hasTab = orderedTabs.some((tab: any) => tab.id === initialTabId);
+    setTabOverrideValue(hasTab ? initialTabId : (orderedTabs[0]?.id || ''));
+  }, [imageInputLoc, stableId, log.tabId, orderedTabs]);
 
   useEffect(() => {
     if (isEditing) {
@@ -120,22 +147,48 @@ export const LogItem = React.memo(({
             "mx-4 my-2 p-4 border border-dashed rounded-xl flex flex-col gap-3",
             theme === 'dark' ? "bg-white/5 border-white/20" : "bg-stone-50 border-stone-200 shadow-sm"
           )}>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              <select 
+                value={tabOverrideValue}
+                onChange={(e) => setTabOverrideValue(e.target.value)}
+                className={cn(
+                  "border rounded-lg px-3 py-2 text-[11px] h-9 min-w-[120px] focus:outline-none focus:ring-1 focus:ring-[#e6005c]",
+                  theme === 'dark' ? "bg-black/40 text-white border-white/20" : "bg-white text-stone-900 border-stone-200"
+                )}
+              >
+                {orderedTabs.map((tab: any) => (
+                  <option key={tab.id} value={tab.id}>
+                    {tab.name}
+                  </option>
+                ))}
+              </select>
               <input 
                 type="text" 
                 placeholder="https://..." 
-                className={cn("flex-1 border rounded-lg px-3 py-2 text-[11px]", theme === 'dark' ? "bg-black/40 text-white" : "bg-white text-stone-900")}
+                value={imageInputVal}
+                onChange={(e) => setImageInputVal(e.target.value)}
+                className={cn(
+                  "flex-1 border rounded-lg px-3 py-2 text-[11px] h-9 focus:outline-none focus:ring-1 focus:ring-[#e6005c]",
+                  theme === 'dark' ? "bg-black/40 text-white border-white/20" : "bg-white text-stone-900 border-stone-200"
+                )}
                 onKeyDown={(e) => {
                   if (e.nativeEvent.isComposing) return;
-                  if (e.key === 'Enter') onAddBlock(logId, 0, 'image', { url: e.currentTarget.value });
+                  if (e.key === 'Enter') {
+                    const url = imageInputVal.trim();
+                    if (url && onAddIllustration) {
+                      onAddIllustration(stableId, url, tabOverrideValue);
+                    }
+                  }
                 }}
               />
               <button 
-                onClick={(e) => {
-                  const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-                  onAddBlock(logId, 0, 'image', { url: input.value });
+                onClick={() => {
+                  const url = imageInputVal.trim();
+                  if (url && onAddIllustration) {
+                    onAddIllustration(stableId, url, tabOverrideValue);
+                  }
                 }}
-                className="px-4 py-2 bg-[#e6005c] text-white rounded-lg text-[11px]"
+                className="px-4 py-2 bg-[#e6005c] hover:bg-[#ff007f] text-white rounded-lg text-[11px] h-9 font-bold shrink-0 flex items-center justify-center transition-colors"
               >
                 추가
               </button>
@@ -193,27 +246,53 @@ export const LogItem = React.memo(({
               allowSplit={!(isLastLog && i === blocks.length - 1)}
               disabled={isHoveringButton}
             />
-            {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === i + 1 && (
+             {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === i + 1 && (
               <div className={cn(
                 "mx-4 my-2 p-4 border border-dashed rounded-xl flex flex-col gap-3",
                 theme === 'dark' ? "bg-white/5 border-white/20" : "bg-stone-50 border-stone-200 shadow-sm"
               )}>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
+                  <select 
+                    value={tabOverrideValue}
+                    onChange={(e) => setTabOverrideValue(e.target.value)}
+                    className={cn(
+                      "border rounded-lg px-3 py-2 text-[11px] h-9 min-w-[120px] focus:outline-none focus:ring-1 focus:ring-[#e6005c]",
+                      theme === 'dark' ? "bg-black/40 text-white border-white/20" : "bg-white text-stone-900 border-stone-200"
+                    )}
+                  >
+                    {orderedTabs.map((tab: any) => (
+                      <option key={tab.id} value={tab.id}>
+                        {tab.name}
+                      </option>
+                    ))}
+                  </select>
                   <input 
                     type="text" 
                     placeholder="https://..." 
-                    className={cn("flex-1 border rounded-lg px-3 py-2 text-[11px]", theme === 'dark' ? "bg-black/40 text-white" : "bg-white text-stone-900")}
+                    value={imageInputVal}
+                    onChange={(e) => setImageInputVal(e.target.value)}
+                    className={cn(
+                      "flex-1 border rounded-lg px-3 py-2 text-[11px] h-9 focus:outline-none focus:ring-1 focus:ring-[#e6005c]",
+                      theme === 'dark' ? "bg-black/40 text-white border-white/20" : "bg-white text-stone-900 border-stone-200"
+                    )}
                     onKeyDown={(e) => {
                       if (e.nativeEvent.isComposing) return;
-                      if (e.key === 'Enter') onAddBlock(logId, i + 1, 'image', { url: e.currentTarget.value });
+                      if (e.key === 'Enter') {
+                        const url = imageInputVal.trim();
+                        if (url && onAddIllustration) {
+                          onAddIllustration(stableId, url, tabOverrideValue);
+                        }
+                      }
                     }}
                   />
                   <button 
-                    onClick={(e) => {
-                      const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-                      onAddBlock(logId, i + 1, 'image', { url: input.value });
+                    onClick={() => {
+                      const url = imageInputVal.trim();
+                      if (url && onAddIllustration) {
+                        onAddIllustration(stableId, url, tabOverrideValue);
+                      }
                     }}
-                    className="px-4 py-2 bg-[#e6005c] text-white rounded-lg text-[11px]"
+                    className="px-4 py-2 bg-[#e6005c] hover:bg-[#ff007f] text-white rounded-lg text-[11px] h-9 font-bold shrink-0 flex items-center justify-center transition-colors"
                   >
                     추가
                   </button>
@@ -308,6 +387,12 @@ export const LogItem = React.memo(({
   const currentBlocks = Array.isArray(insertedBlocks)
     ? insertedBlocks
     : (insertedBlocks[stableId] || []);
+  
+  const logIllustrations = useMemo(() => {
+    if (originalLogIndex === undefined || originalLogIndex === -1) return [];
+    return illustrations.filter((ill: any) => ill.afterLogIndex === originalLogIndex);
+  }, [illustrations, originalLogIndex]);
+
   const hasBlockAfter = currentBlocks.length > 0;
   
   const isSplit = hasBlockAfter && currentBlocks.some((b: any) => b.type === 'split');
@@ -519,6 +604,178 @@ export const LogItem = React.memo(({
     if (hasSpecialDividerAboveAndNoBadge) return '0';
     return itemMarginTop;
   }, [hasSpecialDividerAboveAndNoBadge, itemMarginTop]);
+
+  if (log.isIllustration) {
+    const ill = log.illustration;
+    const illTabSet = tabSettings[ill.tabOverride];
+    const illFormat = illTabSet?.format || 'main';
+    const illIsSecret = illFormat === 'secret';
+    const illTabColor = illTabSet?.color || '#ffd400';
+
+    const align = ill.align || 'center';
+    const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
+
+    const isFirstInSection = !isPrevSameTab;
+    const isLastInSection = !isNextSameTab;
+
+    let contentPaddingValue = contentPadding;
+    if (typeof contentPaddingValue !== 'number') {
+      contentPaddingValue = parseFloat(contentPaddingValue) || 15.5;
+    }
+
+    const scale = fontSize / 14;
+    const paddingHorizontal = contentPaddingValue * scale;
+    const paddingVertical = basePaddingVertical * scale;
+
+    const renderHeader = showTabNames.has(illFormat) && isFirstInSection;
+
+    return (
+      <div 
+        className="log-item-wrapper group/item relative min-h-[30px] flex flex-col justify-center"
+        style={{
+          marginTop: isFirstInSection ? `${Math.round(paddingVertical)}px` : '4px',
+          marginBottom: isLastInSection ? `${Math.round(paddingVertical)}px` : '4px',
+        }}
+      >
+        {renderHeader && (
+          <div style={{ margin: `${hasSpecialDividerAbove ? 0 : 12}px ${r(paddingHorizontal)}px 8px ${r(paddingHorizontal)}px`, display: 'flex' }}>
+            <div style={{ 
+              background: getSecretBg(illTabColor), 
+              color: illTabColor,
+              padding: '2px 10px',
+              borderRadius: '4px',
+              fontSize: `${r(nameSize * 0.8)}px`,
+              fontWeight: 'bold',
+              border: `1px solid ${illTabColor}44`
+            }}>
+              {illTabSet?.name || 'Unknown'}
+            </div>
+          </div>
+        )}
+
+        <div 
+          onMouseEnter={() => setIsHoveringButton(true)}
+          onMouseLeave={() => setIsHoveringButton(false)}
+          className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
+        >
+          <button 
+            onClick={() => onRemoveIllustration && onRemoveIllustration(ill.id)} 
+            className={cn(
+              "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+              theme === 'dark' 
+                ? "bg-stone-800/80 text-red-400 hover:text-red-300 hover:bg-red-950/40 border-white/10" 
+                : "bg-white/90 text-red-600 hover:text-red-700 hover:bg-red-50 border-stone-200"
+            )}
+            title="삽화 삭제"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+
+        {illFormat === 'info' ? (
+          <div
+            style={{
+              paddingTop: `${Math.round(12 * scale)}px`,
+              paddingBottom: `${Math.round(12 * scale)}px`,
+              paddingLeft: `${Math.round(paddingHorizontal)}px`,
+              paddingRight: `${Math.round(paddingHorizontal)}px`,
+              background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+              borderLeft: `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`,
+              marginLeft: `${Math.round(paddingHorizontal)}px`,
+              marginRight: `${Math.round(paddingHorizontal)}px`,
+              borderRadius: '4px',
+              display: 'flex',
+              justifyContent: justify
+            }}
+          >
+            <LogImage
+              url={ill.url}
+              width={ill.width}
+              align={ill.align || 'center'}
+              onDelete={() => onRemoveIllustration && onRemoveIllustration(ill.id)}
+              onUpdateWidth={(w: string) => onUpdateIllustration && onUpdateIllustration(ill.id, { width: w })}
+              onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateIllustration && onUpdateIllustration(ill.id, { align: a })}
+              paddingSize={0}
+            />
+          </div>
+        ) : illFormat === 'secret' ? (
+          <div
+            style={{
+              paddingTop: `${paddingVertical}px`,
+              paddingBottom: `${paddingVertical}px`,
+              paddingLeft: `${Math.round(paddingHorizontal)}px`,
+              paddingRight: `${Math.round(paddingHorizontal)}px`,
+              background: getSecretBg(illTabColor),
+              borderLeft: `4px solid ${illTabColor}`,
+              marginLeft: `${Math.round(paddingHorizontal)}px`,
+              marginRight: `${Math.round(paddingHorizontal)}px`,
+              borderRadius: '4px',
+              display: 'flex',
+              justifyContent: justify
+            }}
+          >
+            <LogImage
+              url={ill.url}
+              width={ill.width}
+              align={ill.align || 'center'}
+              onDelete={() => onRemoveIllustration && onRemoveIllustration(ill.id)}
+              onUpdateWidth={(w: string) => onUpdateIllustration && onUpdateIllustration(ill.id, { width: w })}
+              onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateIllustration && onUpdateIllustration(ill.id, { align: a })}
+              paddingSize={0}
+            />
+          </div>
+        ) : (
+          <div 
+            style={{ 
+              marginLeft: `${Math.round(paddingHorizontal)}px`,
+              marginRight: `${Math.round(paddingHorizontal)}px`,
+              display: 'flex', 
+              justifyContent: justify 
+            }}
+          >
+            <LogImage
+              url={ill.url}
+              width={ill.width}
+              align={ill.align || 'center'}
+              onDelete={() => onRemoveIllustration && onRemoveIllustration(ill.id)}
+              onUpdateWidth={(w: string) => onUpdateIllustration && onUpdateIllustration(ill.id, { width: w })}
+              onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateIllustration && onUpdateIllustration(ill.id, { align: a })}
+              paddingSize={0}
+            />
+          </div>
+        )}
+
+        {hasDividerBelow && !isSplit && (
+          <div 
+            style={{
+              marginTop: `${r(dividerMarginTop * scale)}px`,
+              marginBottom: `${r(dividerMarginBottom * scale)}px`,
+              marginLeft: ((format === 'info' || format === 'secret') && mergeWithNext) ? `${r(paddingHorizontal)}px` : '0',
+              marginRight: ((format === 'info' || format === 'secret') && mergeWithNext) ? `${r(paddingHorizontal)}px` : '0',
+              background: ((format === 'info' || format === 'secret') && mergeWithNext) 
+                ? (format === 'secret' ? getSecretBg(tabColor) : (theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)')) 
+                : 'transparent',
+              borderLeft: ((format === 'info' || format === 'secret') && mergeWithNext)
+                ? (format === 'secret' ? `4px solid ${tabColor}` : `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`)
+                : 'none',
+              paddingLeft: `${r(paddingHorizontal)}px`,
+              paddingRight: `${r(paddingHorizontal)}px`
+            }}
+            className="w-full flex items-center justify-stretch pointer-events-none mt-4"
+          >
+            <div 
+              className={cn(
+                "w-full border-b-[1px]",
+                theme === 'dark' 
+                  ? "border-white/8" 
+                  : "border-black/10"
+              )}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div 

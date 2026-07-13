@@ -61,7 +61,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
 import { clsx, type ClassValue } from 'clsx';
-import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem } from './types';
+import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem, Illustration } from './types';
 import { parseLogFile } from './parser';
 import { cn, r, rgbToHex } from './utils';
 import { extractOldFormat, InsertedBlock, migrateToInsertedBlocks } from './utils/migration';
@@ -471,6 +471,7 @@ export default function App() {
   const [tabOrder, setTabOrder] = useState<string[]>([]);
   const [extractedColors, setExtractedColors] = useState<string[]>([]);
   const [tabSettings, setTabSettings] = useState<Record<string, TabSetting>>({});
+  const [illustrations, setIllustrations] = useState<Illustration[]>([]);
   const [rememberSettings, setRememberSettings] = useLocalStorage<boolean>('ccfolia_rememberSettings', true);
   
   const [cssFormat, setCssFormat] = useLocalStorage<'inline' | 'internal'>('ccfolia_cssFormat', 'internal', undefined, undefined, rememberSettings);
@@ -774,6 +775,7 @@ export default function App() {
       narrationCharacter,
       enableSentenceSpacing,
       showLogDivider,
+      illustrations,
       ...state
     };
     const newHistory = history.slice(0, historyIndex + 1);
@@ -868,6 +870,11 @@ export default function App() {
     if (state.narrationCharacter !== undefined) setNarrationCharacter(state.narrationCharacter);
     if (state.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(state.enableSentenceSpacing);
     if (state.showLogDivider !== undefined) setShowLogDivider(state.showLogDivider);
+    if (state.illustrations !== undefined) {
+      setIllustrations(state.illustrations);
+    } else {
+      setIllustrations([]);
+    }
   };
 
   const resetSettings = () => {
@@ -1310,57 +1317,82 @@ export default function App() {
   const mergedLogs = useMemo(() => {
     if (logs.length === 0) return [];
     
-    const result: LogEntry[] = [];
-    let prevVisibleLog: LogEntry | null = null;
+    const result: any[] = [];
+    let prevVisibleLog: any | null = null;
     let currentSectionId = 'section-0';
 
-    const visibleLogs = logs.map(log => {
+    logs.forEach((log, idx) => {
       const isVisibleContent = tabSettings[log.tabId]?.visible && charSettings[log.charId]?.visible !== false;
       const hasImage = insertedBlocks[log.id]?.some((b: any) => b.type === 'image');
       
+      let mappedLog: any = null;
       if (isVisibleContent) {
-        return { ...log, isHiddenContent: false };
+        mappedLog = { ...log, isHiddenContent: false };
       } else if (hasImage) {
-        return { ...log, isHiddenContent: true };
+        mappedLog = { ...log, isHiddenContent: true };
       }
-      return null;
-    }).filter(Boolean) as LogEntry[];
 
-    visibleLogs.forEach((log) => {
-      const tabSet = tabSettings[log.tabId];
-      const format = tabSet?.format || 'main';
-      const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
-      const prevStableId = prevVisibleLog ? (prevVisibleLog.id.startsWith('merged:') ? prevVisibleLog.id.split(',').pop()! : prevVisibleLog.id) : '';
-      const prevHasBlock = prevVisibleLog && !!insertedBlocks[prevStableId]?.length;
+      if (mappedLog) {
+        const tabSet = tabSettings[mappedLog.tabId];
+        const format = tabSet?.format || 'main';
+        const stableId = mappedLog.id.startsWith('merged:') ? mappedLog.id.split(',').pop()! : mappedLog.id;
+        const prevStableId = prevVisibleLog && !prevVisibleLog.isIllustration ? (prevVisibleLog.id.startsWith('merged:') ? prevVisibleLog.id.split(',').pop()! : prevVisibleLog.id) : '';
+        const prevHasBlock = prevVisibleLog && !prevVisibleLog.isIllustration && !!insertedBlocks[prevStableId]?.length;
 
-      let isContinuation = false;
-      if (prevVisibleLog) {
-        const prevFormat = tabSettings[prevVisibleLog.tabId]?.format || 'main';
-        const isPrevHidden = prevVisibleLog.isHiddenContent;
-        if (!log.isHiddenContent && 
-            !isPrevHidden &&
-            mergeTabs.has(format) && 
-            mergeTabs.has(prevFormat) &&
-            prevVisibleLog.name === log.name && 
-            prevVisibleLog.tab === log.tab && 
-            !log.isCommand && 
-            !prevVisibleLog.isCommand &&
-            !prevHasBlock) {
-          isContinuation = true;
+        let isContinuation = false;
+        if (prevVisibleLog && !prevVisibleLog.isIllustration) {
+          const prevFormat = tabSettings[prevVisibleLog.tabId]?.format || 'main';
+          const isPrevHidden = prevVisibleLog.isHiddenContent;
+          if (!mappedLog.isHiddenContent && 
+              !isPrevHidden &&
+              mergeTabs.has(format) && 
+              mergeTabs.has(prevFormat) &&
+              prevVisibleLog.name === mappedLog.name && 
+              prevVisibleLog.tab === mappedLog.tab && 
+              !mappedLog.isCommand && 
+              !prevVisibleLog.isCommand &&
+              !prevHasBlock) {
+            isContinuation = true;
+          }
+        }
+
+        const newLog = { ...mappedLog, isContinuation, sectionId: currentSectionId };
+        result.push(newLog);
+        prevVisibleLog = newLog;
+
+        if (splitPoints.has(stableId)) {
+          currentSectionId = `section-${stableId}`;
         }
       }
 
-      const newLog = { ...log, isContinuation, sectionId: currentSectionId };
-      result.push(newLog);
-      prevVisibleLog = newLog;
-
-      if (splitPoints.has(stableId)) {
-        currentSectionId = `section-${stableId}`;
-      }
+      // 삽화 삽입 처리
+      const logIllustrations = (illustrations || []).filter((ill: any) => ill.afterLogIndex === idx);
+      logIllustrations.forEach((ill: any) => {
+        const isIllVisible = tabSettings[ill.tabOverride]?.visible !== false;
+        if (isIllVisible) {
+          const illLogEntry: any = {
+            id: `illustration:${ill.id}`,
+            color: '',
+            tabId: ill.tabOverride,
+            tab: tabSettings[ill.tabOverride]?.name || '',
+            charId: 'system',
+            name: '',
+            content: ill.url,
+            isCommand: false,
+            isContinuation: false,
+            isHiddenContent: false,
+            isIllustration: true,
+            illustration: ill,
+            sectionId: currentSectionId
+          };
+          result.push(illLogEntry);
+          prevVisibleLog = illLogEntry; // Subsequent logs will see this and break continuation!
+        }
+      });
     });
 
     return result;
-  }, [logs, mergeTabs, tabSettings, charSettings, insertedBlocks, splitPoints]);
+  }, [logs, mergeTabs, tabSettings, charSettings, insertedBlocks, splitPoints, illustrations]);
 
   useLayoutEffect(() => {
     if (listRef.current) {
@@ -1508,6 +1540,35 @@ export default function App() {
     saveToHistory({ insertedBlocks: next });
     setImageInputLoc(null);
   }, [insertedBlocks, saveToHistory]);
+
+  const onAddIllustration = useCallback((afterLogId: string, url: string, tabOverride: string) => {
+    const logIdx = logs.findIndex((l: any) => l.id === afterLogId);
+    if (logIdx === -1) return;
+
+    const newIllustration: Illustration = {
+      id: `ill_${Date.now()}_${Math.random().toString(36).substr(2,9)}`,
+      url,
+      afterLogIndex: logIdx,
+      tabOverride
+    };
+
+    const next = [...illustrations, newIllustration];
+    setIllustrations(next);
+    saveToHistory({ illustrations: next });
+    setImageInputLoc(null);
+  }, [logs, illustrations, saveToHistory]);
+
+  const onUpdateIllustration = useCallback((id: string, updates: Partial<Illustration>) => {
+    const next = illustrations.map((ill: any) => ill.id === id ? { ...ill, ...updates } : ill);
+    setIllustrations(next);
+    saveToHistory({ illustrations: next });
+  }, [illustrations, saveToHistory]);
+
+  const onRemoveIllustration = useCallback((id: string) => {
+    const next = illustrations.filter((ill: any) => ill.id !== id);
+    setIllustrations(next);
+    saveToHistory({ illustrations: next });
+  }, [illustrations, saveToHistory]);
 
   const onUpdateBlock = useCallback((id: string, blockId: string, updates: Partial<InsertedBlock>) => {
     const next = { ...insertedBlocks };
@@ -1792,7 +1853,9 @@ export default function App() {
       blockSpacing,
       contentPadding,
       avatarSizeValue,
-      showLogDivider
+      showLogDivider,
+      illustrations,
+      logs
     );
   };
 
@@ -1855,7 +1918,9 @@ export default function App() {
         blockSpacing,
         contentPadding,
         avatarSizeValue,
-        showLogDivider
+        showLogDivider,
+        illustrations,
+        logs
       );
       
       const finalName = s.name ? `${fileName}_${s.name}` : `${fileName}_section_${i + 1}`;
@@ -3410,7 +3475,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.8.1</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.8.2</span>
           </div>
         </div>
       </aside>
@@ -3892,6 +3957,7 @@ export default function App() {
                         const isPrevSameTab = idx > 0 && mergedLogs[idx - 1].tab === log.tab;
                         const isNextSameTab = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].tab === log.tab;
                         const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
+                        const originalLogIndex = logs.findIndex((l: any) => l.id === stableId);
                         
                         const isPrevNarration = idx > 0 && mergedLogs[idx - 1].charId === narrationCharacter && (tabSettings[mergedLogs[idx - 1].tabId]?.format || 'main') === 'main';
                         const isNextNarration = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].charId === narrationCharacter && (tabSettings[mergedLogs[idx + 1].tabId]?.format || 'main') === 'main';
@@ -3923,6 +3989,11 @@ export default function App() {
                               imageInputLoc={imageInputLoc}
                               splitPointsArray={splitPointsArray}
                               onAddBlock={onAddBlock}
+                              onAddIllustration={onAddIllustration}
+                              onUpdateIllustration={onUpdateIllustration}
+                              onRemoveIllustration={onRemoveIllustration}
+                              originalLogIndex={originalLogIndex}
+                              illustrations={illustrations}
                               onUpdateBlock={onUpdateBlock}
                               onRemoveBlock={onRemoveBlock}
                               onToggleImageInput={onToggleImageInput}

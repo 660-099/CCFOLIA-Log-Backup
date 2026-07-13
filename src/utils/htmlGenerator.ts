@@ -1,4 +1,4 @@
-import { LogEntry, CharSetting, TabSetting } from '../types';
+import { LogEntry, CharSetting, TabSetting, Illustration } from '../types';
 import { cn, r, linkifyAndFormat } from '../utils';
 import DOMPurify from 'dompurify';
 import { fonts } from '../constants';
@@ -39,7 +39,9 @@ export const generateFinalHtmlStr = (
   blockSpacing: number = 2,
   contentPadding: number = 12,
   avatarSizeValue: number = 46,
-  showLogDivider: boolean = false
+  showLogDivider: boolean = false,
+  illustrations: Illustration[] = [],
+  originalLogs: LogEntry[] = []
 ) => {
   const isDark = theme === 'dark';
   const cleanStyle = (styleStr: string) => {
@@ -486,14 +488,84 @@ export const generateFinalHtmlStr = (
     });
   }
 
-  const chunks: { logs: LogEntry[], stableId: string, blocksAfter: any[], isHidden: boolean }[] = [];
+  const finalLogsSequence: any[] = [];
+  let prevLogForContinuation: any = null;
+
+  (originalLogs || []).forEach((log, idx) => {
+    // Check if the log is in filteredLogs (visible based on tab/character filters)
+    const isLogVisible = filteredLogs.some(f => f.id === log.id);
+    const hasImage = insertedBlocks[log.id]?.some((b: any) => b.type === 'image');
+
+    let mappedLog: any = null;
+    if (isLogVisible) {
+      mappedLog = { ...log, isHiddenContent: false };
+    } else if (hasImage) {
+      mappedLog = { ...log, isHiddenContent: true };
+    }
+
+    if (mappedLog) {
+      const tabSet = tabSettings[mappedLog.tabId];
+      const format = tabSet?.format || 'main';
+      const stableId = mappedLog.id.startsWith('merged:') ? mappedLog.id.split(',').pop()! : mappedLog.id;
+      const prevStableId = prevLogForContinuation && !prevLogForContinuation.isIllustration ? (prevLogForContinuation.id.startsWith('merged:') ? prevLogForContinuation.id.split(',').pop()! : prevLogForContinuation.id) : '';
+      const prevHasBlock = prevLogForContinuation && !prevLogForContinuation.isIllustration && !!insertedBlocks[prevStableId]?.length;
+
+      let isContinuation = false;
+      if (prevLogForContinuation && !prevLogForContinuation.isIllustration) {
+        const prevFormat = tabSettings[prevLogForContinuation.tabId]?.format || 'main';
+        const isPrevHidden = prevLogForContinuation.isHiddenContent;
+        if (!mappedLog.isHiddenContent && 
+            !isPrevHidden &&
+            mergeTabStyles.has(format) && 
+            mergeTabStyles.has(prevFormat) &&
+            prevLogForContinuation.name === mappedLog.name && 
+            prevLogForContinuation.tab === mappedLog.tab && 
+            !mappedLog.isCommand && 
+            !prevLogForContinuation.isCommand &&
+            !prevHasBlock) {
+          isContinuation = true;
+        }
+      }
+
+      const newLog = { ...mappedLog, isContinuation };
+      finalLogsSequence.push(newLog);
+      prevLogForContinuation = newLog;
+    }
+
+    // 삽화 처리
+    const logIllustrations = (illustrations || []).filter((ill: any) => ill.afterLogIndex === idx);
+    logIllustrations.forEach((ill: any) => {
+      const isIllVisible = tabSettings[ill.tabOverride]?.visible !== false;
+      if (isIllVisible) {
+        const illLogEntry: any = {
+          id: `illustration:${ill.id}`,
+          color: '',
+          tabId: ill.tabOverride,
+          tab: tabSettings[ill.tabOverride]?.name || '',
+          charId: 'system',
+          name: '',
+          content: ill.url,
+          isCommand: false,
+          isContinuation: false,
+          isHiddenContent: false,
+          isIllustration: true,
+          illustration: ill,
+          sectionId: log.sectionId
+        };
+        finalLogsSequence.push(illLogEntry);
+        prevLogForContinuation = illLogEntry;
+      }
+    });
+  });
+
+  const chunks: { logs: any[], stableId: string, blocksAfter: any[], isHidden: boolean }[] = [];
   
   const isValidUrl = (url: string) => {
     if (!url) return false;
     return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image/');
   };
 
-  filteredLogs.forEach((log) => {
+  finalLogsSequence.forEach((log) => {
     const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
     const currentBlocks = (insertedBlocks[stableId] || []).filter(b => b.type === 'split' || (b.type === 'image' && isValidUrl(b.url)));
     
@@ -700,6 +772,95 @@ export const generateFinalHtmlStr = (
           nextFormat = formatVal;
         }
       }
+    }
+
+    if (log.isIllustration) {
+      if (!isHidden) {
+        const ill = log.illustration;
+        const illTabSet = tabSettings[ill.tabOverride];
+        const illFormat = illTabSet?.format || 'main';
+        const illIsSecret = illFormat === 'secret';
+        const illTabColor = illTabSet?.color || '#ffd400';
+
+        const align = ill.align || 'center';
+        const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
+        const widthVal = ill.width ? `width: ${ill.width}px;` : 'max-width: 100%;';
+
+        // 1. Render Tab Name Badge if showTabNames has this format and isFirstInSection
+        if (showTabNames.has(illFormat) && !isPrevSameTab) {
+          const tabName = illTabSet?.name || 'Unknown';
+          const tabBg = getSecretBg(illTabColor);
+          const isMainTab = illFormat === 'main' ? 'true' : 'false';
+
+          if (isInline) {
+            const fAttrs = isFilterEnabled ? ` d-t="${shortenId(ill.tabOverride)}"${isMainTab === 'true' ? ' d-mt="1"' : ''} class="c-e"` : '';
+            const tabMarginTop = hasSpecialDividerAbove ? '0' : `${s(12)}px`;
+            const outerStyle = `margin: ${tabMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px; display: flex;`;
+            const badgeStyle = `background: ${tabBg}; color: ${illTabColor}; padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; border: 1px solid ${illTabColor}44; display: inline-block; white-space: nowrap;`;
+            html += `<div${fAttrs} style="${cleanStyle(outerStyle)}">
+              <div style="${cleanStyle(badgeStyle)}">
+                ${tabName}
+              </div>
+            </div>`;
+          } else {
+            const fAttrs = isFilterEnabled ? ` d-t="${shortenId(ill.tabOverride)}"${isMainTab === 'true' ? ' d-mt="1"' : ''} class="t-bl c-e"` : ` class="t-bl"`;
+            const badgeStyle = hasSpecialDividerAbove ? ' style="margin-top: 0 !important;"' : '';
+            html += `<div${fAttrs}${badgeStyle}>
+              <div class="t-bd" style="background: ${tabBg}; color: ${illTabColor}; border: 1px solid ${illTabColor}44;">
+                ${tabName}
+              </div>
+            </div>`;
+          }
+        }
+
+        // 2. Render the actual Illustration Container based on Format (info, secret, main/other)
+        const fAttrs = isFilterEnabled ? ` d-t="${shortenId(ill.tabOverride)}" class="c-e"` : ' class="c-e"';
+
+        if (isInline) {
+          let wrapperStyle = '';
+          if (illFormat === 'info') {
+            wrapperStyle = `padding:${paddingVertical}px ${paddingHorizontal}px;background:${isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'};border-left:4px solid ${isDark ? '#444' : '#DDD'};margin:4px ${paddingHorizontal}px;border-radius:4px;display:flex;justify-content:${justify};`;
+          } else if (illFormat === 'secret') {
+            wrapperStyle = `padding:${paddingVertical}px ${paddingHorizontal}px;background:${getSecretBg(illTabColor)};border-left:4px solid ${illTabColor};margin:4px ${paddingHorizontal}px;border-radius:4px;display:flex;justify-content:${justify};`;
+          } else {
+            wrapperStyle = `margin:4px ${paddingHorizontal}px;display:flex;justify-content:${justify};`;
+          }
+
+          html += `<div${fAttrs} style="${cleanStyle(wrapperStyle)}">
+            <img src="${ill.url}" style="${cleanStyle(`${widthVal}border-radius:8px;display:block`)}" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+          </div>`;
+        } else {
+          if (illFormat === 'info') {
+            const wrapperStyle = `margin: 4px ${paddingHorizontal}px; display: flex; justify-content: ${justify};`;
+            html += `<div${fAttrs} class="i-r" style="${cleanStyle(wrapperStyle)}">
+              <img src="${ill.url}" style="${cleanStyle(`${widthVal}border-radius:8px;display:block`)}" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+            </div>`;
+          } else if (illFormat === 'secret') {
+            const secretBg = getSecretBg(illTabColor);
+            const wrapperStyle = `background: ${secretBg}; border-left: 4px solid ${illTabColor}; margin: 4px ${paddingHorizontal}px; border-radius: 4px; display: flex; justify-content: ${justify};`;
+            html += `<div${fAttrs} class="s-r" style="${cleanStyle(wrapperStyle)}">
+              <img src="${ill.url}" style="${cleanStyle(`${widthVal}border-radius:8px;display:block`)}" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+            </div>`;
+          } else {
+            const wrapperStyle = `margin: 4px ${paddingHorizontal}px; display: flex; justify-content: ${justify};`;
+            html += `<div${fAttrs} style="${cleanStyle(wrapperStyle)}">
+              <img src="${ill.url}" style="${cleanStyle(`${widthVal}border-radius:8px;display:block`)}" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+            </div>`;
+          }
+        }
+
+        // Add Divider if needed
+        if (hasDividerBelow) {
+          if (isInline) {
+            const dividerStyle = `margin:${s(12)}px ${((illFormat === 'info' || illFormat === 'secret') && mergeWithNextOuter) ? `${paddingHorizontal}px` : '0'};background:transparent;border:none;border-top:1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'};height:0;`;
+            html += `<hr style="${cleanStyle(dividerStyle)}" class="c-e" />`;
+          } else {
+            html += `<div class="d-v c-e"></div>`;
+          }
+        }
+      }
+
+      return; // End chunk loop for illustration
     }
 
     let dividerHtml = '';

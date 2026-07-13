@@ -47,3 +47,13 @@ export interface ColorPickerPopupProps {
   onChange: (newColor: string) => void;
   onClose: () => void;
 }
+
+export interface Illustration {
+  id: string;
+  url: string;
+  afterLogIndex: number;
+  tabOverride: string;
+  width?: string;
+  align?: 'left' | 'center' | 'right';
+}
+
