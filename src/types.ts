@@ -12,6 +12,15 @@ export interface LogEntry {
   isContinuation?: boolean;
   isHiddenContent?: boolean;
   sectionId?: string;
+
+  // Illustration fields
+  isIllustration?: boolean;
+  isUnplaced?: boolean;
+  tabOverride?: string;
+  width?: string;
+  align?: 'left' | 'center' | 'right';
+  imageName?: string;
+  illustration?: Illustration;
 }
 
 export interface CharSetting {
@@ -19,6 +28,7 @@ export interface CharSetting {
   name: string;
   color: string;
   imageUrl: string;
+  imageName?: string;
   visible: boolean;
 }
 
@@ -51,7 +61,8 @@ export interface ColorPickerPopupProps {
 export interface Illustration {
   id: string;
   url: string;
-  afterLogIndex: number;
+  imageName?: string;
+  afterLogIndex: number | null;
   tabOverride: string;
   width?: string;
   align?: 'left' | 'center' | 'right';

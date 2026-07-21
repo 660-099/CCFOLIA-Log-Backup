@@ -60,3 +60,19 @@ export const hexToHsl = (hex: string) => {
   }
   return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
 };
+
+export const getFileNameFromUrl = (url: string) => {
+  try {
+    const decoded = decodeURIComponent(url);
+    const lastSlash = decoded.lastIndexOf('/');
+    if (lastSlash === -1) return url;
+    let name = decoded.substring(lastSlash + 1);
+    const queryIndex = name.indexOf('?');
+    if (queryIndex !== -1) {
+      name = name.substring(0, queryIndex);
+    }
+    return name || 'image';
+  } catch (e) {
+    return 'image';
+  }
+};

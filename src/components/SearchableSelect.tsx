@@ -6,6 +6,7 @@ interface Option {
   label: string;
   value: string;
   color?: string;
+  isGrayed?: boolean;
 }
 
 interface SearchableSelectProps {
@@ -15,6 +16,7 @@ interface SearchableSelectProps {
   placeholder?: string;
   className?: string;
   theme?: 'light' | 'dark';
+  disabled?: boolean;
 }
 
 export const SearchableSelect = ({ 
@@ -23,13 +25,28 @@ export const SearchableSelect = ({
   options,
   placeholder = "선택 안 함",
   className,
-  theme = 'dark'
+  theme = 'dark',
+  disabled = false
 }: SearchableSelectProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const [dropUp, setDropUp] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < 250 && rect.top > spaceBelow) {
+        setDropUp(true);
+      } else {
+        setDropUp(false);
+      }
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -44,14 +61,12 @@ export const SearchableSelect = ({
   const selectedOption = options.find(opt => opt.value === value);
   const displayValue = isOpen ? searchTerm : (selectedOption ? selectedOption.label : '');
 
-  const filteredOptions = [
-    ...options.filter(opt => 
-      opt.label.toLowerCase().includes(searchTerm.toLowerCase())
-    ),
-    { label: placeholder, value: '' }
-  ];
+  const filteredOptions = options.filter(opt => 
+    opt.label.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (disabled) return;
     if (e.nativeEvent.isComposing) return;
     if (!isOpen) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
@@ -115,36 +130,42 @@ export const SearchableSelect = ({
           type="text"
           value={displayValue}
           onChange={(e) => {
+            if (disabled) return;
             setSearchTerm(e.target.value);
             setIsOpen(true);
             setHighlightedIndex(0);
           }}
           onFocus={() => {
+            if (disabled) return;
             setSearchTerm('');
             setIsOpen(true);
             setHighlightedIndex(0);
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
+          disabled={disabled}
           className={cn(
             "w-full text-[10px] px-2 py-1.5 pr-6 rounded-lg outline-none focus:border-[#e6005c] transition-colors font-medium",
             theme === 'dark'
               ? "bg-black/40 border border-white/10 text-white/80 placeholder:text-white/30"
-              : "bg-white border border-stone-250 text-stone-800 placeholder:text-stone-400"
+              : "bg-white border border-stone-250 text-stone-800 placeholder:text-stone-400",
+            disabled && "opacity-40 cursor-not-allowed pointer-events-none"
           )}
           style={selectedOption?.color && !isOpen ? { color: selectedOption.color } : undefined}
         />
         <ChevronDown className={cn(
           "w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none transition-transform", 
           theme === 'dark' ? "text-white/40" : "text-stone-400",
-          isOpen && "rotate-180"
+          isOpen && "rotate-180",
+          disabled && "opacity-40"
         )} />
       </div>
       {isOpen && (
         <div 
           ref={listboxRef}
           className={cn(
-            "absolute z-50 w-full mt-1 border rounded-lg shadow-xl max-h-32 overflow-y-auto custom-scrollbar",
+            "absolute z-50 w-full border rounded-lg shadow-xl max-h-64 max-h-[min(260px,50vh)] overflow-y-auto custom-scrollbar",
+            dropUp ? "bottom-full mb-1" : "top-full mt-1",
             theme === 'dark'
               ? "bg-[#1a1a1a] border-white/10"
               : "bg-white border-stone-200"
@@ -158,7 +179,8 @@ export const SearchableSelect = ({
                 theme === 'dark'
                   ? (idx === highlightedIndex ? "bg-white/10 text-white" : "text-white/80 hover:bg-[#e6005c] hover:text-white")
                   : (idx === highlightedIndex ? "bg-stone-100 text-stone-900" : "text-stone-700 hover:bg-[#e6005c] hover:text-white"),
-                opt.value === '' && (theme === 'dark' ? "text-white/50" : "text-stone-400") // Placeholder styling
+                opt.value === '' && (theme === 'dark' ? "text-white/50" : "text-stone-400"), // Placeholder styling
+                opt.isGrayed && (theme === 'dark' ? "text-white/30" : "text-stone-400")
               )}
               style={opt.color ? { color: opt.color } : undefined}
               onMouseEnter={() => setHighlightedIndex(idx)}

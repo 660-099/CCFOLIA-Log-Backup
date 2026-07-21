@@ -29,6 +29,7 @@ export const generateFinalHtmlStr = (
   narrationCharacter: string | null,
   enableSentenceSpacing: boolean,
   insertedBlocks: Record<string, any[]>,
+  mergeTabs: Set<string>,
   mergeTabStyles: Set<string>,
   showTabNames: Set<string>,
   pageTitle: string,
@@ -492,6 +493,66 @@ export const generateFinalHtmlStr = (
   let prevLogForContinuation: any = null;
 
   (originalLogs || []).forEach((log, idx) => {
+    if (log.isUnplaced) return; // Skip unplaced illustrations
+
+    if (log.isIllustration) {
+      let resolvedTabId = log.tabOverride;
+      if (resolvedTabId === 'auto' || !resolvedTabId || !tabSettings[resolvedTabId]) {
+        let prevTabId = null;
+        for (let i = idx - 1; i >= 0; i--) {
+          if (originalLogs[i] && !originalLogs[i].isIllustration) {
+            const tabId = originalLogs[i].tabId;
+            if (tabSettings[tabId] && tabSettings[tabId].visible !== false) {
+              prevTabId = tabId;
+              break;
+            }
+          }
+        }
+        if (prevTabId) {
+          resolvedTabId = prevTabId;
+        } else {
+          let nextTabId = null;
+          for (let i = idx + 1; i < originalLogs.length; i++) {
+            if (originalLogs[i] && !originalLogs[i].isIllustration) {
+              const tabId = originalLogs[i].tabId;
+              if (tabSettings[tabId] && tabSettings[tabId].visible !== false) {
+                nextTabId = tabId;
+                break;
+              }
+            }
+          }
+          resolvedTabId = nextTabId || Object.keys(tabSettings)[0] || 'main';
+        }
+      }
+      const isIllVisible = tabSettings[resolvedTabId]?.visible !== false;
+      if (isIllVisible) {
+        const illLogEntry: any = {
+          id: log.id,
+          color: '',
+          tabId: resolvedTabId,
+          tab: tabSettings[resolvedTabId]?.name || '',
+          charId: 'system',
+          name: '',
+          content: log.content,
+          isCommand: false,
+          isContinuation: false,
+          isHiddenContent: false,
+          isIllustration: true,
+          illustration: {
+            id: log.id,
+            url: log.content,
+            tabOverride: log.tabOverride || 'auto',
+            width: log.width,
+            align: log.align || 'center'
+          },
+          sectionId: log.sectionId
+        };
+        finalLogsSequence.push(illLogEntry);
+        prevLogForContinuation = illLogEntry;
+      }
+      return;
+    }
+
     // Check if the log is in filteredLogs (visible based on tab/character filters)
     const isLogVisible = filteredLogs.some(f => f.id === log.id);
     const hasImage = insertedBlocks[log.id]?.some((b: any) => b.type === 'image');
@@ -516,8 +577,8 @@ export const generateFinalHtmlStr = (
         const isPrevHidden = prevLogForContinuation.isHiddenContent;
         if (!mappedLog.isHiddenContent && 
             !isPrevHidden &&
-            mergeTabStyles.has(format) && 
-            mergeTabStyles.has(prevFormat) &&
+            mergeTabs.has(format) && 
+            mergeTabs.has(prevFormat) &&
             prevLogForContinuation.name === mappedLog.name && 
             prevLogForContinuation.tab === mappedLog.tab && 
             !mappedLog.isCommand && 
@@ -532,30 +593,57 @@ export const generateFinalHtmlStr = (
       prevLogForContinuation = newLog;
     }
 
-    // 삽화 처리
-    const logIllustrations = (illustrations || []).filter((ill: any) => ill.afterLogIndex === idx);
-    logIllustrations.forEach((ill: any) => {
-      const isIllVisible = tabSettings[ill.tabOverride]?.visible !== false;
-      if (isIllVisible) {
-        const illLogEntry: any = {
-          id: `illustration:${ill.id}`,
-          color: '',
-          tabId: ill.tabOverride,
-          tab: tabSettings[ill.tabOverride]?.name || '',
-          charId: 'system',
-          name: '',
-          content: ill.url,
-          isCommand: false,
-          isContinuation: false,
-          isHiddenContent: false,
-          isIllustration: true,
-          illustration: ill,
-          sectionId: log.sectionId
-        };
-        finalLogsSequence.push(illLogEntry);
-        prevLogForContinuation = illLogEntry;
-      }
-    });
+    // 삽화 처리 (레거시 지원)
+    // 삽화 처리 (레거시 지원)
+    if (illustrations && illustrations.length > 0) {
+      const logIllustrations = illustrations.filter((ill: any) => ill.afterLogIndex === idx);
+      logIllustrations.forEach((ill: any) => {
+        let resolvedTabId = ill.tabOverride;
+        if (resolvedTabId === 'auto' || !resolvedTabId || !tabSettings[resolvedTabId]) {
+          // 직전 로그 블록 탐색 (afterLogIndex가 idx이므로, 직전 로그는 originalLogs[idx]가 됨)
+          let prevTabId = null;
+          for (let i = idx; i >= 0; i--) {
+            if (originalLogs[i]) {
+              prevTabId = originalLogs[i].tabId;
+              break;
+            }
+          }
+          if (prevTabId) {
+            resolvedTabId = prevTabId;
+          } else {
+            // 직후 로그 블록 탐색 (가장 상단에 삽화가 들어간 예외 케이스)
+            let nextTabId = null;
+            for (let i = idx + 1; i < originalLogs.length; i++) {
+              if (originalLogs[i]) {
+                nextTabId = originalLogs[i].tabId;
+                break;
+              }
+            }
+            resolvedTabId = nextTabId || Object.keys(tabSettings)[0] || 'main';
+          }
+        }
+        const isIllVisible = tabSettings[resolvedTabId]?.visible !== false;
+        if (isIllVisible) {
+          const illLogEntry: any = {
+            id: `illustration:${ill.id}`,
+            color: '',
+            tabId: resolvedTabId,
+            tab: tabSettings[resolvedTabId]?.name || '',
+            charId: 'system',
+            name: '',
+            content: ill.url,
+            isCommand: false,
+            isContinuation: false,
+            isHiddenContent: false,
+            isIllustration: true,
+            illustration: { ...ill, tabOverride: resolvedTabId },
+            sectionId: log.sectionId
+          };
+          finalLogsSequence.push(illLogEntry);
+          prevLogForContinuation = illLogEntry;
+        }
+      });
+    }
   });
 
   const chunks: { logs: any[], stableId: string, blocksAfter: any[], isHidden: boolean }[] = [];
@@ -590,7 +678,12 @@ export const generateFinalHtmlStr = (
     }
 
     const getFormatOf = (l: any) => {
-      if (l.isCommand) return 'command';
+      if (l.isIllustration) {
+        const ill = l.illustration || { tabOverride: l.tabOverride || 'auto' };
+        const resolvedTabOverride = ill.tabOverride === 'auto' || !ill.tabOverride ? (l.tabId || 'main') : ill.tabOverride;
+        const illTabSet = tabSettings[resolvedTabOverride] || tabSettings['main'];
+        return illTabSet?.format || 'main';
+      }
       const tabSet = tabSettings[l.tabId];
       const formatVal = tabSet?.format || 'main';
       if (l.charId === narrationCharacter && formatVal === 'main') {
@@ -608,10 +701,10 @@ export const generateFinalHtmlStr = (
     const isTabNameAndMergeB = isISB && showTabNames.has(formatB) && mergeTabStyles.has(formatB);
 
     // [강제 규칙] 정보/비밀 탭이고 '탭 이름 표시' & '탭별 통합'이 활성화되었을 때, 탭 묶음의 상/하단에는 무조건 구분선 적용
-    if (isTabNameAndMergeA && (logA.tabId !== logB.tabId || logB.isCommand || !isISB)) {
+    if (isTabNameAndMergeA && (logA.tabId !== logB.tabId || !isISB)) {
       return true;
     }
-    if (isTabNameAndMergeB && (logA.tabId !== logB.tabId || logA.isCommand || !isISA)) {
+    if (isTabNameAndMergeB && (logA.tabId !== logB.tabId || !isISA)) {
       return true;
     }
 
@@ -619,10 +712,8 @@ export const generateFinalHtmlStr = (
     if (logB.isContinuation) {
       return false;
     }
-    if (logA.isCommand || logB.isCommand) {
-      // 우선순위 2위: 다이스 및 매크로 (사이사이나 위 아래에 구분선 없음)
-      return false;
-    }
+    
+    // 우선순위 2위: 다이스 및 매크로 (구분선 규칙 유지 - 다이스/매크로도 기본 로그블록 구분선 규칙 따름)
 
     // 우선순위 3위: 정보 및 비밀탭
     if (isISA || isISB) {
@@ -673,7 +764,12 @@ export const generateFinalHtmlStr = (
     if (logA.tabId === logB.tabId) return false;
 
     const getFormatOf = (l: any) => {
-      if (l.isCommand) return 'command';
+      if (l.isIllustration) {
+        const ill = l.illustration || { tabOverride: l.tabOverride || 'auto' };
+        const resolvedTabOverride = ill.tabOverride === 'auto' || !ill.tabOverride ? (l.tabId || 'main') : ill.tabOverride;
+        const illTabSet = tabSettings[resolvedTabOverride] || tabSettings['main'];
+        return illTabSet?.format || 'main';
+      }
       const tabSet = tabSettings[l.tabId];
       const formatVal = tabSet?.format || 'main';
       if (l.charId === narrationCharacter && formatVal === 'main') {

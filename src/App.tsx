@@ -56,14 +56,18 @@ import {
   UnfoldHorizontal,
   MoveVertical,
   Maximize2,
-  MoveHorizontal
+  MoveHorizontal,
+  MapPin,
+  ArrowUp,
+  ArrowDown,
+  GripVertical
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
 import { clsx, type ClassValue } from 'clsx';
 import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem, Illustration } from './types';
 import { parseLogFile } from './parser';
-import { cn, r, rgbToHex } from './utils';
+import { cn, r, rgbToHex, getFileNameFromUrl } from './utils';
 import { extractOldFormat, InsertedBlock, migrateToInsertedBlocks } from './utils/migration';
 import { Toggle } from './components/Toggle';
 import { LogItem } from './components/LogItem';
@@ -74,6 +78,47 @@ import { generateFinalHtmlStr } from './utils/htmlGenerator';
 import { fonts } from './constants';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { SettingsProvider } from './contexts/SettingsContext';
+
+const migrateIllustrationsToLogs = (logs: LogEntry[], illustrations: Illustration[], tabSettings: Record<string, TabSetting>): LogEntry[] => {
+  if (!illustrations || illustrations.length === 0) return logs;
+  
+  const migratedLogs = [...logs];
+  const existingUrls = new Set(
+    migratedLogs.filter(l => l.isIllustration).map(l => l.content)
+  );
+  
+  const sortedIllustrations = [...illustrations].sort((a, b) => a.afterLogIndex - b.afterLogIndex);
+  let insertedCount = 0;
+  
+  sortedIllustrations.forEach(ill => {
+    if (existingUrls.has(ill.url)) return;
+    
+    const targetIdx = Math.min(migratedLogs.length, ill.afterLogIndex + 1 + insertedCount);
+    const defaultTabId = ill.tabOverride === 'auto' || !ill.tabOverride ? (migratedLogs[Math.max(0, targetIdx - 1)]?.tabId || 'main') : ill.tabOverride;
+    
+    const newIllLog: LogEntry = {
+      id: ill.id || `ill_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+      color: '',
+      tabId: defaultTabId,
+      tab: tabSettings[defaultTabId]?.name || defaultTabId,
+      charId: 'system',
+      name: '',
+      content: ill.url,
+      isCommand: false,
+      isContinuation: false,
+      isHiddenContent: false,
+      isIllustration: true,
+      tabOverride: ill.tabOverride || 'auto',
+      width: ill.width,
+      align: ill.align || 'center'
+    };
+    
+    migratedLogs.splice(targetIdx, 0, newIllLog);
+    insertedCount++;
+  });
+  
+  return migratedLogs;
+};
 
 const Section = ({ children, className = '' }: { children: React.ReactNode, className?: string }) => (
   <div className={cn("space-y-4", className)}>
@@ -434,7 +479,116 @@ const PortalDropdown = ({ isOpen, onClose, triggerRef, children, position = 'bot
   );
 };
 
+const SizeControl = ({ value, onChange }: { value: string; onChange: (val: string) => void }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
+  const numericMatch = (value || '100%').match(/^(\d+)(%|px)$/);
+  const numVal = numericMatch ? numericMatch[1] : (value || '100').replace(/\D/g, '') || '100';
+  const unitVal = (value || '%').includes('px') ? 'px' : '%';
+
+  const presets = unitVal === '%' ? ['100%', '80%', '50%'] : ['400px', '300px', '200px'];
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleUnitChange = (newUnit: '%' | 'px') => {
+    if (newUnit === unitVal) return;
+    if (newUnit === '%') {
+      const num = Number(numVal);
+      const nextNum = num > 100 ? 100 : num;
+      onChange(`${nextNum}%`);
+    } else {
+      const num = Number(numVal);
+      const nextNum = num <= 100 ? (num === 100 ? 400 : num * 4) : num;
+      onChange(`${nextNum}px`);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {/* Combobox: Input + Dropdown Arrow */}
+      <div ref={ref} className="relative flex items-center bg-black/20 rounded-lg h-7 border border-white/10 focus-within:border-[#e6005c] transition-colors">
+        <input
+          type="text"
+          value={numVal}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/\D/g, '');
+            onChange(raw ? `${raw}${unitVal}` : `100${unitVal}`);
+          }}
+          onFocus={() => setIsOpen(true)}
+          className="w-12 h-full text-center text-[10px] font-mono font-bold bg-transparent border-none outline-none text-white px-1 placeholder:text-white/30"
+          placeholder="100"
+        />
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="h-full px-1.5 flex items-center justify-center text-white/40 hover:text-white border-l border-white/5 transition-colors"
+          title="프리셋 목록"
+        >
+          <ChevronDown className="w-3 h-3" />
+        </button>
+
+        {isOpen && (
+          <div className="absolute top-full left-0 mt-1 w-24 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+            <div className="px-2 py-0.5 text-[8px] font-bold text-white/30 uppercase tracking-wider">프리셋</div>
+            {presets.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => {
+                  onChange(preset);
+                  setIsOpen(false);
+                }}
+                className={cn(
+                  "w-full text-left px-2.5 py-1 text-[10px] font-mono font-bold hover:bg-white/10 transition-colors flex items-center justify-between",
+                  value === preset ? "text-[#e6005c] bg-white/5" : "text-white/80"
+                )}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Dropdown 우측 단위 선택 버튼 (% / px) */}
+      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 h-7 items-center">
+        <button
+          type="button"
+          onClick={() => handleUnitChange('%')}
+          className={cn(
+            "h-6 px-2 text-[9px] font-mono font-bold rounded transition-all flex items-center justify-center",
+            unitVal === '%' 
+              ? "bg-white/10 text-white font-bold shadow-sm" 
+              : "text-white/30 hover:text-white/60"
+          )}
+        >
+          %
+        </button>
+        <button
+          type="button"
+          onClick={() => handleUnitChange('px')}
+          className={cn(
+            "h-6 px-2 text-[9px] font-mono font-bold rounded transition-all flex items-center justify-center",
+            unitVal === 'px' 
+              ? "bg-white/10 text-white font-bold shadow-sm" 
+              : "text-white/30 hover:text-white/60"
+          )}
+        >
+          px
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export default function App() {
   const [isBulkImgurModalOpen, setIsBulkImgurModalOpen] = useState(false);
@@ -442,7 +596,11 @@ export default function App() {
   const [isBulkImgurLoading, setIsBulkImgurLoading] = useState(false);
   const [bulkImages, setBulkImages] = useState<{ url: string; fileName: string; ext: string }[]>([]);
   const [bulkImageMapping, setBulkImageMapping] = useState<Record<string, string>>({});
+  const [bulkImageTypeMapping, setBulkImageTypeMapping] = useState<Record<string, 'character' | 'illustration' | 'none'>>({});
+  const [bulkImportStep, setBulkImportStep] = useState<1 | 2>(1);
+  const [bulkSelectedIllustrations, setBulkSelectedIllustrations] = useState<Record<string, boolean>>({});
   const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [isDraggingIllustration, setIsDraggingIllustration] = useState(false);
   const [isTitleEditing, setIsTitleEditing] = useState(false);
   const [pageTitle, setPageTitle] = useState('');
   const [tempTitle, setTempTitle] = useState('');
@@ -462,8 +620,27 @@ export default function App() {
       setBulkImgurUrl('');
       setBulkImages([]);
       setBulkImageMapping({});
+      setBulkImageTypeMapping({});
+      setBulkImportStep(1);
+      setBulkSelectedIllustrations({});
     }
   }, [isBulkImgurModalOpen]);
+
+  // Illustrations Bulk Import Modal States
+  const [isIllBulkModalOpen, setIsIllBulkModalOpen] = useState(false);
+  const [illBulkUrl, setIllBulkUrl] = useState('');
+  const [isIllBulkLoading, setIsIllBulkLoading] = useState(false);
+  const [illBulkImages, setIllBulkImages] = useState<{ url: string; fileName: string; ext: string }[]>([]);
+  const [selectedIllBulkImages, setSelectedIllBulkImages] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!isIllBulkModalOpen) {
+      setIllBulkUrl('');
+      setIllBulkImages([]);
+      setSelectedIllBulkImages({});
+    }
+  }, [isIllBulkModalOpen]);
+
   const [originalFileName, setOriginalFileName] = useState('');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [charSettings, setCharSettings] = useState<Record<string, CharSetting>>({});
@@ -471,8 +648,22 @@ export default function App() {
   const [tabOrder, setTabOrder] = useState<string[]>([]);
   const [extractedColors, setExtractedColors] = useState<string[]>([]);
   const [tabSettings, setTabSettings] = useState<Record<string, TabSetting>>({});
-  const [illustrations, setIllustrations] = useState<Illustration[]>([]);
   const [rememberSettings, setRememberSettings] = useLocalStorage<boolean>('ccfolia_rememberSettings', true);
+
+  const illustrations = useMemo<Illustration[]>(() => {
+    return logs
+      .map((log, idx) => ({ log, idx }))
+      .filter(({ log }) => log.isIllustration === true)
+      .map(({ log, idx }) => ({
+        id: log.id,
+        url: log.content,
+        imageName: log.imageName,
+        afterLogIndex: log.isUnplaced ? null : idx,
+        tabOverride: log.tabOverride || 'auto',
+        width: log.width,
+        align: log.align || 'center'
+      }));
+  }, [logs]);
   
   const [cssFormat, setCssFormat] = useLocalStorage<'inline' | 'internal'>('ccfolia_cssFormat', 'internal', undefined, undefined, rememberSettings);
   const [fontSize, setFontSize] = useLocalStorage<number>('ccfolia_fontSize', 14, undefined, undefined, rememberSettings);
@@ -489,6 +680,8 @@ export default function App() {
   const [lightBgColor, setLightBgColor] = useLocalStorage<string>('ccfolia_lightBgColor', '#ffffff', undefined, undefined, rememberSettings);
   const [disableOtherColor, setDisableOtherColor] = useLocalStorage<boolean>('ccfolia_disableOtherColor', true, undefined, undefined, rememberSettings);
   const [filterBarMode, setFilterBarMode] = useLocalStorage<'none' | 'floating' | 'fixed'>('ccfolia_filterBarMode', 'none', undefined, undefined, rememberSettings);
+  const [defaultIllWidth, setDefaultIllWidth] = useLocalStorage<string>('ccfolia_defaultIllWidth', '100%', undefined, undefined, rememberSettings);
+  const [defaultIllAlign, setDefaultIllAlign] = useLocalStorage<'left' | 'center' | 'right'>('ccfolia_defaultIllAlign', 'center', undefined, undefined, rememberSettings);
   const [isEditingFontSize, setIsEditingFontSize] = useState(false);
   const [renamingChar, setRenamingChar] = useState<string | null>(null);
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
@@ -498,6 +691,7 @@ export default function App() {
   const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
   const [colorPickerRect, setColorPickerRect] = useState<DOMRect | null>(null);
   const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'illustrations' | 'settings'>('files');
+  const [isBulkSettingsExpanded, setIsBulkSettingsExpanded] = useState(false);
   const scrollPositions = useRef<Record<string, number>>({});
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
@@ -512,6 +706,17 @@ export default function App() {
   const filterDropdownRef = useRef<HTMLDivElement>(null);
   const [hoverImgRect, setHoverImgRect] = useState<DOMRect | null>(null);
   const [hoverImgUrl, setHoverImgUrl] = useState<string | null>(null);
+  const [hoverImgLabel, setHoverImgLabel] = useState<string | null>(null);
+
+  const { widthNum, widthUnit } = useMemo(() => {
+    const numericMatch = (defaultIllWidth || '100%').match(/^(\d+)(%|px)$/);
+    if (numericMatch) {
+      return { widthNum: numericMatch[1], widthUnit: numericMatch[2] as '%' | 'px' };
+    }
+    const numPart = (defaultIllWidth || '100').replace(/\D/g, '') || '100';
+    const unitPart = (defaultIllWidth || '%').includes('px') ? 'px' : '%';
+    return { widthNum: numPart, widthUnit: unitPart as '%' | 'px' };
+  }, [defaultIllWidth]);
 
   const [showSaveMenu, setShowSaveMenu] = useState(false);
   const [saveOptions, setSaveOptions] = useLocalStorage<{
@@ -673,10 +878,12 @@ export default function App() {
       
       // Auto-match based on fileName
       const newMapping: Record<string, string> = {};
+      const newTypeMapping: Record<string, 'character' | 'illustration' | 'none'> = {};
       
       const normalize = (str: string) => str.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
 
       images.forEach(img => {
+        newTypeMapping[img.url] = 'character';
         let nameToMatch = img.fileName;
         if (nameToMatch.includes('.')) {
           nameToMatch = nameToMatch.substring(0, nameToMatch.lastIndexOf('.'));
@@ -709,6 +916,7 @@ export default function App() {
         }
       });
       setBulkImageMapping(newMapping);
+      setBulkImageTypeMapping(newTypeMapping);
       
     } catch (error: any) {
       alert(error.message);
@@ -718,32 +926,159 @@ export default function App() {
   };
 
   const applyBulkImages = () => {
-    let changedCount = 0;
+    let charChangedCount = 0;
+    let illAddedCount = 0;
     const nextCharSettings = { ...charSettings };
+    const nextLogs = [...logs];
 
-    Object.entries(bulkImageMapping).forEach(([url, charId]) => {
-      const idStr = charId as string;
-      if (idStr && nextCharSettings[idStr]) {
-        nextCharSettings[idStr] = {
-          ...nextCharSettings[idStr],
-          imageUrl: url
+    bulkImages.forEach((img) => {
+      const charId = bulkImageMapping[img.url];
+      
+      // Step 1: Character Match
+      if (charId && nextCharSettings[charId]) {
+        nextCharSettings[charId] = {
+          ...nextCharSettings[charId],
+          imageUrl: img.url,
+          imageName: img.fileName
         };
-        changedCount++;
+        charChangedCount++;
+      } 
+      // Step 2: Selected as illustration (if not selected as a character in step 1)
+      else if (bulkSelectedIllustrations[img.url] === true) {
+        const defaultLogIndex = nextLogs.length > 0 ? nextLogs.length - 1 : 0;
+        const defaultTabId = nextLogs[defaultLogIndex]?.tabId || Object.keys(tabSettings)[0] || 'main';
+        const newIllustrationLog: LogEntry = {
+          id: `ill_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${Math.floor(Math.random() * 1000)}`,
+          color: '',
+          tabId: defaultTabId,
+          tab: tabSettings[defaultTabId]?.name || defaultTabId,
+          charId: 'system',
+          name: '',
+          content: img.url,
+          imageName: img.fileName,
+          isCommand: false,
+          isContinuation: false,
+          isHiddenContent: false,
+          isIllustration: true,
+          isUnplaced: true,
+          tabOverride: 'auto',
+          width: defaultIllWidth,
+          align: defaultIllAlign
+        };
+        nextLogs.push(newIllustrationLog);
+        illAddedCount++;
       }
     });
 
-    if (changedCount > 0) {
-      setCharSettings(nextCharSettings);
-      saveToHistory({ charSettings: nextCharSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
-      alert(`총 ${changedCount}명의 캐릭터 이미지가 업데이트되었습니다.`);
+    if (charChangedCount > 0 || illAddedCount > 0) {
+      if (charChangedCount > 0) {
+        setCharSettings(nextCharSettings);
+      }
+      if (illAddedCount > 0) {
+        setLogs(nextLogs);
+      }
+      
+      saveToHistory({
+        charSettings: charChangedCount > 0 ? nextCharSettings : charSettings,
+        logs: illAddedCount > 0 ? nextLogs : logs
+      });
+
+      let msg = '';
+      if (charChangedCount > 0 && illAddedCount > 0) {
+        msg = `총 ${charChangedCount}명의 캐릭터 이미지와 ${illAddedCount}개의 삽화가 일괄 등록되었습니다.`;
+      } else if (charChangedCount > 0) {
+        msg = `총 ${charChangedCount}명의 캐릭터 이미지가 업데이트되었습니다.`;
+      } else {
+        msg = `총 ${illAddedCount}개의 삽화가 등록되었습니다.`;
+      }
+      alert(msg);
     } else {
-      alert('적용된 캐릭터 이미지가 없습니다.');
+      alert('적용된 변경 사항이 없습니다.');
     }
     
     setIsBulkImgurModalOpen(false);
     setBulkImgurUrl('');
     setBulkImages([]);
     setBulkImageMapping({});
+    setBulkImageTypeMapping({});
+    setBulkImportStep(1);
+    setBulkSelectedIllustrations({});
+  };
+
+  const handleIllBulkFetch = async () => {
+    if (!illBulkUrl) return;
+    
+    setIsIllBulkLoading(true);
+    try {
+      const response = await fetch('/api/imgur', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: illBulkUrl }),
+      });
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Imgur 정보를 가져오지 못했습니다.');
+      }
+      
+      const images: { url: string; fileName: string; ext: string }[] = await response.json();
+      setIllBulkImages(images);
+      
+      // All selected by default
+      const initialSelected: Record<string, boolean> = {};
+      images.forEach(img => {
+        initialSelected[img.url] = true;
+      });
+      setSelectedIllBulkImages(initialSelected);
+      setIsIllBulkModalOpen(true);
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setIsIllBulkLoading(false);
+    }
+  };
+
+  const applyIllBulkImages = () => {
+    const selectedUrls = illBulkImages.filter(img => selectedIllBulkImages[img.url]);
+    if (selectedUrls.length === 0) {
+      alert('선택된 이미지가 없습니다.');
+      return;
+    }
+
+    const defaultLogIndex = logs.length > 0 ? logs.length - 1 : 0;
+    const defaultTabId = logs[defaultLogIndex]?.tabId || Object.keys(tabSettings)[0] || 'main';
+
+    const nextLogs = [...logs];
+    selectedUrls.forEach((img) => {
+      const newIllustrationLog: LogEntry = {
+        id: `ill_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${Math.floor(Math.random() * 1000)}`,
+        color: '',
+        tabId: defaultTabId,
+        tab: tabSettings[defaultTabId]?.name || defaultTabId,
+        charId: 'system',
+        name: '',
+        content: img.url,
+        imageName: img.fileName,
+        isCommand: false,
+        isContinuation: false,
+        isHiddenContent: false,
+        isIllustration: true,
+        isUnplaced: true,
+        tabOverride: 'auto',
+        width: defaultIllWidth,
+        align: defaultIllAlign
+      };
+      nextLogs.push(newIllustrationLog);
+    });
+
+    setLogs(nextLogs);
+    
+    saveToHistory({
+      logs: nextLogs
+    });
+
+    alert(`총 ${selectedUrls.length}개의 삽화가 일괄 등록되었습니다.`);
+    setIsIllBulkModalOpen(false);
   };
 
   const saveToHistory = (state: any) => {
@@ -856,7 +1191,13 @@ export default function App() {
     } else if (state.isFilterBarEnabled !== undefined) {
       setFilterBarMode(state.isFilterBarEnabled ? 'floating' : 'none');
     }
-    if (state.logs) setLogs(state.logs);
+    if (state.logs) {
+      let nextLogs = state.logs;
+      if (state.illustrations && state.illustrations.length > 0) {
+        nextLogs = migrateIllustrationsToLogs(nextLogs, state.illustrations, state.tabSettings || state.tabSettings || tabSettings);
+      }
+      setLogs(nextLogs);
+    }
     if (state.insertedBlocks) {
       setInsertedBlocks(state.insertedBlocks);
     } else if (state.insertedImages || state.splitPoints) {
@@ -870,11 +1211,6 @@ export default function App() {
     if (state.narrationCharacter !== undefined) setNarrationCharacter(state.narrationCharacter);
     if (state.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(state.enableSentenceSpacing);
     if (state.showLogDivider !== undefined) setShowLogDivider(state.showLogDivider);
-    if (state.illustrations !== undefined) {
-      setIllustrations(state.illustrations);
-    } else {
-      setIllustrations([]);
-    }
   };
 
   const resetSettings = () => {
@@ -1201,7 +1537,13 @@ export default function App() {
       if (json.tabOrder) setTabOrder(json.tabOrder);
       if (json.pageTitle !== undefined) setPageTitle(json.pageTitle);
       
-      if (json.logs) setLogs(json.logs); // Restore edited/deleted logs
+      if (json.logs) {
+        let nextLogs = json.logs;
+        if (json.illustrations && json.illustrations.length > 0) {
+          nextLogs = migrateIllustrationsToLogs(nextLogs, json.illustrations, json.tabSettings || tabSettings);
+        }
+        setLogs(nextLogs);
+      }
       
       if (json.cssFormat) setCssFormat(json.cssFormat);
       if (json.fontSize) setFontSize(json.fontSize);
@@ -1322,6 +1664,71 @@ export default function App() {
     let currentSectionId = 'section-0';
 
     logs.forEach((log, idx) => {
+      if (log.isUnplaced) return;
+
+      if (log.isIllustration) {
+        let resolvedTabId = log.tabOverride;
+        if (resolvedTabId === 'auto' || !resolvedTabId || !tabSettings[resolvedTabId]) {
+          // 직전 로그 블록 탐색
+          let prevTabId = null;
+          for (let i = idx - 1; i >= 0; i--) {
+            if (logs[i] && !logs[i].isIllustration) {
+              const tabId = logs[i].tabId;
+              if (tabSettings[tabId] && tabSettings[tabId].visible !== false) {
+                prevTabId = tabId;
+                break;
+              }
+            }
+          }
+          if (prevTabId) {
+            resolvedTabId = prevTabId;
+          } else {
+            // 직후 로그 블록 탐색 (가장 상단에 삽화가 들어간 예외 케이스)
+            let nextTabId = null;
+            for (let i = idx + 1; i < logs.length; i++) {
+              if (logs[i] && !logs[i].isIllustration) {
+                const tabId = logs[i].tabId;
+                if (tabSettings[tabId] && tabSettings[tabId].visible !== false) {
+                  nextTabId = tabId;
+                  break;
+                }
+              }
+            }
+            resolvedTabId = nextTabId || Object.keys(tabSettings)[0] || 'main';
+          }
+        }
+        const isIllVisible = tabSettings[resolvedTabId]?.visible !== false;
+        if (isIllVisible) {
+          const illLogEntry: any = {
+            id: log.id,
+            color: '',
+            tabId: resolvedTabId,
+            tab: tabSettings[resolvedTabId]?.name || '',
+            charId: 'system',
+            name: '',
+            content: log.content,
+            isCommand: false,
+            isContinuation: false,
+            isHiddenContent: false,
+            isIllustration: true,
+            tabOverride: log.tabOverride || 'auto',
+            width: log.width,
+            align: log.align || 'center',
+            illustration: {
+              id: log.id,
+              url: log.content,
+              tabOverride: log.tabOverride || 'auto',
+              width: log.width,
+              align: log.align || 'center'
+            },
+            sectionId: currentSectionId
+          };
+          result.push(illLogEntry);
+          prevVisibleLog = illLogEntry;
+        }
+        return;
+      }
+
       const isVisibleContent = tabSettings[log.tabId]?.visible && charSettings[log.charId]?.visible !== false;
       const hasImage = insertedBlocks[log.id]?.some((b: any) => b.type === 'image');
       
@@ -1364,35 +1771,10 @@ export default function App() {
           currentSectionId = `section-${stableId}`;
         }
       }
-
-      // 삽화 삽입 처리
-      const logIllustrations = (illustrations || []).filter((ill: any) => ill.afterLogIndex === idx);
-      logIllustrations.forEach((ill: any) => {
-        const isIllVisible = tabSettings[ill.tabOverride]?.visible !== false;
-        if (isIllVisible) {
-          const illLogEntry: any = {
-            id: `illustration:${ill.id}`,
-            color: '',
-            tabId: ill.tabOverride,
-            tab: tabSettings[ill.tabOverride]?.name || '',
-            charId: 'system',
-            name: '',
-            content: ill.url,
-            isCommand: false,
-            isContinuation: false,
-            isHiddenContent: false,
-            isIllustration: true,
-            illustration: ill,
-            sectionId: currentSectionId
-          };
-          result.push(illLogEntry);
-          prevVisibleLog = illLogEntry; // Subsequent logs will see this and break continuation!
-        }
-      });
     });
 
     return result;
-  }, [logs, mergeTabs, tabSettings, charSettings, insertedBlocks, splitPoints, illustrations]);
+  }, [logs, mergeTabs, tabSettings, charSettings, insertedBlocks, splitPoints]);
 
   useLayoutEffect(() => {
     if (listRef.current) {
@@ -1472,6 +1854,54 @@ export default function App() {
     }
   };
 
+  const scrollToIllustrationLog = (targetOriginalLogIndex: number) => {
+    let virtualIndex = -1;
+    let targetIndexToFind = targetOriginalLogIndex;
+    
+    // Find nearest visible log backwards
+    while (targetIndexToFind >= 0) {
+      virtualIndex = displayItems.findIndex(item => {
+        const stableId = item.log.id.startsWith('merged:') ? item.log.id.split(',').pop()! : item.log.id;
+        const originalLogIndex = logs.findIndex((l: any) => l.id === stableId);
+        return originalLogIndex === targetIndexToFind;
+      });
+      if (virtualIndex !== -1) break;
+      targetIndexToFind--;
+    }
+
+    // If none found, find nearest visible log forwards
+    if (virtualIndex === -1) {
+      targetIndexToFind = targetOriginalLogIndex + 1;
+      while (targetIndexToFind < logs.length) {
+        virtualIndex = displayItems.findIndex(item => {
+          const stableId = item.log.id.startsWith('merged:') ? item.log.id.split(',').pop()! : item.log.id;
+          const originalLogIndex = logs.findIndex((l: any) => l.id === stableId);
+          return originalLogIndex === targetIndexToFind;
+        });
+        if (virtualIndex !== -1) break;
+        targetIndexToFind++;
+      }
+    }
+
+    if (virtualIndex !== -1) {
+      rowVirtualizer.scrollToIndex(virtualIndex, { align: 'center' });
+      
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const el = document.getElementById(`log-item-${targetIndexToFind}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('bg-[#e6005c]/10');
+            el.classList.add('transition-all');
+            setTimeout(() => {
+              el.classList.remove('bg-[#e6005c]/10');
+            }, 1500);
+          }
+        }, 120);
+      });
+    }
+  };
+
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
 
   const { displayItems, searchMatchIndices } = useMemo(() => {
@@ -1545,30 +1975,102 @@ export default function App() {
     const logIdx = logs.findIndex((l: any) => l.id === afterLogId);
     if (logIdx === -1) return;
 
-    const newIllustration: Illustration = {
-      id: `ill_${Date.now()}_${Math.random().toString(36).substr(2,9)}`,
-      url,
-      afterLogIndex: logIdx,
-      tabOverride
+    const referenceLog = logs[logIdx];
+    const defaultTabId = tabOverride === 'auto' || !tabOverride ? referenceLog.tabId : tabOverride;
+    const newIllustrationLog: LogEntry = {
+      id: `ill_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+      color: '',
+      tabId: defaultTabId,
+      tab: tabSettings[defaultTabId]?.name || defaultTabId,
+      charId: 'system',
+      name: '',
+      content: url,
+      isCommand: false,
+      isContinuation: false,
+      isHiddenContent: false,
+      isIllustration: true,
+      tabOverride: tabOverride || 'auto',
+      width: defaultIllWidth,
+      align: defaultIllAlign
     };
 
-    const next = [...illustrations, newIllustration];
-    setIllustrations(next);
-    saveToHistory({ illustrations: next });
+    const nextLogs = [...logs];
+    nextLogs.splice(logIdx + 1, 0, newIllustrationLog);
+    setLogs(nextLogs);
+    saveToHistory({ logs: nextLogs });
     setImageInputLoc(null);
-  }, [logs, illustrations, saveToHistory]);
+  }, [logs, tabSettings, saveToHistory]);
 
-  const onUpdateIllustration = useCallback((id: string, updates: Partial<Illustration>) => {
-    const next = illustrations.map((ill: any) => ill.id === id ? { ...ill, ...updates } : ill);
-    setIllustrations(next);
-    saveToHistory({ illustrations: next });
-  }, [illustrations, saveToHistory]);
+  const onUpdateIllustration = useCallback((id: string, updates: Partial<Illustration> & { afterLogIndex?: number | null, targetLogId?: string, position?: 'before' | 'after' }) => {
+    const logIdx = logs.findIndex((l: any) => l.id === id);
+    if (logIdx === -1) return;
+
+    const nextLogs = [...logs];
+    const target = { ...nextLogs[logIdx] };
+
+    if (updates.targetLogId && updates.position) {
+      target.isUnplaced = false;
+      target.tabOverride = 'auto'; // Force 'auto' when drag-and-dropped
+      const oldIdx = logIdx;
+      nextLogs[logIdx] = target;
+      const [removed] = nextLogs.splice(oldIdx, 1);
+      
+      let targetIdx = nextLogs.findIndex((l: any) => l.id === updates.targetLogId);
+      if (targetIdx === -1) targetIdx = 0;
+      
+      let newIdx = updates.position === 'before' ? targetIdx : targetIdx + 1;
+      nextLogs.splice(newIdx, 0, removed);
+      
+      setLogs(nextLogs);
+      saveToHistory({ logs: nextLogs });
+    } else if (updates.afterLogIndex !== undefined) {
+      if (updates.afterLogIndex === null) {
+        target.isUnplaced = true;
+        nextLogs[logIdx] = target;
+        // Keep it at current position but mark unplaced
+        setLogs(nextLogs);
+        saveToHistory({ logs: nextLogs });
+      } else {
+        target.isUnplaced = false;
+        const oldIdx = logIdx;
+        let newIdx = updates.afterLogIndex;
+        // Prevent going out of bounds
+        newIdx = Math.max(0, Math.min(nextLogs.length - 1, newIdx));
+        nextLogs[logIdx] = target;
+        const [removed] = nextLogs.splice(oldIdx, 1);
+        nextLogs.splice(newIdx, 0, removed);
+        setLogs(nextLogs);
+        saveToHistory({ logs: nextLogs });
+      }
+    } else {
+      if (updates.url !== undefined) target.content = updates.url;
+      if (updates.tabOverride !== undefined) target.tabOverride = updates.tabOverride;
+      if (updates.width !== undefined) target.width = updates.width;
+      if (updates.align !== undefined) target.align = updates.align;
+
+      nextLogs[logIdx] = target;
+      setLogs(nextLogs);
+      saveToHistory({ logs: nextLogs });
+    }
+  }, [logs, saveToHistory]);
 
   const onRemoveIllustration = useCallback((id: string) => {
-    const next = illustrations.filter((ill: any) => ill.id !== id);
-    setIllustrations(next);
-    saveToHistory({ illustrations: next });
-  }, [illustrations, saveToHistory]);
+    const nextLogs = logs.filter((l: any) => l.id !== id);
+    setLogs(nextLogs);
+    saveToHistory({ logs: nextLogs });
+  }, [logs, saveToHistory]);
+
+  const handleApplyBulkIllustrationSettings = useCallback(() => {
+    const nextLogs = logs.map((l: any) => {
+      if (l.isIllustration) {
+        return { ...l, width: defaultIllWidth, align: defaultIllAlign };
+      }
+      return l;
+    });
+    setLogs(nextLogs);
+    saveToHistory({ logs: nextLogs });
+    alert('모든 삽화의 크기와 정렬이 일괄 변경되었습니다.');
+  }, [logs, defaultIllWidth, defaultIllAlign, saveToHistory]);
 
   const onUpdateBlock = useCallback((id: string, blockId: string, updates: Partial<InsertedBlock>) => {
     const next = { ...insertedBlocks };
@@ -1843,6 +2345,7 @@ export default function App() {
       narrationCharacter,
       enableSentenceSpacing,
       insertedBlocks,
+      mergeTabs,
       mergeTabStyles,
       showTabNames,
       pageTitle,
@@ -1908,6 +2411,7 @@ export default function App() {
         narrationCharacter,
         enableSentenceSpacing,
         insertedBlocks,
+        mergeTabs,
         mergeTabStyles,
         showTabNames,
         pageTitle,
@@ -2958,7 +3462,7 @@ export default function App() {
                       if (!char) return null;
                       return (
                         <div key={char.id} className="p-2 bg-white/5 rounded-2xl border border-white/5 shadow-sm flex items-center gap-2 relative group/charitem">
-                          <div className="shrink-0">
+                          <div className="shrink-0 flex items-center h-7">
                             <Toggle 
                               enabled={char.visible} 
                               onChange={(val, e) => {
@@ -2983,7 +3487,7 @@ export default function App() {
                           </div>
                           
                           {renamingChar === char.id ? (
-                            <div className="flex gap-1 w-32 shrink-0">
+                            <div className="flex items-center gap-1 w-32 shrink-0 h-7">
                               <input 
                                 type="text" 
                                 value={newNameInput}
@@ -2993,18 +3497,18 @@ export default function App() {
                                   if (e.key === 'Enter') renameCharacter(char.id, newNameInput);
                                   if (e.key === 'Escape') setRenamingChar(null);
                                 }}
-                                className="w-full text-[10px] font-bold px-1 py-0.5 border border-[#e6005c] rounded outline-none bg-black/20 text-white"
+                                className="w-full text-[10px] font-bold px-1 py-1 border border-[#e6005c] rounded outline-none bg-black/20 text-white"
                                 autoFocus
                               />
                               <button 
                                 onClick={() => renameCharacter(char.id, newNameInput)}
-                                className="p-0.5 bg-[#e6005c] text-white rounded"
+                                className="p-1 bg-[#e6005c] text-white rounded"
                               >
                                 <CheckSquare className="w-3 h-3" />
                               </button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1 w-24 shrink-0 overflow-visible relative">
+                            <div className="flex items-center gap-1 w-24 shrink-0 overflow-visible relative h-7">
                               <CharacterNameWithTooltip name={char.name} />
                               <button 
                                 onClick={() => { setRenamingChar(char.id); setNewNameInput(char.name); }}
@@ -3015,7 +3519,7 @@ export default function App() {
                             </div>
                           )}
 
-                          <div className="relative shrink-0">
+                          <div className="relative shrink-0 flex items-center h-7">
                             <button
                               onClick={(e) => {
                                 if (activeColorPicker === char.id) {
@@ -3042,7 +3546,7 @@ export default function App() {
                             onBlur={() => {
                               saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                             }}
-                            className="flex-1 min-w-0 text-[10px] px-2 py-1.5 bg-black/20 border border-white/5 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors"
+                            className="flex-1 min-w-0 text-[10px] px-2 h-7 bg-black/20 border border-white/5 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors"
                           />
                           
                           <div 
@@ -3051,10 +3555,12 @@ export default function App() {
                               const rect = e.currentTarget.getBoundingClientRect();
                               setHoverImgRect(rect);
                               setHoverImgUrl(char.imageUrl);
+                              setHoverImgLabel(char.imageName || null);
                             }}
                             onMouseLeave={() => {
                               setHoverImgRect(null);
                               setHoverImgUrl(null);
+                              setHoverImgLabel(null);
                             }}
                           >
                             {char.imageUrl ? (
@@ -3083,9 +3589,329 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="flex items-center justify-center min-h-[400px]"
+                className="space-y-4"
               >
-                <span className="text-xs font-bold text-white/30 tracking-[0.2em] uppercase">준비 중...</span>
+                <Section>
+                  <SectionTitle 
+                    icon={Settings2} 
+                    title="일괄 설정 변경"
+                  />
+                  <div className="mt-2.5 p-2 px-3 bg-white/5 border border-white/5 rounded-2xl flex flex-wrap items-center justify-between gap-2.5">
+                    {/* Left: Alignment Selector & Size Control */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* 정렬 버튼 (좌, 중, 우) */}
+                      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 h-7 items-center">
+                        {(['left', 'center', 'right'] as const).map((align) => (
+                          <button
+                            key={align}
+                            onClick={() => setDefaultIllAlign(align)}
+                            className={cn(
+                              "h-6 px-2 flex items-center justify-center rounded transition-all",
+                              defaultIllAlign === align 
+                                ? "bg-white/10 text-white font-bold shadow-sm" 
+                                : "text-white/30 hover:text-white/60"
+                            )}
+                            title={align === 'left' ? '왼쪽' : align === 'center' ? '가운데' : '오른쪽'}
+                          >
+                            {align === 'left' ? (
+                              <AlignLeft className="w-3 h-3" />
+                            ) : align === 'center' ? (
+                              <AlignCenter className="w-3 h-3" />
+                            ) : (
+                              <AlignRight className="w-3 h-3" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* 드롭다운/입력창 겸용 크기 제어기 + 단위 선택 버튼 (% / px) */}
+                      <SizeControl value={defaultIllWidth} onChange={setDefaultIllWidth} />
+                    </div>
+
+                    {/* Right: 일괄 적용 버튼 */}
+                    <button
+                      onClick={handleApplyBulkIllustrationSettings}
+                      className="py-1.5 px-3 bg-[#e6005c] hover:bg-[#ff0066] text-white text-[10px] font-bold rounded-lg transition-all active:scale-[0.98] shadow-md shadow-[#e6005c]/10 shrink-0"
+                    >
+                      일괄 적용
+                    </button>
+                  </div>
+                </Section>
+
+                <Section>
+                  <SectionTitle 
+                    icon={ImageIcon} 
+                    title="삽화 목록"
+                    tooltip={
+                      <div className="text-[11px] leading-relaxed w-[260px] text-left break-keep">
+                        Imgur 앨범 주소를 입력하고 불러오기를 누르면 이미지 파일들을 한번에 등록할 수 있습니다. (url 형식: https://imgur.com/a/앨범주소)<br/><br/>
+                        삽화를 삽입할 땐 손잡이를 잡고 원하는 위치로 드래그하거나, 로그 #를 입력하면 됩니다. 로그 #는 미리보기 탭에서 로그 블럭에 마우스를 올려 확인할 수 있습니다.<br/><br/>
+                        위치 아이콘(<MapPin className="w-3 h-3 inline text-white/50 mb-0.5 mx-0.5"/>)을 누르면 삽화의 위치로 이동할 수 있습니다.<br/><br/>
+                        탭 드롭다운으로 소속된 탭을 바꿀 수 있습니다. (자동: 바로 직전 대사의 탭을 따라감)
+                      </div>
+                    }
+                    rightElement={
+                      logs.length > 0 ? (
+                        <div className="flex items-center gap-1.5 min-w-0 max-w-[180px] sm:max-w-[240px]">
+                          <input
+                            type="text"
+                            placeholder="Imgur 앨범 주소"
+                            value={illBulkUrl}
+                            onChange={(e) => setIllBulkUrl(e.target.value)}
+                            className="flex-1 min-w-0 text-[9px] px-2 py-1.5 bg-black/40 border border-white/10 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors placeholder:text-white/20"
+                          />
+                          <button
+                            onClick={handleIllBulkFetch}
+                            disabled={isIllBulkLoading || !illBulkUrl}
+                            className="px-2.5 py-1.5 bg-[#e6005c] hover:bg-[#ff0066] disabled:bg-white/5 disabled:cursor-not-allowed disabled:text-white/20 text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap active:scale-95 flex items-center gap-1"
+                          >
+                            {isIllBulkLoading ? '불러오는 중...' : '불러오기'}
+                          </button>
+                        </div>
+                      ) : undefined
+                    }
+                  />
+
+                  {logs.length > 0 ? (
+                    illustrations.length > 0 ? (
+                      <div className="space-y-2 mt-3">
+                        {illustrations.map((ill) => {
+                          let prevLog = null;
+                          let nextLog = null;
+                          if (ill.afterLogIndex !== null) {
+                            for (let i = ill.afterLogIndex; i >= 0; i--) {
+                              if (logs[i] && !logs[i].isIllustration) {
+                                prevLog = logs[i];
+                                break;
+                              }
+                            }
+                            for (let i = ill.afterLogIndex + 1; i < logs.length; i++) {
+                              if (logs[i] && !logs[i].isIllustration) {
+                                nextLog = logs[i];
+                                break;
+                              }
+                            }
+                          }
+
+                          const stripHtml = (html: string) => html.replace(/<[^>]*>?/gm, '');
+                          const prevSummary = ill.afterLogIndex !== null ? (prevLog ? `${prevLog.name || '무명'}: ${stripHtml(prevLog.content)}` : '(없음)') : '위치 미지정';
+                          const nextSummary = ill.afterLogIndex !== null ? (nextLog ? `${nextLog.name || '무명'}: ${stripHtml(nextLog.content)}` : '(없음)') : '위치 미지정';
+                          return (
+                            <div 
+                              key={ill.id} 
+                              className="flex items-center gap-3.5 p-2.5 bg-white/5 border border-white/5 rounded-2xl text-white relative pr-6.5 group/ill"
+                            >
+                              <div 
+                                className="w-16 h-16 shrink-0 bg-black/40 border border-white/10 rounded-xl overflow-hidden flex items-center justify-center relative group cursor-zoom-in"
+                                onMouseEnter={(e) => {
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  setHoverImgRect(rect);
+                                  setHoverImgUrl(ill.url);
+                                  setHoverImgLabel(ill.imageName || null);
+                                }}
+                                onMouseLeave={() => {
+                                  setHoverImgRect(null);
+                                  setHoverImgUrl(null);
+                                  setHoverImgLabel(null);
+                                }}
+                              >
+                                <img src={ill.url} className="w-full h-full object-cover" alt="삽화" referrerPolicy="no-referrer" />
+                              </div>
+
+                              <div className="flex-grow flex flex-col gap-2 min-w-0">
+                                {/* Line 1: ID, Tab */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1 shrink-0">
+
+                                    <div className="flex bg-black/30 border border-white/10 rounded-lg focus-within:border-[#e6005c] transition-colors overflow-hidden h-7">
+                                      <button 
+                                        className="px-2 flex items-center justify-center hover:bg-white/10 text-white/40 hover:text-white border-r border-white/10 bg-white/5"
+                                        onClick={() => {
+                                          if (ill.afterLogIndex !== null) {
+                                            const val = Math.max(1, Math.min(logs.length, ill.afterLogIndex));
+                                            onUpdateIllustration(ill.id, { afterLogIndex: val - 1 });
+                                          }
+                                        }}
+                                      ><ChevronLeft className="w-3 h-3"/></button>
+                                      <input
+                                        type="text"
+                                        value={ill.afterLogIndex !== null ? ill.afterLogIndex + 1 : ''}
+                                        placeholder="#"
+                                        onChange={(e) => {
+                                          if (e.target.value === '') {
+                                            onUpdateIllustration(ill.id, { afterLogIndex: null });
+                                            return;
+                                          }
+                                          let val = parseInt(e.target.value);
+                                          if (isNaN(val)) return;
+                                          val = Math.max(1, Math.min(logs.length, val));
+                                          onUpdateIllustration(ill.id, { afterLogIndex: val - 1 });
+                                        }}
+                                        className="bg-transparent text-center text-[10px] text-white/80 outline-none w-10 font-mono font-bold placeholder:text-white/20"
+                                      />
+                                      <button 
+                                        className="px-2 flex items-center justify-center hover:bg-white/10 text-white/40 hover:text-white border-l border-white/10 bg-white/5"
+                                        onClick={() => {
+                                          if (ill.afterLogIndex !== null) {
+                                            const val = Math.max(1, Math.min(logs.length, ill.afterLogIndex + 2));
+                                            onUpdateIllustration(ill.id, { afterLogIndex: val - 1 });
+                                          } else {
+                                            onUpdateIllustration(ill.id, { afterLogIndex: logs.length > 0 ? logs.length - 1 : 0 });
+                                          }
+                                        }}
+                                      ><ChevronRight className="w-3 h-3"/></button>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <span className="text-[9px] text-white/30 font-bold whitespace-nowrap">탭</span>
+                                    <div className="w-[100px]">
+                                      <SearchableSelect 
+                                        value={ill.tabOverride || 'auto'}
+                                        onChange={(val) => onUpdateIllustration(ill.id, { tabOverride: val })}
+                                        options={[
+                                          { label: '자동', value: 'auto' },
+                                          ...Object.entries(tabSettings).map(([tabId, tab]: [string, any]) => ({
+                                            label: tab.name || tabId,
+                                            value: tabId,
+                                            isGrayed: tab.visible === false
+                                          }))
+                                        ]}
+                                        placeholder="자동"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Line 2: Info Text, Action Buttons */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex flex-col gap-0.5 text-[9px] text-white/40 font-medium min-w-0 flex-1" title={`위: ${prevSummary}\n아래: ${nextSummary}`}>
+                                    <div className="flex items-center gap-1">
+                                      <ArrowUp className="w-2.5 h-2.5 shrink-0" />
+                                      <span className="truncate">{prevSummary}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <ArrowDown className="w-2.5 h-2.5 shrink-0" />
+                                      <span className="truncate">{nextSummary}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={() => scrollToIllustrationLog(ill.afterLogIndex)}
+                                      className="p-1.5 bg-white/5 hover:bg-[#e6005c]/20 text-white/50 hover:text-[#e6005c] rounded-lg transition-all active:scale-95 shrink-0 flex items-center justify-center"
+                                      title="미리보기 위치로 이동"
+                                    >
+                                      <MapPin className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    <button
+                                      onClick={() => onRemoveIllustration(ill.id)}
+                                      className="p-1.5 bg-white/5 hover:bg-red-500/20 text-white/40 hover:text-red-400 rounded-lg transition-all active:scale-95 shrink-0 flex items-center justify-center"
+                                      title="삭제"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 우측 세로 길쭉한 손잡이 */}
+                              <div
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData("text/plain", ill.id);
+                                  e.dataTransfer.setData("application/json", JSON.stringify({ type: "illustration", id: ill.id }));
+                                  e.dataTransfer.effectAllowed = "move";
+                                  
+                                  const cardEl = e.currentTarget.closest('.group\\/ill');
+                                  if (cardEl) {
+                                    // 1. Create a container
+                                    const dragGhost = document.createElement('div');
+                                    dragGhost.style.position = 'fixed';
+                                    dragGhost.style.top = '-1000px';
+                                    dragGhost.style.left = '-1000px';
+                                    dragGhost.style.display = 'flex';
+                                    dragGhost.style.alignItems = 'stretch';
+                                    dragGhost.style.gap = '4px';
+                                    dragGhost.style.background = '#1a1a1a';
+                                    dragGhost.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+                                    dragGhost.style.borderRadius = '12px';
+                                    dragGhost.style.padding = '4px';
+                                    dragGhost.style.boxShadow = '0 10px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5)';
+                                    dragGhost.style.pointerEvents = 'none';
+                                    dragGhost.style.zIndex = '999999';
+
+                                    // 2. Clone/get the image element
+                                    const imgEl = cardEl.querySelector('img');
+                                    const imgWrapper = document.createElement('div');
+                                    imgWrapper.style.width = '48px';
+                                    imgWrapper.style.height = '48px';
+                                    imgWrapper.style.borderRadius = '8px';
+                                    imgWrapper.style.overflow = 'hidden';
+                                    imgWrapper.style.background = '#0a0a0a';
+                                    imgWrapper.style.display = 'flex';
+                                    imgWrapper.style.alignItems = 'center';
+                                    imgWrapper.style.justifyContent = 'center';
+                                    
+                                    if (imgEl) {
+                                      const newImg = imgEl.cloneNode() as HTMLImageElement;
+                                      newImg.style.width = '100%';
+                                      newImg.style.height = '100%';
+                                      newImg.style.objectFit = 'cover';
+                                      imgWrapper.appendChild(newImg);
+                                    } else {
+                                      // Render placeholder icon or emoji
+                                      const text = document.createElement('span');
+                                      text.innerText = '🖼️';
+                                      text.style.fontSize = '20px';
+                                      imgWrapper.appendChild(text);
+                                    }
+                                    dragGhost.appendChild(imgWrapper);
+
+                                    // 3. Clone/create the handle
+                                    const handleWrapper = document.createElement('div');
+                                    handleWrapper.style.width = '18px';
+                                    handleWrapper.style.background = 'rgba(255, 255, 255, 0.08)';
+                                    handleWrapper.style.borderRadius = '6px';
+                                    handleWrapper.style.display = 'flex';
+                                    handleWrapper.style.alignItems = 'center';
+                                    handleWrapper.style.justifyContent = 'center';
+                                    handleWrapper.style.color = 'rgba(255, 255, 255, 0.5)';
+                                    handleWrapper.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>`;
+                                    document.body.appendChild(dragGhost);
+                                    e.dataTransfer.setDragImage(dragGhost, 28, 28);
+
+                                    // Clean up
+                                    setTimeout(() => {
+                                      if (dragGhost.parentNode) {
+                                        dragGhost.parentNode.removeChild(dragGhost);
+                                      }
+                                    }, 0);
+                                  }
+                                  
+                                  setIsDraggingIllustration(true);
+                                }}
+                                onDragEnd={() => {
+                                  setIsDraggingIllustration(false);
+                                }}
+                                className="absolute top-0 right-0 bottom-0 w-4.5 bg-white/5 hover:bg-white/10 border-l border-white/5 flex items-center justify-center cursor-grab active:cursor-grabbing group/handle transition-colors rounded-r-2xl"
+                                title="드래그하여 대사 사이로 삽화 이동"
+                              >
+                                <GripVertical className="w-3 h-3 text-white/30 group-hover/handle:text-white/70 transition-colors" />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null
+                  ) : (
+                    <div className="text-center py-20 text-white/10">
+                      <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-20 text-white" />
+                      <p className="text-sm font-medium">로그를 먼저 업로드하세요</p>
+                    </div>
+                  )}
+                </Section>
               </motion.div>
             )}
 
@@ -3475,7 +4301,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.8.2</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.8.14</span>
           </div>
         </div>
       </aside>
@@ -3823,7 +4649,10 @@ export default function App() {
         {/* Preview Area */}
         <div 
           ref={previewContainerRef}
-          className="flex-1 overflow-y-auto custom-scrollbar relative min-w-0 transition-colors"
+          className={cn(
+            "flex-1 overflow-y-auto custom-scrollbar relative min-w-0 transition-colors",
+            isDraggingIllustration && "is-dragging-illustration"
+          )}
           style={{ 
             '--name-col-width': `${displayItemsNameWidth}px`,
             backgroundColor: theme === 'dark' ? darkBgColor : lightBgColor
@@ -3965,6 +4794,7 @@ export default function App() {
                         return (
                           <div
                             key={virtualItem.key}
+                             id={`log-item-${originalLogIndex}`}
                             data-index={virtualItem.index}
                             ref={rowVirtualizer.measureElement}
                             className="virtualize-row"
@@ -4013,6 +4843,7 @@ export default function App() {
                               isNextNarration={isNextNarration}
                               editingLogId={editingLogId}
                               setEditingLogId={setEditingLogId}
+                              isDraggingIllustration={isDraggingIllustration}
                             />
                           </div>
                         );
@@ -4022,19 +4853,36 @@ export default function App() {
                     <div className="w-full shrink-0" style={{ height: '60px' }} />
 
                     {/* Portal Hover Image Tooltip */}
-                    {hoverImgRect && hoverImgUrl && (
-                      <div 
-                        className="fixed z-[9999] pointer-events-none"
-                        style={{
-                          left: `${hoverImgRect.left - 138}px`, // 128 (width) + 10 (spacing)
-                          top: `${hoverImgRect.top + hoverImgRect.height / 2 - 70}px`, // Center vertically (140 / 2)
-                        }}
-                      >
-                        <div className="bg-[#1a1a1a] p-1.5 rounded-xl border border-white/20 shadow-2xl overflow-hidden flex items-center justify-center">
-                          <img src={hoverImgUrl} alt="" referrerPolicy="no-referrer" className="w-32 h-32 object-contain rounded-lg block" />
+                    {hoverImgRect && hoverImgUrl && (() => {
+                      const tooltipWidth = 200;
+                      const showOnRight = hoverImgRect.left - tooltipWidth < 10;
+                      const leftPos = showOnRight 
+                        ? hoverImgRect.right + 10 
+                        : hoverImgRect.left - tooltipWidth - 10;
+                      
+                      let topPos = hoverImgRect.top + hoverImgRect.height / 2 - 100;
+                      if (topPos < 10) topPos = 10;
+                      else if (topPos + 220 > window.innerHeight) topPos = Math.max(10, window.innerHeight - 220);
+
+                      return (
+                        <div 
+                          className="fixed z-[9999] pointer-events-none"
+                          style={{
+                            left: `${leftPos}px`,
+                            top: `${topPos}px`,
+                          }}
+                        >
+                          <div className="bg-[#1a1a1a] p-2 rounded-2xl border border-white/20 shadow-2xl flex flex-col items-center justify-center max-w-[200px]">
+                            <img src={hoverImgUrl} alt="" referrerPolicy="no-referrer" className="w-auto h-auto min-w-[80px] min-h-[80px] max-w-[180px] max-h-[180px] object-contain rounded-xl block bg-black/40" />
+                            {hoverImgLabel && (
+                              <div className="text-[10px] font-bold text-white/70 text-center mt-1.5 truncate w-full px-1">
+                                {hoverImgLabel}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                     
                   </div>
                 </div>
@@ -4176,7 +5024,7 @@ export default function App() {
       </div>
       {isBulkImgurModalOpen && (
         <div className="fixed inset-0 z-[2000000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl w-full max-w-[500px] overflow-hidden flex flex-col pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl w-full max-w-[580px] overflow-hidden flex flex-col pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
             <div className="px-5 py-4 flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -4219,40 +5067,283 @@ export default function App() {
               </div>
 
               {bulkImages.length > 0 && (
-                <div className="bg-black/20 border border-white/10 rounded-xl max-h-[60vh] overflow-y-auto custom-scrollbar p-2 flex flex-col gap-1">
-                  {bulkImages.map((img, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg transition-colors">
-                      <div className="w-24 h-24 shrink-0 rounded bg-black/40 border border-white/10 overflow-hidden flex items-center justify-center">
-                        <img src={img.url} className="w-full h-full object-contain" alt={img.fileName} referrerPolicy="no-referrer" />
+                <div className="flex flex-col gap-3">
+                  {bulkImportStep === 1 ? (
+                    /* 1단계: 캐릭터 선별 작업 */
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[10px] text-white/40">{bulkImages.length}개 로드됨</span>
                       </div>
-                      <div className="flex-1 min-w-0 flex flex-col justify-center">
-                        <div className="text-[11px] font-medium text-white truncate">{img.fileName}</div>
-                        <div className="text-[9px] text-white/40 truncate">{img.url}</div>
-                      </div>
-                      <div className="shrink-0 w-28">
-                        <SearchableSelect 
-                          value={bulkImageMapping[img.url] || ""}
-                          onChange={(id) => setBulkImageMapping(prev => ({ ...prev, [img.url]: id }))}
-                          options={Object.entries(charSettings).map(([id, char]) => ({ label: (char as CharSetting).name, value: id }))}
-                        />
+                      <div className="bg-black/20 border border-white/10 rounded-xl max-h-[50vh] overflow-y-auto custom-scrollbar p-2 flex flex-col gap-1.5">
+                        {bulkImages.map((img, idx) => (
+                          <div key={idx} className="flex items-center gap-3 p-2.5 hover:bg-white/5 rounded-xl transition-colors border border-white/5 bg-white/[0.01]">
+                            <div className="w-12 h-12 shrink-0 rounded bg-black/40 border border-white/10 overflow-hidden flex items-center justify-center">
+                              <img src={img.url} className="w-full h-full object-contain" alt={img.fileName} referrerPolicy="no-referrer" />
+                            </div>
+                            <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
+                              <div className="text-[11px] font-bold text-white truncate">{img.fileName}</div>
+                              <div className="text-[9px] text-white/30 truncate">{img.url}</div>
+                            </div>
+                            <div className="shrink-0 w-44 flex flex-col justify-center">
+                              <SearchableSelect 
+                                value={bulkImageMapping[img.url] || ""}
+                                onChange={(id) => setBulkImageMapping(prev => ({ ...prev, [img.url]: id }))}
+                                options={[{ label: "선택 안 함", value: "" }, ...Object.entries(charSettings).map(([id, char]) => ({ label: (char as CharSetting).name, value: id }))]}
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
+                  ) : (
+                    /* 2단계: 삽화 선별 작업 */
+                    <div className="flex flex-col gap-2">
+                      <div className="flex justify-between items-center px-1">
+                        <span className="text-[10px] font-bold text-white/40">
+                          미지정 {bulkImages.filter(img => !bulkImageMapping[img.url]).length}개 중 {bulkImages.filter(img => !bulkImageMapping[img.url] && bulkSelectedIllustrations[img.url]).length}개 선택됨
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next: Record<string, boolean> = { ...bulkSelectedIllustrations };
+                              bulkImages.filter(img => !bulkImageMapping[img.url]).forEach(img => {
+                                next[img.url] = true;
+                              });
+                              setBulkSelectedIllustrations(next);
+                            }}
+                            className="text-[10px] font-bold text-white/50 hover:text-white transition-colors"
+                          >
+                            전체 선택
+                          </button>
+                          <span className="text-white/20 text-[10px]">|</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next: Record<string, boolean> = { ...bulkSelectedIllustrations };
+                              bulkImages.filter(img => !bulkImageMapping[img.url]).forEach(img => {
+                                next[img.url] = false;
+                              });
+                              setBulkSelectedIllustrations(next);
+                            }}
+                            className="text-[10px] font-bold text-white/50 hover:text-white transition-colors"
+                          >
+                            선택 해제
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {bulkImages.filter(img => !bulkImageMapping[img.url]).length === 0 ? (
+                        <div className="bg-black/20 border border-white/10 rounded-xl p-8 flex flex-col items-center justify-center text-center gap-2">
+                          <ImageIcon className="w-8 h-8 text-white/20" />
+                          <p className="text-[11px] text-white/50">모든 이미지가 캐릭터에 매칭되었습니다.</p>
+                          <p className="text-[9px] text-white/30">캐릭터로 선택되지 않은 이미지가 있을 때만 삽화로 지정할 수 있습니다.</p>
+                        </div>
+                      ) : (
+                        <div className="bg-black/20 border border-white/10 rounded-xl p-3 max-h-[50vh] overflow-y-auto custom-scrollbar">
+                          {/* 갤러리형 그리드 뷰 - grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 */}
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {bulkImages
+                              .filter(img => !bulkImageMapping[img.url])
+                              .map((img, idx) => {
+                                const isSelected = !!bulkSelectedIllustrations[img.url];
+                                return (
+                                  <div
+                                    key={idx}
+                                    onClick={() => {
+                                      setBulkSelectedIllustrations(prev => ({
+                                        ...prev,
+                                        [img.url]: !prev[img.url]
+                                      }));
+                                    }}
+                                    className={cn(
+                                      "aspect-square rounded-xl bg-black/40 border-2 overflow-hidden relative cursor-pointer group transition-all",
+                                      isSelected 
+                                        ? "border-[#e6005c] ring-2 ring-[#e6005c]/30 shadow-[0_0_15px_rgba(230,0,92,0.2)]" 
+                                        : "border-white/10 hover:border-white/20 hover:scale-[1.02]"
+                                    )}
+                                  >
+                                    <img src={img.url} className="w-full h-full object-cover select-none pointer-events-none" alt={img.fileName} referrerPolicy="no-referrer" />
+                                    
+                                    {/* Checkmark overlay for selected images */}
+                                    {isSelected && (
+                                      <div className="absolute top-2 right-2 w-5 h-5 bg-[#e6005c] rounded-full flex items-center justify-center shadow-lg border border-white/20 animate-in zoom-in duration-100">
+                                        <Check className="w-3 h-3 text-white stroke-[3px]" />
+                                      </div>
+                                    )}
+                                    
+                                    {/* Hover overlay showing original filename */}
+                                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none">
+                                      <div className="text-[9px] text-white font-bold truncate">{img.fileName}</div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
             
-            <div className="px-5 py-4 border-t border-white/5 bg-black/20 flex justify-end gap-2">
+            <div className="px-5 py-4 border-t border-white/5 bg-black/20 flex justify-between items-center gap-2">
               <button 
                 onClick={() => setIsBulkImgurModalOpen(false)}
                 className="px-4 py-2 rounded-lg text-[11px] font-bold text-white/60 hover:text-white hover:bg-white/5 transition-colors outline-none"
               >
                 취소
               </button>
+              
+              <div className="flex gap-2">
+                {bulkImportStep === 1 ? (
+                  <button 
+                    onClick={() => {
+                      const nextSelected = { ...bulkSelectedIllustrations };
+                      bulkImages.forEach(img => {
+                        if (!bulkImageMapping[img.url] && nextSelected[img.url] === undefined) {
+                          nextSelected[img.url] = true;
+                        }
+                      });
+                      setBulkSelectedIllustrations(nextSelected);
+                      setBulkImportStep(2);
+                    }}
+                    disabled={bulkImages.length === 0}
+                    className="px-4 py-2 rounded-lg text-[11px] font-bold text-white bg-white/10 hover:bg-white/20 disabled:bg-white/5 disabled:cursor-not-allowed transition-colors outline-none"
+                  >
+                    삽화 선택
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => setBulkImportStep(1)}
+                    className="px-4 py-2 rounded-lg text-[11px] font-bold text-white bg-white/10 hover:bg-white/20 transition-colors outline-none"
+                  >
+                    캐릭터 선택
+                  </button>
+                )}
+                
+                <button 
+                  onClick={applyBulkImages}
+                  disabled={bulkImages.length === 0}
+                  className="px-4 py-2 rounded-lg text-[11px] font-bold text-white bg-[#e6005c] hover:bg-[#ff0066] disabled:bg-[#e6005c]/50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(230,0,92,0.3)] transition-all outline-none"
+                >
+                  확인 및 적용
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isIllBulkModalOpen && (
+        <div className="fixed inset-0 z-[2000000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl max-w-[700px] w-full flex flex-col overflow-hidden max-h-[90vh]">
+            <div className="px-5 py-4 border-b border-white/5 bg-black/20 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-[#e6005c]" />
+                <h3 className="text-sm font-bold text-white">삽화 이미지 일괄 등록 (갤러리형)</h3>
+              </div>
               <button 
-                onClick={applyBulkImages}
-                disabled={bulkImages.length === 0}
-                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white bg-[#e6005c] hover:bg-[#ff0066] disabled:bg-[#e6005c]/50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(230,0,92,0.3)] transition-all outline-none"
+                onClick={() => setIsIllBulkModalOpen(false)}
+                className="text-white/40 hover:text-white text-xs transition-colors p-1"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar flex-1">
+              {illBulkImages.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[10px] font-bold text-white/40">
+                      총 {illBulkImages.length}개 이미지 중 {Object.values(selectedIllBulkImages).filter(Boolean).length}개 선택됨
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next: Record<string, boolean> = {};
+                          illBulkImages.forEach(img => { next[img.url] = true; });
+                          setSelectedIllBulkImages(next);
+                        }}
+                        className="text-[10px] font-bold text-white/50 hover:text-white transition-colors"
+                      >
+                        전체 선택
+                      </button>
+                      <span className="text-white/20 text-[10px]">|</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next: Record<string, boolean> = {};
+                          illBulkImages.forEach(img => { next[img.url] = false; });
+                          setSelectedIllBulkImages(next);
+                        }}
+                        className="text-[10px] font-bold text-white/50 hover:text-white transition-colors"
+                      >
+                        선택 해제
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-black/20 border border-white/10 rounded-xl p-3 max-h-[50vh] overflow-y-auto custom-scrollbar">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {illBulkImages.map((img, idx) => {
+                        const isSelected = !!selectedIllBulkImages[img.url];
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              setSelectedIllBulkImages(prev => ({
+                                ...prev,
+                                [img.url]: !prev[img.url]
+                              }));
+                            }}
+                            className={cn(
+                              "aspect-square rounded-xl bg-black/40 border-2 overflow-hidden relative cursor-pointer group transition-all",
+                              isSelected 
+                                ? "border-[#e6005c] ring-2 ring-[#e6005c]/30 shadow-[0_0_15px_rgba(230,0,92,0.2)]" 
+                                : "border-white/10 hover:border-white/20 hover:scale-[1.02]"
+                            )}
+                          >
+                            <img src={img.url} className="w-full h-full object-cover select-none pointer-events-none" alt={img.fileName} referrerPolicy="no-referrer" />
+                            
+                            {/* Checkmark overlay for selected images */}
+                            {isSelected && (
+                              <div className="absolute top-2 right-2 w-5 h-5 bg-[#e6005c] rounded-full flex items-center justify-center shadow-lg border border-white/20 animate-in zoom-in duration-100">
+                                <Check className="w-3 h-3 text-white stroke-[3px]" />
+                              </div>
+                            )}
+                            
+                            {/* Hover overlay showing original filename */}
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none">
+                              <div className="text-[9px] text-white font-bold truncate">{img.fileName}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-20 text-white/20 flex flex-col items-center justify-center gap-2">
+                  <ImageIcon className="w-10 h-10 opacity-10" />
+                  <p className="text-[11px] font-medium">불러온 이미지가 없습니다.</p>
+                </div>
+              )}
+            </div>
+            
+            <div className="px-5 py-4 border-t border-white/5 bg-black/20 flex justify-end gap-2">
+              <button 
+                onClick={() => setIsIllBulkModalOpen(false)}
+                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white/60 hover:text-white hover:bg-white/5 transition-colors outline-none"
+              >
+                취소
+              </button>
+              <button 
+                onClick={applyIllBulkImages}
+                disabled={illBulkImages.length === 0 || !Object.values(selectedIllBulkImages).some(Boolean)}
+                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white bg-[#e6005c] hover:bg-[#ff0066] disabled:bg-white/5 disabled:text-white/20 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(230,0,92,0.3)] disabled:shadow-none transition-all outline-none"
               >
                 확인 및 적용
               </button>

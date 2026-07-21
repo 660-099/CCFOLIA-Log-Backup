@@ -84,3 +84,51 @@ body {
 .dark .boundary-wrapper {
   color: white;
 }
+
+.boundary-wrapper.is-drag-over {
+  opacity: 1 !important;
+  height: 32px !important;
+  margin: -16px auto -16px 0 !important;
+  transition: all 0.15s ease-out;
+}
+
+.boundary-wrapper.is-drag-over .boundary-line {
+  background-color: #e6005c !important;
+  height: 4px !important;
+  box-shadow: 0 0 14px rgba(230, 0, 92, 0.9);
+  left: 0;
+  right: -80px;
+}
+
+.log-item-wrapper.is-drag-over-top .boundary-wrapper,
+.log-item-wrapper.is-drag-over-bottom .boundary-wrapper {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+/* 삽화 드래그앤드롭 중일 때 마우스 hover를 무효화하여 삽화 드롭에만 집중 */
+.is-dragging-illustration .boundary-wrapper {
+  display: none !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.is-dragging-illustration .group\/item:hover .absolute.top-2.right-4,
+.is-dragging-illustration .group\/img:hover .absolute,
+.is-dragging-illustration .group\/avatar:hover .absolute {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 삽화 드래그 중 미리보기 창 내 다른 hover 하이라이트들을 일절 비활성화 */
+.is-dragging-illustration .group\/item:hover {
+  background-color: transparent !important;
+  outline: none !important;
+}
+

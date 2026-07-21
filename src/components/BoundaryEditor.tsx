@@ -21,15 +21,50 @@ export const BoundaryEditor = React.memo(({
   onToggleSplit,
   onInsertImage,
   onInsertLog,
-  disabled = false
-}: BoundaryEditorProps) => {
+  disabled = false,
+  onDropIllustration,
+}: BoundaryEditorProps & { onDropIllustration?: (illId: string) => void }) => {
   const { theme } = useSettings();
   const isDark = theme === 'dark';
   const [isClicked, setIsClicked] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   
   const handleClick = (action: () => void) => {
     setIsClicked(true);
     action();
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!disabled && onDropIllustration) {
+      setIsDragOver(true);
+      e.dataTransfer.dropEffect = 'move';
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    
+    if (disabled || !onDropIllustration) return;
+    
+    try {
+      const dataStr = e.dataTransfer.getData('application/json');
+      if (dataStr) {
+        const data = JSON.parse(dataStr);
+        if (data.type === 'illustration' && data.id) {
+          onDropIllustration(data.id);
+        }
+      }
+    } catch(err) {}
   };
   
   return (
@@ -38,10 +73,14 @@ export const BoundaryEditor = React.memo(({
         "boundary-wrapper", 
         isTopLevel && "is-top-level", 
         isDark ? "dark" : "", 
-        (isClicked || disabled) && "opacity-0 pointer-events-none"
+        (isClicked || disabled) && "opacity-0 pointer-events-none",
+        isDragOver && "is-drag-over bg-[#e6005c]/10"
       )}
       style={disabled ? { pointerEvents: 'none', opacity: 0 } : undefined}
       onMouseLeave={() => setIsClicked(false)}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <div className="boundary-line" />
       <div className="boundary-content">

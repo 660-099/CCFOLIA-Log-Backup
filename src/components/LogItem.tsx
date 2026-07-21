@@ -87,6 +87,65 @@ export const LogItem = React.memo(({
     return hasTab ? initialTabId : (orderedTabs[0]?.id || '');
   });
   const [imageInputVal, setImageInputVal] = useState('');
+  const [dragOverPart, setDragOverPart] = useState<'top' | 'bottom' | null>(null);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    const types = Array.from(e.dataTransfer.types);
+    if (!types.includes("application/json") && !types.includes("text/plain")) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const isLast = idx === mergedLogsCount - 1;
+    if (isLast) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const cursorY = e.clientY;
+      const middleY = rect.top + rect.height / 2;
+      if (cursorY < middleY) {
+        if (dragOverPart !== 'top') setDragOverPart('top');
+      } else {
+        if (dragOverPart !== 'bottom') setDragOverPart('bottom');
+      }
+    } else {
+      if (dragOverPart !== 'top') setDragOverPart('top');
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverPart(null);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const finalPart = dragOverPart;
+    setDragOverPart(null);
+
+    try {
+      let dataStr = e.dataTransfer.getData("application/json") || e.dataTransfer.getData("text/plain");
+      if (!dataStr) return;
+      
+      let parsed = null;
+      if (dataStr.trim().startsWith('{')) {
+        parsed = JSON.parse(dataStr);
+      } else {
+        parsed = { type: 'illustration', id: dataStr };
+      }
+
+      if (parsed && parsed.type === 'illustration') {
+        const illId = parsed.id;
+        const pos = finalPart || 'top';
+        if (onUpdateIllustration) {
+          onUpdateIllustration(illId, { 
+            targetLogId: stableId, 
+            position: pos === 'top' ? 'before' : 'after' 
+          });
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
     if (!imageInputLoc || imageInputLoc.logId !== stableId) {
@@ -141,6 +200,7 @@ export const LogItem = React.memo(({
           allowSplit={!isTopLevel && !(isLastLog && blocks.length === 0)}
           isTopLevel={isTopLevel}
           disabled={isHoveringButton}
+          onDropIllustration={(illId) => onUpdateIllustration(illId, { targetLogId: stableId, position: 'before' })}
         />
         {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === 0 && (
           <div className={cn(
@@ -245,6 +305,7 @@ export const LogItem = React.memo(({
               onInsertLog={() => insertLogBlock(log.id, isTopLevel)}
               allowSplit={!(isLastLog && i === blocks.length - 1)}
               disabled={isHoveringButton}
+              onDropIllustration={(illId) => onUpdateIllustration(illId, { targetLogId: stableId, position: 'after' })}
             />
              {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === i + 1 && (
               <div className={cn(
@@ -436,7 +497,12 @@ export const LogItem = React.memo(({
     if (!logA || !logB) return false;
 
     const getFormatOf = (l: any) => {
-      if (l.isCommand) return 'command';
+      if (l.isIllustration) {
+        const ill = l.illustration || { tabOverride: l.tabOverride || 'auto' };
+        const resolvedTabOverride = ill.tabOverride === 'auto' || !ill.tabOverride ? (l.tabId || 'main') : ill.tabOverride;
+        const illTabSet = tabSettings[resolvedTabOverride] || tabSettings['main'];
+        return illTabSet?.format || 'main';
+      }
       const tabSet = tabSettings[l.tabId];
       const formatVal = tabSet?.format || 'main';
       if (l.charId === narrationCharacter && formatVal === 'main') {
@@ -454,10 +520,10 @@ export const LogItem = React.memo(({
     const isTabNameAndMergeB = isISB && showTabNames.has(formatB) && mergeTabStyles.has(formatB);
 
     // [강제 규칙] 정보/비밀 탭이고 '탭 이름 표시' & '탭별 통합'이 활성화되었을 때, 탭 묶음의 상/하단에는 무조건 구분선 적용
-    if (isTabNameAndMergeA && (logA.tabId !== logB.tabId || logB.isCommand || !isISB)) {
+    if (isTabNameAndMergeA && (logA.tabId !== logB.tabId || !isISB)) {
       return true;
     }
-    if (isTabNameAndMergeB && (logA.tabId !== logB.tabId || logA.isCommand || !isISA)) {
+    if (isTabNameAndMergeB && (logA.tabId !== logB.tabId || !isISA)) {
       return true;
     }
 
@@ -466,10 +532,7 @@ export const LogItem = React.memo(({
       return false;
     }
 
-    // 우선순위 2위: 다이스 및 매크로 (사이사이나 위 아래에 구분선 없음)
-    if (logA.isCommand || logB.isCommand) {
-      return false;
-    }
+    // 우선순위 2위: 다이스 및 매크로 (구분선 규칙 유지 - 다이스/매크로도 기본 로그블록 구분선 규칙 따름)
 
     // 우선순위 3위: 정보 및 비밀탭
     if (isISA || isISB) {
@@ -606,8 +669,15 @@ export const LogItem = React.memo(({
   }, [hasSpecialDividerAboveAndNoBadge, itemMarginTop]);
 
   if (log.isIllustration) {
-    const ill = log.illustration;
-    const illTabSet = tabSettings[ill.tabOverride];
+    const ill = log.illustration || {
+      id: log.id,
+      url: log.content,
+      tabOverride: log.tabOverride || 'auto',
+      width: log.width,
+      align: log.align || 'center'
+    };
+    const resolvedTabOverride = ill.tabOverride === 'auto' || !ill.tabOverride ? (log.tabId || 'main') : ill.tabOverride;
+    const illTabSet = tabSettings[resolvedTabOverride] || tabSettings['main'] || Object.values(tabSettings)[0];
     const illFormat = illTabSet?.format || 'main';
     const illIsSecret = illFormat === 'secret';
     const illTabColor = illTabSet?.color || '#ffd400';
@@ -631,12 +701,26 @@ export const LogItem = React.memo(({
 
     return (
       <div 
-        className="log-item-wrapper group/item relative min-h-[30px] flex flex-col justify-center"
+        className={cn(
+          "log-item-wrapper group/item relative min-h-[30px] flex flex-col justify-center",
+          dragOverPart === 'top' && "is-drag-over-top",
+          dragOverPart === 'bottom' && "is-drag-over-bottom"
+        )}
         style={{
           marginTop: isFirstInSection ? `${Math.round(paddingVertical)}px` : '4px',
           marginBottom: isLastInSection ? `${Math.round(paddingVertical)}px` : '4px',
         }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
+        {dragOverPart === 'top' && (
+          <div className="absolute top-0 left-0 right-0 h-[3px] bg-[#e6005c] z-40 pointer-events-none" />
+        )}
+        {dragOverPart === 'bottom' && (
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#e6005c] z-40 pointer-events-none" />
+        )}
+        {idx === 0 && renderBlocks(startBlocks, '__start__', true)}
         {renderHeader && (
           <div style={{ margin: `${hasSpecialDividerAbove ? 0 : 12}px ${r(paddingHorizontal)}px 8px ${r(paddingHorizontal)}px`, display: 'flex' }}>
             <div style={{ 
@@ -653,24 +737,26 @@ export const LogItem = React.memo(({
           </div>
         )}
 
-        <div 
-          onMouseEnter={() => setIsHoveringButton(true)}
-          onMouseLeave={() => setIsHoveringButton(false)}
-          className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
-        >
-          <button 
-            onClick={() => onRemoveIllustration && onRemoveIllustration(ill.id)} 
-            className={cn(
-              "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
-              theme === 'dark' 
-                ? "bg-stone-800/80 text-red-400 hover:text-red-300 hover:bg-red-950/40 border-white/10" 
-                : "bg-white/90 text-red-600 hover:text-red-700 hover:bg-red-50 border-stone-200"
-            )}
-            title="삽화 삭제"
+        {!log.isIllustration && (
+          <div 
+            onMouseEnter={() => setIsHoveringButton(true)}
+            onMouseLeave={() => setIsHoveringButton(false)}
+            className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
           >
-            <Trash2 className="w-3 h-3" />
-          </button>
-        </div>
+            <button 
+              onClick={() => onDeleteLog(log.id)} 
+              className={cn(
+                "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                theme === 'dark' 
+                  ? "bg-stone-800/80 text-white/60 hover:text-red-400 border-white/10" 
+                  : "bg-white/90 text-stone-600 hover:text-red-500 border-stone-200"
+              )}
+              title="삭제"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        )}
 
         {illFormat === 'info' ? (
           <div
@@ -692,10 +778,11 @@ export const LogItem = React.memo(({
               url={ill.url}
               width={ill.width}
               align={ill.align || 'center'}
-              onDelete={() => onRemoveIllustration && onRemoveIllustration(ill.id)}
               onUpdateWidth={(w: string) => onUpdateIllustration && onUpdateIllustration(ill.id, { width: w })}
               onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateIllustration && onUpdateIllustration(ill.id, { align: a })}
               paddingSize={0}
+              tabOverride={ill.tabOverride}
+              onUpdateTabOverride={(tabId: string) => onUpdateIllustration && onUpdateIllustration(ill.id, { tabOverride: tabId })}
             />
           </div>
         ) : illFormat === 'secret' ? (
@@ -718,10 +805,12 @@ export const LogItem = React.memo(({
               url={ill.url}
               width={ill.width}
               align={ill.align || 'center'}
-              onDelete={() => onRemoveIllustration && onRemoveIllustration(ill.id)}
+              onDelete={() => onUpdateIllustration && onUpdateIllustration(ill.id, { afterLogIndex: null })}
               onUpdateWidth={(w: string) => onUpdateIllustration && onUpdateIllustration(ill.id, { width: w })}
               onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateIllustration && onUpdateIllustration(ill.id, { align: a })}
               paddingSize={0}
+              tabOverride={ill.tabOverride}
+              onUpdateTabOverride={(tabId: string) => onUpdateIllustration && onUpdateIllustration(ill.id, { tabOverride: tabId })}
             />
           </div>
         ) : (
@@ -737,10 +826,12 @@ export const LogItem = React.memo(({
               url={ill.url}
               width={ill.width}
               align={ill.align || 'center'}
-              onDelete={() => onRemoveIllustration && onRemoveIllustration(ill.id)}
+              onDelete={() => onUpdateIllustration && onUpdateIllustration(ill.id, { afterLogIndex: null })}
               onUpdateWidth={(w: string) => onUpdateIllustration && onUpdateIllustration(ill.id, { width: w })}
               onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateIllustration && onUpdateIllustration(ill.id, { align: a })}
               paddingSize={0}
+              tabOverride={ill.tabOverride}
+              onUpdateTabOverride={(tabId: string) => onUpdateIllustration && onUpdateIllustration(ill.id, { tabOverride: tabId })}
             />
           </div>
         )}
@@ -773,6 +864,8 @@ export const LogItem = React.memo(({
             />
           </div>
         )}
+
+        {renderBlocks(insertedBlocks, stableId)}
       </div>
     );
   }
@@ -786,9 +879,20 @@ export const LogItem = React.memo(({
           isCurrentMatch 
             ? (theme === 'dark' ? "bg-[#ff9900]/20" : "bg-[#ff9900]/10")
             : (theme === 'dark' ? "bg-[#e6005c]/10" : "bg-[#e6005c]/5")
-        )
+        ),
+        dragOverPart === 'top' && "is-drag-over-top",
+        dragOverPart === 'bottom' && "is-drag-over-bottom"
       )}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
+      {dragOverPart === 'top' && (
+        <div className="absolute top-0 left-0 right-0 h-[3px] bg-[#e6005c] z-40 pointer-events-none" />
+      )}
+      {dragOverPart === 'bottom' && (
+        <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#e6005c] z-40 pointer-events-none" />
+      )}
       {idx === 0 && renderBlocks(startBlocks, '__start__', true)}
       {!isEditing && (
         <div 
@@ -796,14 +900,9 @@ export const LogItem = React.memo(({
           onMouseLeave={() => setIsHoveringButton(false)}
           className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
         >
-          {!log.isHiddenContent && !log.isContinuation && (
-            <span className={cn(
-              "text-[10px] font-bold font-sans mr-1 select-none",
-              theme === 'dark' ? "text-stone-500" : "text-stone-400"
-            )}>
-              #{idx + 1}
-            </span>
-          )}
+          <div className="bg-black/85 text-white/95 border border-white/10 rounded px-1.5 py-0.5 text-[9.5px] font-bold font-mono tracking-wider shadow-md leading-none">
+            #{originalLogIndex + 1}
+          </div>
           <button 
             onClick={() => { setEditingLogId(log.id); setEditContent(log.content.replace(/<br\s*\/?>/gi, '\n')); setEditCharId(log.charId); }} 
             className={cn(
