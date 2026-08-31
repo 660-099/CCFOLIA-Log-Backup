@@ -60,15 +60,18 @@ import {
   MapPin,
   ArrowUp,
   ArrowDown,
-  GripVertical
+  GripVertical,
+  Edit2,
+  Archive
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
 import { clsx, type ClassValue } from 'clsx';
-import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem, Illustration } from './types';
+import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem, Illustration, LogFile } from './types';
 import { parseLogFile } from './parser';
 import { cn, r, rgbToHex, getFileNameFromUrl } from './utils';
 import { extractOldFormat, InsertedBlock, migrateToInsertedBlocks } from './utils/migration';
+import { getDemoData } from './utils/demoData';
 import { Toggle } from './components/Toggle';
 import { LogItem } from './components/LogItem';
 import { SearchableSelect } from './components/SearchableSelect';
@@ -78,6 +81,9 @@ import { generateFinalHtmlStr } from './utils/htmlGenerator';
 import { fonts } from './constants';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { SettingsProvider } from './contexts/SettingsContext';
+import { GlobalBgmPlayer } from './components/GlobalBgmPlayer';
+
+const ENABLE_MULTI_FILE_UI = false;
 
 const migrateIllustrationsToLogs = (logs: LogEntry[], illustrations: Illustration[], tabSettings: Record<string, TabSetting>): LogEntry[] => {
   if (!illustrations || illustrations.length === 0) return logs;
@@ -605,6 +611,7 @@ export default function App() {
   const [pageTitle, setPageTitle] = useState('');
   const [tempTitle, setTempTitle] = useState('');
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [isMovingBlock, setIsMovingBlock] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [isTocHovered, setIsTocHovered] = useState(false);
@@ -641,13 +648,178 @@ export default function App() {
     }
   }, [isIllBulkModalOpen]);
 
-  const [originalFileName, setOriginalFileName] = useState('');
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [files, setFiles] = useState<LogFile[]>([]);
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+
+  const activeFile = useMemo(() => {
+    if (!files || files.length === 0) return null;
+    return files.find(f => f.id === activeFileId) || files[0];
+  }, [files, activeFileId]);
+
+  const logs = useMemo<LogEntry[]>(() => activeFile ? activeFile.logs : [], [activeFile]);
+  const originalFileName = activeFile ? activeFile.name : '';
+
+  const setLogs = useCallback((newLogs: LogEntry[] | ((prev: LogEntry[]) => LogEntry[])) => {
+    setFiles(prevFiles => {
+      if (prevFiles.length === 0) return prevFiles;
+      const targetId = activeFileId || prevFiles[0].id;
+      return prevFiles.map(f => {
+        if (f.id === targetId) {
+          const nextLogs = typeof newLogs === 'function' ? newLogs(f.logs) : newLogs;
+          return { ...f, logs: nextLogs };
+        }
+        return f;
+      });
+    });
+  }, [activeFileId]);
+
+  const setOriginalFileName = useCallback((newName: string) => {
+    setFiles(prevFiles => {
+      if (prevFiles.length === 0) return prevFiles;
+      const targetId = activeFileId || prevFiles[0].id;
+      return prevFiles.map(f => f.id === targetId ? { ...f, name: newName } : f);
+    });
+  }, [activeFileId]);
+
   const [charSettings, setCharSettings] = useState<Record<string, CharSetting>>({});
   const [charOrder, setCharOrder] = useState<string[]>([]);
   const [tabOrder, setTabOrder] = useState<string[]>([]);
   const [extractedColors, setExtractedColors] = useState<string[]>([]);
   const [tabSettings, setTabSettings] = useState<Record<string, TabSetting>>({});
+
+  // Keep charOrder and tabOrder synchronized across all uploaded files in sequence
+  useEffect(() => {
+    if (files.length === 0) return;
+
+    const seenChars = new Set<string>();
+    const newCharOrder: string[] = [];
+    const seenTabs = new Set<string>();
+    const newTabOrder: string[] = [];
+
+    files.forEach(file => {
+      file.logs.forEach(log => {
+        if (log.charId && !seenChars.has(log.charId) && charSettings[log.charId]) {
+          seenChars.add(log.charId);
+          newCharOrder.push(log.charId);
+        }
+        if (log.tabId && !seenTabs.has(log.tabId) && tabSettings[log.tabId]) {
+          seenTabs.add(log.tabId);
+          newTabOrder.push(log.tabId);
+        }
+      });
+    });
+
+    Object.keys(charSettings).forEach(id => {
+      if (!seenChars.has(id)) {
+        newCharOrder.push(id);
+      }
+    });
+    Object.keys(tabSettings).forEach(id => {
+      if (!seenTabs.has(id)) {
+        newTabOrder.push(id);
+      }
+    });
+
+    setCharOrder(prev => {
+      if (JSON.stringify(prev) === JSON.stringify(newCharOrder)) return prev;
+      return newCharOrder;
+    });
+
+    setTabOrder(prev => {
+      if (JSON.stringify(prev) === JSON.stringify(newTabOrder)) return prev;
+      return newTabOrder;
+    });
+  }, [files, charSettings, tabSettings]);
+
+  const [collapsedAccordionFiles, setCollapsedAccordionFiles] = useState<Record<string, boolean>>({});
+
+  const toggleAccordionFile = useCallback((key: string) => {
+    setCollapsedAccordionFiles(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  }, []);
+
+  const [mobileTab, setMobileTab] = useState<'settings' | 'preview'>('settings');
+  const [charSortMode, setCharSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
+  const [tabSortMode, setTabSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
+
+  const fileTabGroups = useMemo(() => {
+    if (files.length <= 1) return null;
+    const groups: { fileId: string; fileName: string; tabIds: string[] }[] = [];
+    const assignedTabs = new Set<string>();
+
+    files.forEach((file, idx) => {
+      const fileTabs: string[] = [];
+      file.logs.forEach(log => {
+        if (log.tabId && tabSettings[log.tabId] && !fileTabs.includes(log.tabId)) {
+          fileTabs.push(log.tabId);
+          assignedTabs.add(log.tabId);
+        }
+      });
+      if (tabSortMode === 'alphabetical') {
+        fileTabs.sort((a, b) => (tabSettings[a]?.name || '').localeCompare(tabSettings[b]?.name || '', 'ko'));
+      }
+      groups.push({
+        fileId: file.id,
+        fileName: file.name || `로그 파일 ${idx + 1}`,
+        tabIds: fileTabs
+      });
+    });
+
+    const unassigned = Object.keys(tabSettings).filter(id => !assignedTabs.has(id));
+    if (unassigned.length > 0) {
+      if (tabSortMode === 'alphabetical') {
+        unassigned.sort((a, b) => (tabSettings[a]?.name || '').localeCompare(tabSettings[b]?.name || '', 'ko'));
+      }
+      groups.push({
+        fileId: 'unassigned',
+        fileName: '기타 / 공유 탭',
+        tabIds: unassigned
+      });
+    }
+
+    return groups;
+  }, [files, tabSettings, tabSortMode]);
+
+  const fileCharGroups = useMemo(() => {
+    if (files.length <= 1) return null;
+    const groups: { fileId: string; fileName: string; charIds: string[] }[] = [];
+    const assignedChars = new Set<string>();
+
+    files.forEach((file, idx) => {
+      const fileChars: string[] = [];
+      file.logs.forEach(log => {
+        if (log.charId && charSettings[log.charId] && !fileChars.includes(log.charId)) {
+          fileChars.push(log.charId);
+          assignedChars.add(log.charId);
+        }
+      });
+      if (charSortMode === 'alphabetical') {
+        fileChars.sort((a, b) => (charSettings[a]?.name || '').localeCompare(charSettings[b]?.name || '', 'ko'));
+      }
+      groups.push({
+        fileId: file.id,
+        fileName: file.name || `로그 파일 ${idx + 1}`,
+        charIds: fileChars
+      });
+    });
+
+    const unassigned = Object.keys(charSettings).filter(id => !assignedChars.has(id));
+    if (unassigned.length > 0) {
+      if (charSortMode === 'alphabetical') {
+        unassigned.sort((a, b) => (charSettings[a]?.name || '').localeCompare(charSettings[b]?.name || '', 'ko'));
+      }
+      groups.push({
+        fileId: 'unassigned',
+        fileName: '기타 / 라이브러리 캐릭터',
+        charIds: unassigned
+      });
+    }
+
+    return groups;
+  }, [files, charSettings, charSortMode]);
+
   const [rememberSettings, setRememberSettings] = useLocalStorage<boolean>('ccfolia_rememberSettings', true);
 
   const illustrations = useMemo<Illustration[]>(() => {
@@ -695,9 +867,6 @@ export default function App() {
   const scrollPositions = useRef<Record<string, number>>({});
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
 
-  const [mobileTab, setMobileTab] = useState<'settings' | 'preview'>('settings');
-  const [charSortMode, setCharSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
-  const [tabSortMode, setTabSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
   const [isNarrationDropdownOpen, setIsNarrationDropdownOpen] = useState(false);
   const narrationDropdownRef = useRef<HTMLDivElement>(null);
   const [isFontDropdownOpen, setIsFontDropdownOpen] = useState(false);
@@ -735,8 +904,73 @@ export default function App() {
     edits: true
   }, undefined, undefined, rememberSettings);
 
-  const [insertedBlocks, setInsertedBlocks] = useState<Record<string, InsertedBlock[]>>({});
+  const insertedBlocks = useMemo<Record<string, InsertedBlock[]>>(() => (activeFile?.insertedBlocks as any) || {}, [activeFile]);
+
+  const setInsertedBlocks = useCallback((newBlocks: Record<string, InsertedBlock[]> | ((prev: Record<string, InsertedBlock[]>) => Record<string, InsertedBlock[]>)) => {
+    setFiles(prevFiles => {
+      if (prevFiles.length === 0) return prevFiles;
+      const targetId = activeFileId || prevFiles[0].id;
+      return prevFiles.map(f => {
+        if (f.id === targetId) {
+          const currentBlocks = (f.insertedBlocks as any) || {};
+          const nextBlocks = typeof newBlocks === 'function' ? newBlocks(currentBlocks) : newBlocks;
+          return { ...f, insertedBlocks: nextBlocks };
+        }
+        return f;
+      });
+    });
+  }, [activeFileId]);
+
+  const additionalFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleRemoveFile = (fileId: string) => {
+    setFiles(prev => {
+      const next = prev.filter(f => f.id !== fileId);
+      if (activeFileId === fileId) {
+        if (next.length > 0) setActiveFileId(next[0].id);
+        else setActiveFileId(null);
+      }
+      return next;
+    });
+  };
+
+  const handleRenameFile = (fileId: string, newName: string) => {
+    setFiles(prev => prev.map(f => f.id === fileId ? { ...f, name: newName } : f));
+  };
+
+  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [editingFileName, setEditingFileName] = useState<string>('');
+  const [draggedFileId, setDraggedFileId] = useState<string | null>(null);
+  const [dragOverFileId, setDragOverFileId] = useState<string | null>(null);
+
+  const reorderFiles = (sourceId: string, targetId: string) => {
+    setFiles(prev => {
+      const srcIdx = prev.findIndex(f => f.id === sourceId);
+      const targetIdx = prev.findIndex(f => f.id === targetId);
+      if (srcIdx === -1 || targetIdx === -1 || srcIdx === targetIdx) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(srcIdx, 1);
+      next.splice(targetIdx, 0, moved);
+      return next;
+    });
+  };
+
+  const startRenameFile = (fileId: string, currentName: string) => {
+    setEditingFileId(fileId);
+    setEditingFileName(currentName);
+  };
+
+  const finishRenameFile = (fileId: string) => {
+    if (editingFileName.trim()) {
+      handleRenameFile(fileId, editingFileName.trim());
+    }
+    setEditingFileId(null);
+  };
+
   const [imageInputLoc, setImageInputLoc] = useState<{ logId: string; insertIndex: number } | null>(null);
+  const [bgmInputLoc, setBgmInputLoc] = useState<{ logId: string; insertIndex: number } | null>(null);
+  const [currentBgmTrack, setCurrentBgmTrack] = useState<{ id: string; title: string; url: string; videoId: string; startTime: number } | null>(null);
+  const [isGlobalBgmPlaying, setIsGlobalBgmPlaying] = useState(false);
 
   const { insertedImages, splitPoints: splitPointsArr, sectionNames } = useMemo(() => extractOldFormat(insertedBlocks), [insertedBlocks]);
   const splitPoints = useMemo(() => new Set(splitPointsArr), [splitPointsArr]);
@@ -811,8 +1045,11 @@ export default function App() {
   );
 
   const [hideEmptyAvatars, setHideEmptyAvatars] = useLocalStorage<boolean>('ccfolia_hideEmptyAvatars', false, undefined, undefined, rememberSettings);
+  const [cropFaceTop, setCropFaceTop] = useLocalStorage<boolean>('ccfolia_cropFaceTop', false, undefined, undefined, rememberSettings);
   const [hideAllAvatars, setHideAllAvatars] = useLocalStorage<boolean>('ccfolia_hideAllAvatars', false, undefined, undefined, rememberSettings);
   const [enableSentenceSpacing, setEnableSentenceSpacing] = useLocalStorage<boolean>('ccfolia_enableSentenceSpacing', false, undefined, undefined, rememberSettings);
+  const [enableSecretNarration, setEnableSecretNarration] = useLocalStorage<boolean>('ccfolia_enableSecretNarration', false, undefined, undefined, rememberSettings);
+  const [narrationFormat, setNarrationFormat] = useLocalStorage<'style1' | 'style2' | 'style3'>('ccfolia_narrationFormat', 'style1', undefined, undefined, rememberSettings);
   const [narrationCharacter, setNarrationCharacter] = useState<string | null>(null);
   const [showLogDivider, setShowLogDivider] = useLocalStorage<boolean>('ccfolia_showLogDivider', false, undefined, undefined, rememberSettings);
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
@@ -1106,9 +1343,12 @@ export default function App() {
       showTabNames: Array.from(showTabNames),
       mergeTabStyles: Array.from(mergeTabStyles),
       hideEmptyAvatars,
+      cropFaceTop,
       hideAllAvatars,
       narrationCharacter,
       enableSentenceSpacing,
+      enableSecretNarration,
+      narrationFormat,
       showLogDivider,
       illustrations,
       ...state
@@ -1207,9 +1447,12 @@ export default function App() {
     if (state.showTabNames) setShowTabNames(new Set(state.showTabNames));
     if (state.mergeTabStyles) setMergeTabStyles(new Set(state.mergeTabStyles));
     if (state.hideEmptyAvatars !== undefined) setHideEmptyAvatars(state.hideEmptyAvatars);
+    if (state.cropFaceTop !== undefined) setCropFaceTop(state.cropFaceTop);
     if (state.hideAllAvatars !== undefined) setHideAllAvatars(state.hideAllAvatars);
     if (state.narrationCharacter !== undefined) setNarrationCharacter(state.narrationCharacter);
     if (state.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(state.enableSentenceSpacing);
+    if (state.enableSecretNarration !== undefined) setEnableSecretNarration(state.enableSecretNarration);
+    if (state.narrationFormat !== undefined) setNarrationFormat(state.narrationFormat);
     if (state.showLogDivider !== undefined) setShowLogDivider(state.showLogDivider);
   };
 
@@ -1243,9 +1486,12 @@ export default function App() {
         setShowTabNames(new Set(state.showTabNames || ['secret']));
         setMergeTabStyles(new Set(state.mergeTabStyles || ['secret']));
         setHideEmptyAvatars(state.hideEmptyAvatars || false);
+        setCropFaceTop(state.cropFaceTop || false);
         setHideAllAvatars(state.hideAllAvatars || false);
         setNarrationCharacter(state.narrationCharacter || null);
         setEnableSentenceSpacing(state.enableSentenceSpacing || false);
+        setEnableSecretNarration(state.enableSecretNarration || false);
+        setNarrationFormat(state.narrationFormat || 'style1');
         setShowLogDivider(state.showLogDivider || false);
         saveToHistory(state);
       } else {
@@ -1430,32 +1676,156 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const styleInputRef = useRef<HTMLInputElement>(null);
 
-  // Parse HTML Log
-  const handleLogUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Unify character and tab settings across multiple parsed log files by name
+  const processAndUnifyLogFiles = (
+    rawParsedFiles: { name: string; trimmedLogs: LogEntry[]; newChars: Record<string, CharSetting>; newTabs: Record<string, TabSetting>; colorsFound: string[] }[],
+    initialChars: Record<string, CharSetting>,
+    initialTabs: Record<string, TabSetting>
+  ) => {
+    const mergedChars = { ...initialChars };
+    const mergedTabs = { ...initialTabs };
+    const mergedColors = new Set<string>();
 
-    const fileName = file.name.replace(/\.[^/.]+$/, "");
-    setOriginalFileName(fileName);
+    const charNameToIdMap = new Map<string, string>();
+    Object.values(mergedChars).forEach(c => {
+      if (c.name) charNameToIdMap.set(c.name.trim(), c.id);
+    });
+
+    const tabNameToIdMap = new Map<string, string>();
+    Object.values(mergedTabs).forEach(t => {
+      if (t.name) tabNameToIdMap.set(t.name.trim(), t.id);
+    });
+
+    const unifiedFiles: LogFile[] = [];
+
+    rawParsedFiles.forEach((fileItem, fileIdx) => {
+      fileItem.colorsFound.forEach(c => mergedColors.add(c));
+
+      const updatedLogs = fileItem.trimmedLogs.map(log => {
+        const charName = (log.name || '').trim();
+        let canonicalCharId = log.charId;
+
+        if (charName) {
+          if (charNameToIdMap.has(charName)) {
+            canonicalCharId = charNameToIdMap.get(charName)!;
+          } else {
+            canonicalCharId = log.charId || `char_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+            charNameToIdMap.set(charName, canonicalCharId);
+          }
+
+          if (!mergedChars[canonicalCharId]) {
+            const fileCharObj = fileItem.newChars[log.charId] || { id: canonicalCharId, name: charName, color: log.color || '#ffffff', imageUrl: '', visible: true };
+            mergedChars[canonicalCharId] = { ...fileCharObj, id: canonicalCharId, name: charName };
+          }
+        }
+
+        const tabName = (log.tab || '').trim();
+        let canonicalTabId = log.tabId;
+
+        if (tabName) {
+          if (tabNameToIdMap.has(tabName)) {
+            canonicalTabId = tabNameToIdMap.get(tabName)!;
+          } else {
+            canonicalTabId = log.tabId || `tab_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+            tabNameToIdMap.set(tabName, canonicalTabId);
+          }
+
+          if (!mergedTabs[canonicalTabId]) {
+            const fileTabObj = fileItem.newTabs[log.tabId] || { id: canonicalTabId, name: tabName, format: 'main', visible: true, color: '#ffd400' };
+            mergedTabs[canonicalTabId] = { ...fileTabObj, id: canonicalTabId, name: tabName };
+          }
+        }
+
+        return {
+          ...log,
+          charId: canonicalCharId,
+          tabId: canonicalTabId
+        };
+      });
+
+      unifiedFiles.push({
+        id: `file_${Date.now()}_${fileIdx}_${Math.random().toString(36).substring(2, 6)}`,
+        name: fileItem.name,
+        logs: updatedLogs,
+        insertedBlocks: {}
+      });
+    });
+
+    return {
+      unifiedFiles,
+      mergedChars,
+      mergedTabs,
+      mergedColors: Array.from(mergedColors)
+    };
+  };
+
+  const handleLoadDemo = () => {
+    if (files.length > 0 || logs.length > 0) {
+      if (!confirm('현재 로그를 편집중입니다. 초기화하고 데모 로그를 여시겠습니까?')) {
+        return;
+      }
+    }
+
+    const demo = getDemoData();
+    
+    setLogs(demo.logs);
+    setCharSettings(demo.chars);
+    setTabSettings(demo.tabs);
+    setCharOrder(demo.charOrder);
+    setTabOrder(demo.tabOrder);
+    setExtractedColors(['#888888', '#ff6b6b', '#4dabf7', '#ffd43b', '#FFC107']);
+    setOriginalFileName('demo.html');
+    setPageTitle('데모');
+    setInsertedBlocks(demo.insertedBlocks);
+    setNarrationCharacter(demo.narrationCharacter);
+    setActiveFileId('active');
+    setFiles([{
+      id: 'active',
+      name: 'demo.html',
+      logs: demo.logs,
+      insertedBlocks: demo.insertedBlocks
+    }]);
+  };
+
+  // Parse HTML Log (Main / First upload)
+  const handleLogUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawFilesAll = Array.from(e.target.files || []);
+    const rawFiles = ENABLE_MULTI_FILE_UI ? rawFilesAll : rawFilesAll.slice(0, 1);
+    if (rawFiles.length === 0) return;
+
+    if (files.length > 0 || logs.length > 0) {
+      if (!confirm('현재 로그를 편집중입니다. 초기화하고 새 파일을 여시겠습니까?')) {
+        e.target.value = '';
+        return;
+      }
+    }
+
     setPageTitle(''); // Reset custom title on new upload
 
-    const {
-      trimmedLogs,
-      newChars,
-      newCharOrder,
-      newTabs,
-      newTabOrder,
-      colorsFound
-    } = await parseLogFile(file);
+    const parsedRaw = [];
+    for (let i = 0; i < rawFiles.length; i++) {
+      const file = rawFiles[i] as File;
+      const fileName = file.name.replace(/\.[^/.]+$/, "");
+      const res = await parseLogFile(file);
+      parsedRaw.push({
+        name: fileName,
+        trimmedLogs: res.trimmedLogs,
+        newChars: res.newChars,
+        newTabs: res.newTabs,
+        colorsFound: res.colorsFound
+      });
+    }
 
-    setLogs(trimmedLogs);
-    setCharSettings(newChars);
-    setCharOrder(newCharOrder);
-    setExtractedColors(colorsFound);
-    setTabSettings(newTabs);
-    setTabOrder(newTabOrder);
-    setInsertedBlocks({});
-    
+    const { unifiedFiles, mergedChars, mergedTabs, mergedColors } = processAndUnifyLogFiles(parsedRaw, {}, {});
+
+    setCharSettings(mergedChars);
+    setTabSettings(mergedTabs);
+    setExtractedColors(mergedColors);
+    setFiles(unifiedFiles);
+    if (unifiedFiles.length > 0) {
+      setActiveFileId(unifiedFiles[0].id);
+    }
+
     if (!rememberSettings) {
       setMergeTabs(new Set(['main', 'secret', 'other']));
       setMergeTabStyles(new Set(['secret']));
@@ -1468,32 +1838,45 @@ export default function App() {
     setPageTitle('');
     setActiveTab('tabs');
 
-    // Save initial state for reset
-    const initial = {
-      charSettings: newChars,
-      tabSettings: newTabs,
-      tabOrder: newTabOrder,
-      cssFormat: rememberSettings ? cssFormat : ('internal' as const),
-      fontSize: rememberSettings ? fontSize : 14,
-      textFontSize: rememberSettings ? textFontSize : 14,
-      fontFamily: rememberSettings ? fontFamily : 'Noto Sans KR',
-      theme: rememberSettings ? theme : ('dark' as const),
-      disableOtherColor: rememberSettings ? disableOtherColor : true,
-      logs: trimmedLogs,
-      insertedImages: {},
-      splitPoints: [] as number[],
-      sectionNames: {} as Record<number, string>,
-      mergeTabs: rememberSettings ? Array.from(mergeTabs) : ['main', 'secret', 'other'],
-      showTabNames: rememberSettings ? Array.from(showTabNames) : ['secret'],
-      mergeTabStyles: rememberSettings ? Array.from(mergeTabStyles) : ['secret'],
-      hideEmptyAvatars: rememberSettings ? hideEmptyAvatars : false,
-      hideAllAvatars: rememberSettings ? hideAllAvatars : false,
-      showLogDivider: rememberSettings ? showLogDivider : false
-    };
-    setInitialState(initial);
-    setHistory([initial]);
-    setHistoryIndex(0);
+    e.target.value = '';
   };
+
+  // Additional Log File Upload (Append to existing files)
+  const handleAdditionalLogUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawFiles = Array.from(e.target.files || []);
+    if (rawFiles.length === 0) return;
+
+    const parsedRaw = [];
+    for (let i = 0; i < rawFiles.length; i++) {
+      const file = rawFiles[i] as File;
+      const fileName = file.name.replace(/\.[^/.]+$/, "");
+      const res = await parseLogFile(file);
+      parsedRaw.push({
+        name: fileName,
+        trimmedLogs: res.trimmedLogs,
+        newChars: res.newChars,
+        newTabs: res.newTabs,
+        colorsFound: res.colorsFound
+      });
+    }
+
+    const { unifiedFiles, mergedChars, mergedTabs, mergedColors } = processAndUnifyLogFiles(
+      parsedRaw,
+      charSettings,
+      tabSettings
+    );
+
+    setCharSettings(mergedChars);
+    setTabSettings(mergedTabs);
+    setExtractedColors(prev => Array.from(new Set([...prev, ...mergedColors])));
+    setFiles(prev => [...prev, ...unifiedFiles]);
+    if (unifiedFiles.length > 0) {
+      setActiveFileId(unifiedFiles[0].id);
+    }
+
+    e.target.value = '';
+  };
+
 
   const [jsonFileName, setJsonFileName] = useState('');
 
@@ -1537,13 +1920,24 @@ export default function App() {
       if (json.tabOrder) setTabOrder(json.tabOrder);
       if (json.pageTitle !== undefined) setPageTitle(json.pageTitle);
       
-      if (json.logs) {
+      if (json.files && Array.isArray(json.files) && json.files.length > 0) {
+        setFiles(json.files);
+        setActiveFileId(json.activeFileId || json.files[0].id);
+      } else if (json.logs) {
         let nextLogs = json.logs;
         if (json.illustrations && json.illustrations.length > 0) {
           nextLogs = migrateIllustrationsToLogs(nextLogs, json.illustrations, json.tabSettings || tabSettings);
         }
-        setLogs(nextLogs);
+        const singleFile: LogFile = {
+          id: `file_${Date.now()}`,
+          name: json.originalFileName || json.pageTitle || '업로드 로그',
+          logs: nextLogs,
+          insertedBlocks: json.insertedBlocks || migrateToInsertedBlocks(json.insertedImages, json.splitPoints, json.sectionNames)
+        };
+        setFiles([singleFile]);
+        setActiveFileId(singleFile.id);
       }
+
       
       if (json.cssFormat) setCssFormat(json.cssFormat);
       if (json.fontSize) setFontSize(json.fontSize);
@@ -1559,6 +1953,8 @@ export default function App() {
       if (json.lightBgColor !== undefined) setLightBgColor(json.lightBgColor);
       if (json.filterBarMode !== undefined) setFilterBarMode(json.filterBarMode);
       if (json.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(json.enableSentenceSpacing);
+      if (json.enableSecretNarration !== undefined) setEnableSecretNarration(json.enableSecretNarration);
+      if (json.narrationFormat !== undefined) setNarrationFormat(json.narrationFormat);
       if (json.disableOtherColor !== undefined) setDisableOtherColor(json.disableOtherColor);
       if (json.showLogDivider !== undefined) setShowLogDivider(json.showLogDivider);
       
@@ -1572,6 +1968,7 @@ export default function App() {
       if (json.showTabNames) setShowTabNames(new Set(json.showTabNames));
       if (json.mergeTabStyles) setMergeTabStyles(new Set(json.mergeTabStyles));
       if (json.hideEmptyAvatars !== undefined) setHideEmptyAvatars(json.hideEmptyAvatars);
+      if (json.cropFaceTop !== undefined) setCropFaceTop(json.cropFaceTop);
       if (json.hideAllAvatars !== undefined) setHideAllAvatars(json.hideAllAvatars);
       if (json.narrationCharacter !== undefined) setNarrationCharacter(json.narrationCharacter);
 
@@ -1585,6 +1982,9 @@ export default function App() {
 
   const exportProject = () => {
     const data: any = { 
+      version: '1.10.1',
+      files,
+      activeFileId,
       originalFileName,
       pageTitle
     };
@@ -1594,6 +1994,7 @@ export default function App() {
       data.charOrder = charOrder;
       data.narrationCharacter = narrationCharacter;
       data.hideEmptyAvatars = hideEmptyAvatars;
+      data.cropFaceTop = cropFaceTop;
       data.hideAllAvatars = hideAllAvatars;
     }
     
@@ -1621,6 +2022,8 @@ export default function App() {
       data.lightBgColor = lightBgColor;
       data.filterBarMode = filterBarMode;
       data.enableSentenceSpacing = enableSentenceSpacing;
+      data.enableSecretNarration = enableSecretNarration;
+      data.narrationFormat = narrationFormat;
       data.showLogDivider = showLogDivider;
     }
     
@@ -1665,6 +2068,16 @@ export default function App() {
 
     logs.forEach((log, idx) => {
       if (log.isUnplaced) return;
+
+      if (log.isBgmBlock) {
+        const bgmLogEntry: any = {
+          ...log,
+          sectionId: currentSectionId
+        };
+        result.push(bgmLogEntry);
+        prevVisibleLog = bgmLogEntry;
+        return;
+      }
 
       if (log.isIllustration) {
         let resolvedTabId = log.tabOverride;
@@ -1743,11 +2156,11 @@ export default function App() {
         const tabSet = tabSettings[mappedLog.tabId];
         const format = tabSet?.format || 'main';
         const stableId = mappedLog.id.startsWith('merged:') ? mappedLog.id.split(',').pop()! : mappedLog.id;
-        const prevStableId = prevVisibleLog && !prevVisibleLog.isIllustration ? (prevVisibleLog.id.startsWith('merged:') ? prevVisibleLog.id.split(',').pop()! : prevVisibleLog.id) : '';
-        const prevHasBlock = prevVisibleLog && !prevVisibleLog.isIllustration && !!insertedBlocks[prevStableId]?.length;
+        const prevStableId = prevVisibleLog && !prevVisibleLog.isIllustration && !prevVisibleLog.isBgmBlock ? (prevVisibleLog.id.startsWith('merged:') ? prevVisibleLog.id.split(',').pop()! : prevVisibleLog.id) : '';
+        const prevHasBlock = prevVisibleLog && !prevVisibleLog.isIllustration && !prevVisibleLog.isBgmBlock && !!insertedBlocks[prevStableId]?.length;
 
         let isContinuation = false;
-        if (prevVisibleLog && !prevVisibleLog.isIllustration) {
+        if (prevVisibleLog && !prevVisibleLog.isIllustration && !prevVisibleLog.isBgmBlock) {
           const prevFormat = tabSettings[prevVisibleLog.tabId]?.format || 'main';
           const isPrevHidden = prevVisibleLog.isHiddenContent;
           if (!mappedLog.isHiddenContent && 
@@ -1771,6 +2184,8 @@ export default function App() {
           currentSectionId = `section-${stableId}`;
         }
       }
+
+      const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
     });
 
     return result;
@@ -1854,51 +2269,63 @@ export default function App() {
     }
   };
 
-  const scrollToIllustrationLog = (targetOriginalLogIndex: number) => {
-    let virtualIndex = -1;
-    let targetIndexToFind = targetOriginalLogIndex;
-    
-    // Find nearest visible log backwards
-    while (targetIndexToFind >= 0) {
-      virtualIndex = displayItems.findIndex(item => {
-        const stableId = item.log.id.startsWith('merged:') ? item.log.id.split(',').pop()! : item.log.id;
-        const originalLogIndex = logs.findIndex((l: any) => l.id === stableId);
-        return originalLogIndex === targetIndexToFind;
-      });
-      if (virtualIndex !== -1) break;
-      targetIndexToFind--;
+  const scrollToIllustrationLog = (targetOriginalLogIndex: number, targetFileId?: string) => {
+    if (targetFileId && targetFileId !== activeFileId) {
+      setActiveFileId(targetFileId);
     }
 
-    // If none found, find nearest visible log forwards
-    if (virtualIndex === -1) {
-      targetIndexToFind = targetOriginalLogIndex + 1;
-      while (targetIndexToFind < logs.length) {
+    const doScroll = () => {
+      let virtualIndex = -1;
+      let targetIndexToFind = targetOriginalLogIndex;
+      
+      // Find nearest visible log backwards
+      while (targetIndexToFind >= 0) {
         virtualIndex = displayItems.findIndex(item => {
           const stableId = item.log.id.startsWith('merged:') ? item.log.id.split(',').pop()! : item.log.id;
           const originalLogIndex = logs.findIndex((l: any) => l.id === stableId);
           return originalLogIndex === targetIndexToFind;
         });
         if (virtualIndex !== -1) break;
-        targetIndexToFind++;
+        targetIndexToFind--;
       }
-    }
 
-    if (virtualIndex !== -1) {
-      rowVirtualizer.scrollToIndex(virtualIndex, { align: 'center' });
-      
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          const el = document.getElementById(`log-item-${targetIndexToFind}`);
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            el.classList.add('bg-[#e6005c]/10');
-            el.classList.add('transition-all');
-            setTimeout(() => {
-              el.classList.remove('bg-[#e6005c]/10');
-            }, 1500);
-          }
-        }, 120);
-      });
+      // If none found, find nearest visible log forwards
+      if (virtualIndex === -1) {
+        targetIndexToFind = targetOriginalLogIndex + 1;
+        while (targetIndexToFind < logs.length) {
+          virtualIndex = displayItems.findIndex(item => {
+            const stableId = item.log.id.startsWith('merged:') ? item.log.id.split(',').pop()! : item.log.id;
+            const originalLogIndex = logs.findIndex((l: any) => l.id === stableId);
+            return originalLogIndex === targetIndexToFind;
+          });
+          if (virtualIndex !== -1) break;
+          targetIndexToFind++;
+        }
+      }
+
+      if (virtualIndex !== -1) {
+        rowVirtualizer.scrollToIndex(virtualIndex, { align: 'center' });
+        
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            const el = document.getElementById(`log-item-${targetIndexToFind}`);
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              el.classList.add('bg-[#e6005c]/10');
+              el.classList.add('transition-all');
+              setTimeout(() => {
+                el.classList.remove('bg-[#e6005c]/10');
+              }, 1500);
+            }
+          }, 120);
+        });
+      }
+    };
+
+    if (targetFileId && targetFileId !== activeFileId) {
+      setTimeout(doScroll, 120);
+    } else {
+      doScroll();
     }
   };
 
@@ -1924,7 +2351,7 @@ export default function App() {
   }, [mergedLogs, searchQuery]);
 
   const displayItemsNameWidth = useMemo(() => {
-    if (!hideAllAvatars) return 120;
+    if (!hideAllAvatars && narrationFormat !== 'style3') return 120;
     if (typeof document === 'undefined') return 120;
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -1938,16 +2365,19 @@ export default function App() {
     let mw = 0;
     for (const item of displayItems) {
       const log = item.log;
-      if (log.charId !== narrationCharacter && !log.isContinuation) {
+      if (!log.isContinuation) {
          if (tabSettings[log.tabId]?.visible !== false && charSettings[log.charId]?.visible !== false) {
-           const w = ctx.measureText(log.name + ':').width;
-           if (w > mw) mw = w;
+           const isNarration = log.charId === narrationCharacter;
+           if (hideAllAvatars || (isNarration && narrationFormat === 'style3')) {
+             const w = ctx.measureText(log.name + ':').width;
+             if (w > mw) mw = w;
+           }
          }
       }
     }
     
-    return Math.min(Math.max(48, Math.ceil(mw + 8)), 120);
-  }, [displayItems, textFontSize, fontFamily, narrationCharacter, hideAllAvatars, tabSettings, charSettings]);
+    return Math.min(Math.max(20, Math.ceil(mw + 4)), 160);
+  }, [displayItems, textFontSize, fontFamily, narrationCharacter, hideAllAvatars, narrationFormat, tabSettings, charSettings]);
 
   useEffect(() => {
     if (searchQuery) {
@@ -2001,7 +2431,74 @@ export default function App() {
     setImageInputLoc(null);
   }, [logs, tabSettings, saveToHistory]);
 
-  const onUpdateIllustration = useCallback((id: string, updates: Partial<Illustration> & { afterLogIndex?: number | null, targetLogId?: string, position?: 'before' | 'after' }) => {
+  const onUpdateIllustration = useCallback((id: string, updates: Partial<Illustration> & { afterLogIndex?: number | null, targetLogId?: string, position?: 'before' | 'after' }, targetFileId?: string) => {
+    if (files.length > 0) {
+      const fid = targetFileId || activeFileId || files[0].id;
+
+      setFiles(prevFiles => {
+        let sourceFileId: string | null = null;
+        let illLogEntry: LogEntry | null = null;
+
+        for (const f of prevFiles) {
+          const found = f.logs.find((l: any) => l.id === id);
+          if (found) {
+            sourceFileId = f.id;
+            illLogEntry = { ...found };
+            break;
+          }
+        }
+
+        if (!illLogEntry || !sourceFileId) return prevFiles;
+
+        if (updates.url !== undefined) illLogEntry.content = updates.url;
+        if (updates.tabOverride !== undefined) illLogEntry.tabOverride = updates.tabOverride;
+        if (updates.width !== undefined) illLogEntry.width = updates.width;
+        if (updates.align !== undefined) illLogEntry.align = updates.align;
+
+        if (updates.targetLogId && updates.position) {
+          illLogEntry.isUnplaced = false;
+          illLogEntry.tabOverride = 'auto';
+
+          const cleanedFiles = prevFiles.map(f => f.id === sourceFileId ? { ...f, logs: f.logs.filter((l: any) => l.id !== id) } : f);
+
+          return cleanedFiles.map(f => {
+            if (f.id !== fid) return f;
+            const targetLogs = [...f.logs];
+            let targetIdx = targetLogs.findIndex((l: any) => l.id === updates.targetLogId);
+            if (targetIdx === -1) targetIdx = 0;
+            const insertIdx = updates.position === 'before' ? targetIdx : targetIdx + 1;
+            targetLogs.splice(insertIdx, 0, illLogEntry!);
+            return { ...f, logs: targetLogs };
+          });
+        } else if (updates.afterLogIndex !== undefined) {
+          const cleanedFiles = prevFiles.map(f => f.id === sourceFileId ? { ...f, logs: f.logs.filter((l: any) => l.id !== id) } : f);
+
+          return cleanedFiles.map(f => {
+            if (f.id !== fid) return f;
+            const targetLogs = [...f.logs];
+            if (updates.afterLogIndex === null) {
+              illLogEntry!.isUnplaced = true;
+              targetLogs.push(illLogEntry!);
+            } else {
+              illLogEntry!.isUnplaced = false;
+              let newIdx = Math.max(0, Math.min(targetLogs.length, updates.afterLogIndex));
+              targetLogs.splice(newIdx, 0, illLogEntry!);
+            }
+            return { ...f, logs: targetLogs };
+          });
+        } else {
+          return prevFiles.map(f => {
+            if (f.id !== sourceFileId) return f;
+            return {
+              ...f,
+              logs: f.logs.map((l: any) => l.id === id ? illLogEntry! : l)
+            };
+          });
+        }
+      });
+      return;
+    }
+
     const logIdx = logs.findIndex((l: any) => l.id === id);
     if (logIdx === -1) return;
 
@@ -2010,7 +2507,7 @@ export default function App() {
 
     if (updates.targetLogId && updates.position) {
       target.isUnplaced = false;
-      target.tabOverride = 'auto'; // Force 'auto' when drag-and-dropped
+      target.tabOverride = 'auto';
       const oldIdx = logIdx;
       nextLogs[logIdx] = target;
       const [removed] = nextLogs.splice(oldIdx, 1);
@@ -2027,14 +2524,12 @@ export default function App() {
       if (updates.afterLogIndex === null) {
         target.isUnplaced = true;
         nextLogs[logIdx] = target;
-        // Keep it at current position but mark unplaced
         setLogs(nextLogs);
         saveToHistory({ logs: nextLogs });
       } else {
         target.isUnplaced = false;
         const oldIdx = logIdx;
         let newIdx = updates.afterLogIndex;
-        // Prevent going out of bounds
         newIdx = Math.max(0, Math.min(nextLogs.length - 1, newIdx));
         nextLogs[logIdx] = target;
         const [removed] = nextLogs.splice(oldIdx, 1);
@@ -2052,15 +2547,84 @@ export default function App() {
       setLogs(nextLogs);
       saveToHistory({ logs: nextLogs });
     }
-  }, [logs, saveToHistory]);
+  }, [files, activeFileId, logs, saveToHistory]);
 
-  const onRemoveIllustration = useCallback((id: string) => {
+  const onRemoveIllustration = useCallback((id: string, targetFileId?: string) => {
+    if (files.length > 0) {
+      const fid = targetFileId || activeFileId;
+      if (fid) {
+        setFiles(prev => prev.map(f => f.id === fid ? { ...f, logs: f.logs.filter((l: any) => l.id !== id) } : f));
+        return;
+      }
+    }
     const nextLogs = logs.filter((l: any) => l.id !== id);
     setLogs(nextLogs);
     saveToHistory({ logs: nextLogs });
-  }, [logs, saveToHistory]);
+  }, [files, activeFileId, logs, saveToHistory]);
+
+  const allIllustrationsGrouped = useMemo(() => {
+    const fileList = files.length > 0 ? files : (logs.length > 0 ? [{ id: 'active', name: originalFileName || pageTitle || '로그', logs, insertedBlocks: {} }] : []);
+
+    const groups: {
+      fileId: string;
+      fileName: string;
+      fileLogs: LogEntry[];
+      items: Illustration[];
+    }[] = [];
+
+    const unplacedItems: {
+      fileId: string;
+      fileName: string;
+      fileLogs: LogEntry[];
+      item: Illustration;
+    }[] = [];
+
+    fileList.forEach(file => {
+      const fileIlls: Illustration[] = file.logs
+        .map((log, idx) => ({ log, idx }))
+        .filter(({ log }) => log.isIllustration === true)
+        .map(({ log, idx }) => ({
+          id: log.id,
+          url: log.content,
+          imageName: log.imageName,
+          afterLogIndex: log.isUnplaced ? null : idx,
+          tabOverride: log.tabOverride || 'auto',
+          width: log.width,
+          align: log.align || 'center'
+        }));
+
+      const placed = fileIlls.filter(ill => ill.afterLogIndex !== null);
+      const unplaced = fileIlls.filter(ill => ill.afterLogIndex === null);
+
+      if (placed.length > 0) {
+        groups.push({
+          fileId: file.id,
+          fileName: file.name,
+          fileLogs: file.logs,
+          items: placed
+        });
+      }
+
+      unplaced.forEach(ill => {
+        unplacedItems.push({
+          fileId: file.id,
+          fileName: file.name,
+          fileLogs: file.logs,
+          item: ill
+        });
+      });
+    });
+
+    return { groups, unplacedItems, totalCount: groups.reduce((acc, g) => acc + g.items.length, 0) + unplacedItems.length };
+  }, [files, logs, originalFileName, pageTitle]);
 
   const handleApplyBulkIllustrationSettings = useCallback(() => {
+    if (files.length > 0) {
+      setFiles(prevFiles => prevFiles.map(f => ({
+        ...f,
+        logs: f.logs.map((l: any) => l.isIllustration ? { ...l, width: defaultIllWidth, align: defaultIllAlign } : l)
+      })));
+    }
     const nextLogs = logs.map((l: any) => {
       if (l.isIllustration) {
         return { ...l, width: defaultIllWidth, align: defaultIllAlign };
@@ -2070,7 +2634,7 @@ export default function App() {
     setLogs(nextLogs);
     saveToHistory({ logs: nextLogs });
     alert('모든 삽화의 크기와 정렬이 일괄 변경되었습니다.');
-  }, [logs, defaultIllWidth, defaultIllAlign, saveToHistory]);
+  }, [files.length, logs, defaultIllWidth, defaultIllAlign, saveToHistory]);
 
   const onUpdateBlock = useCallback((id: string, blockId: string, updates: Partial<InsertedBlock>) => {
     const next = { ...insertedBlocks };
@@ -2099,12 +2663,54 @@ export default function App() {
     );
   }, []);
 
+  const onToggleBgmInput = useCallback((id: string, index: number) => {
+    setBgmInputLoc(prev => 
+      prev?.logId === id && prev.insertIndex === index 
+        ? null 
+        : { logId: id, insertIndex: index }
+    );
+  }, []);
+
+  const onAddBgmBlock = useCallback((id: string, index: number, bgmData: { title: string; url: string; videoId: string; startTime: number; useTimestamp: boolean }) => {
+    const logIdx = logs.findIndex((l: any) => l.id === id);
+    if (logIdx === -1) return;
+
+    const referenceLog = logs[logIdx];
+    const newBgmLog: LogEntry = {
+      id: `bgm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      tabId: referenceLog.tabId,
+      tab: referenceLog.tab,
+      charId: 'system',
+      name: '',
+      color: '',
+      content: '',
+      isCommand: false,
+      isBgmBlock: true,
+      bgmData: {
+        title: bgmData.title,
+        url: bgmData.url,
+        videoId: bgmData.videoId,
+        startTime: bgmData.startTime,
+        useTimestamp: bgmData.useTimestamp,
+      }
+    };
+
+    setLogs(prev => {
+      const next = [...prev];
+      next.splice(logIdx + index, 0, newBgmLog);
+      saveToHistory({ logs: next });
+      return next;
+    });
+    setBgmInputLoc(null);
+  }, [logs, saveToHistory]);
+
   const rowVirtualizer = useVirtualizer({
     count: displayItems.length,
     getScrollElement: () => previewContainerRef.current,
     estimateSize: () => 100,
     overscan: 10,
     scrollMargin: listOffset,
+    getItemKey: (index) => displayItems[index].log.id,
   });
 
   useEffect(() => {
@@ -2246,6 +2852,95 @@ export default function App() {
     }
   }, [logs, saveToHistory]);
 
+  const onBatchUpdateLog = useCallback((id: string, updates: { content?: string; charId?: string; tabId?: string; bgmData?: any }) => {
+    const newChar = updates.charId ? charSettings[updates.charId] : null;
+    const newTab = updates.tabId ? tabSettings[updates.tabId] : null;
+
+    if (id.startsWith('merged:')) {
+      const ids = id.replace('merged:', '').split(',');
+      const firstId = ids[0];
+      const otherIds = ids.slice(1);
+
+      const next = logs.filter(l => !otherIds.includes(l.id)).map(l => {
+        if (l.id !== firstId) return l;
+        const updated = { ...l };
+        if (updates.content !== undefined) updated.content = updates.content;
+        if (updates.bgmData !== undefined) updated.bgmData = updates.bgmData;
+        if (newChar) {
+          updated.charId = newChar.id;
+          updated.name = newChar.name;
+          updated.color = newChar.color;
+        }
+        if (newTab) {
+          updated.tabId = newTab.id;
+          updated.tab = newTab.name;
+        }
+        return updated;
+      });
+      setLogs(next);
+      saveToHistory({ logs: next });
+    } else {
+      const next = logs.map(l => {
+        if (l.id !== id) return l;
+        const updated = { ...l };
+        if (updates.content !== undefined) updated.content = updates.content;
+        if (updates.bgmData !== undefined) updated.bgmData = updates.bgmData;
+        if (newChar) {
+          updated.charId = newChar.id;
+          updated.name = newChar.name;
+          updated.color = newChar.color;
+        }
+        if (newTab) {
+          updated.tabId = newTab.id;
+          updated.tab = newTab.name;
+        }
+        return updated;
+      });
+      setLogs(next);
+      saveToHistory({ logs: next });
+    }
+  }, [logs, charSettings, tabSettings, saveToHistory]);
+
+  const onMoveLog = useCallback((id: string, direction: 'up' | 'down') => {
+    const idx = mergedLogs.findIndex(l => l.id === id);
+    if (idx === -1) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= mergedLogs.length) return;
+    const targetId = mergedLogs[targetIdx].id;
+
+    const elementB = document.querySelector(`[data-index="${targetIdx}"]`) as HTMLElement;
+    const heightB = elementB ? elementB.getBoundingClientRect().height : 0;
+
+    setIsMovingBlock(true);
+    setTimeout(() => setIsMovingBlock(false), 250);
+
+    setLogs(prevLogs => {
+      const newLogs = [...prevLogs];
+      const sourceIndex = newLogs.findIndex(l => l.id === id);
+      const destIndex = newLogs.findIndex(l => l.id === targetId);
+      if (sourceIndex === -1 || destIndex === -1) return prevLogs;
+      
+      const temp = newLogs[sourceIndex];
+      newLogs[sourceIndex] = newLogs[destIndex];
+      newLogs[destIndex] = temp;
+      
+      saveToHistory({ logs: newLogs });
+
+      return newLogs;
+    });
+
+    if (previewContainerRef.current && heightB > 0) {
+      requestAnimationFrame(() => {
+        if (previewContainerRef.current) {
+          previewContainerRef.current.scrollBy({ 
+            top: direction === 'up' ? -heightB : heightB,
+            behavior: 'smooth'
+          });
+        }
+      });
+    }
+  }, [mergedLogs, saveToHistory]);
+
   const onDeleteLog = useCallback((id: string) => {
     // Find index in mergedLogs before deleting
     const idx = mergedLogs.findIndex(l => l.id === id);
@@ -2319,7 +3014,259 @@ export default function App() {
     });
   };
 
+  const getFileSectionsList = (targetFile: LogFile) => {
+    const fileBlocks = (targetFile.insertedBlocks || {}) as unknown as Record<string, InsertedBlock[]>;
+    const { splitPoints: spArr, sectionNames: secNames } = extractOldFormat(fileBlocks);
+
+    const result: { id: string; name: string; startBlock: number; endBlock: number }[] = [];
+
+    let currentSectionId = 'sec_0';
+    let currentStart = 1;
+    let sectionCount = 0;
+
+    targetFile.logs.forEach((log, idx) => {
+      const splitBlock = (fileBlocks[log.id] as any)?.find((b: any) => b.type === 'split');
+      if (splitBlock) {
+        const secName = sectionCount === 0 
+          ? (secNames[0] || secNames['0'] || secNames['section-0'] || splitBlock.name || '섹션 1')
+          : (splitBlock.name || secNames[log.id] || secNames[sectionCount] || `섹션 ${sectionCount + 1}`);
+        result.push({
+          id: currentSectionId,
+          name: secName,
+          startBlock: currentStart,
+          endBlock: idx + 1
+        });
+        sectionCount++;
+        currentSectionId = `sec_${sectionCount}`;
+        currentStart = idx + 2;
+      }
+    });
+
+    if (currentStart <= targetFile.logs.length) {
+      const lastSplitLogId = targetFile.logs[currentStart - 2]?.id;
+      const lastSplitBlock = lastSplitLogId ? (fileBlocks[lastSplitLogId] as any)?.find((b: any) => b.type === 'split') : null;
+      const lastName = sectionCount === 0 
+        ? '전체' 
+        : (lastSplitBlock?.name || (lastSplitLogId ? secNames[lastSplitLogId] : null) || secNames[sectionCount] || `섹션 ${sectionCount + 1}`);
+      result.push({
+        id: currentSectionId,
+        name: lastName,
+        startBlock: currentStart,
+        endBlock: targetFile.logs.length
+      });
+    }
+
+    return result;
+  };
+
+  const getCombinedHtmlString = () => {
+    const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
+    const fileList = files.length > 0 ? files : (activeFile ? [activeFile] : []);
+    const combinedLogsList: LogEntry[] = [];
+    const combinedBlocks: Record<string, InsertedBlock[]> = {};
+    const combinedIllustrations: Illustration[] = [];
+
+    fileList.forEach(file => {
+      combinedLogsList.push(...file.logs);
+      if (file.insertedBlocks) {
+        Object.assign(combinedBlocks, file.insertedBlocks);
+      }
+      file.logs.forEach((log, idx) => {
+        if (log.isIllustration) {
+          combinedIllustrations.push({
+            id: log.id,
+            url: log.content,
+            imageName: log.imageName,
+            afterLogIndex: log.isUnplaced ? null : idx,
+            tabOverride: log.tabOverride || 'auto',
+            width: log.width,
+            align: log.align || 'center'
+          });
+        }
+      });
+    });
+
+    const filteredLogs = combinedLogsList.filter(log => 
+      tabSettings[log.tabId]?.visible && 
+      (charSettings[log.charId]?.visible !== false)
+    );
+
+    return generateFinalHtmlStr(
+      filteredLogs,
+      combinedLogsList,
+      charSettings,
+      tabSettings,
+      cssFormat,
+      theme,
+      darkBgColor,
+      lightBgColor,
+      filterBarMode,
+      fontSize,
+      fontFamily,
+      disableOtherColor,
+      hideEmptyAvatars,
+      cropFaceTop,
+      hideAllAvatars,
+      narrationCharacter,
+      enableSentenceSpacing,
+      enableSecretNarration,
+      narrationFormat,
+      combinedBlocks,
+      mergeTabs,
+      mergeTabStyles,
+      showTabNames,
+      pageTitle || (fileList[0]?.name) || '연속로그_통합',
+      selectedFont.value,
+      textFontSize,
+      lineHeight,
+      letterSpacing,
+      blockSpacing,
+      contentPadding,
+      avatarSizeValue,
+      showLogDivider,
+      combinedIllustrations,
+      combinedLogsList
+    );
+  };
+
+  const downloadCombinedHtml = () => {
+    const html = getCombinedHtmlString();
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const fileName = pageTitle || (files[0]?.name) || '연속로그_통합';
+    a.download = `${fileName}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const getHtmlStringForFile = (targetFile: LogFile, sectionId?: string) => {
+    const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
+    const fileLogs = targetFile.logs;
+    const fileBlocks = targetFile.insertedBlocks || {};
+
+    const fileSections = getFileSectionsList(targetFile);
+    let secIdx = 0;
+    const processedLogs = fileLogs.map((log) => {
+      const currentSecId = fileSections.length > 0 ? (fileSections[secIdx]?.id || `sec_${secIdx}`) : undefined;
+      const isSplit = (fileBlocks[log.id] as any)?.some((b: any) => b.type === 'split');
+      if (isSplit) {
+        secIdx++;
+      }
+      return {
+        ...log,
+        sectionId: currentSecId
+      };
+    });
+
+    const targetLogs = sectionId ? processedLogs.filter(log => log.sectionId === sectionId) : processedLogs;
+    const filteredLogs = targetLogs.filter(log => 
+      tabSettings[log.tabId]?.visible && 
+      (charSettings[log.charId]?.visible !== false)
+    );
+
+    const fileIllustrations: Illustration[] = fileLogs
+      .map((log, idx) => ({ log, idx }))
+      .filter(({ log }) => log.isIllustration === true)
+      .map(({ log, idx }) => ({
+        id: log.id,
+        url: log.content,
+        imageName: log.imageName,
+        afterLogIndex: log.isUnplaced ? null : idx,
+        tabOverride: log.tabOverride || 'auto',
+        width: log.width,
+        align: log.align || 'center'
+      }));
+
+    return generateFinalHtmlStr(
+      filteredLogs,
+      processedLogs,
+      charSettings,
+      tabSettings,
+      cssFormat,
+      theme,
+      darkBgColor,
+      lightBgColor,
+      filterBarMode,
+      fontSize,
+      fontFamily,
+      disableOtherColor,
+      hideEmptyAvatars,
+      cropFaceTop,
+      hideAllAvatars,
+      narrationCharacter,
+      enableSentenceSpacing,
+      enableSecretNarration,
+      narrationFormat,
+      fileBlocks as unknown as Record<string, InsertedBlock[]>,
+      mergeTabs,
+      mergeTabStyles,
+      showTabNames,
+      targetFile.name || pageTitle,
+      selectedFont.value,
+      textFontSize,
+      lineHeight,
+      letterSpacing,
+      blockSpacing,
+      contentPadding,
+      avatarSizeValue,
+      showLogDivider,
+      fileIllustrations,
+      fileLogs
+    );
+  };
+
+  const downloadHtmlForFile = (targetFile: LogFile, section?: { id: string; name: string }) => {
+    const html = getHtmlStringForFile(targetFile, section?.id);
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const fileName = targetFile.name || pageTitle || 'ccfolia';
+    let suffix = '_log';
+    if (section) {
+      suffix = section.name ? `_${section.name}` : `_${section.id}`;
+    }
+    a.download = `${fileName}${suffix}.html`;
+    a.click();
+  };
+
+  const downloadAllZip = async () => {
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+
+    const rootName = pageTitle || 'ccfolia_project';
+    const folder = zip.folder(rootName);
+
+    const fileList = files.length > 0 ? files : (activeFile ? [activeFile] : []);
+
+    for (const f of fileList) {
+      const fSections = getFileSectionsList(f);
+      if (fSections.length > 1) {
+        const subFolder = folder?.folder(f.name);
+        fSections.forEach(s => {
+          const html = getHtmlStringForFile(f, s.id);
+          subFolder?.file(`${s.name || s.id}.html`, html);
+        });
+      } else {
+        const html = getHtmlStringForFile(f);
+        folder?.file(`${f.name}.html`, html);
+      }
+    }
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${rootName}_logs.zip`;
+    a.click();
+  };
+
   const getHtmlString = (sectionId?: string) => {
+
     const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
     const targetLogs = sectionId ? mergedLogs.filter(log => log.sectionId === sectionId) : mergedLogs;
     const filteredLogs = targetLogs.filter(log => 
@@ -2341,9 +3288,12 @@ export default function App() {
       fontFamily,
       disableOtherColor,
       hideEmptyAvatars,
+      cropFaceTop,
       hideAllAvatars,
       narrationCharacter,
       enableSentenceSpacing,
+      enableSecretNarration,
+      narrationFormat,
       insertedBlocks,
       mergeTabs,
       mergeTabStyles,
@@ -2407,9 +3357,12 @@ export default function App() {
         fontFamily,
         disableOtherColor,
         hideEmptyAvatars,
+      cropFaceTop,
         hideAllAvatars,
         narrationCharacter,
         enableSentenceSpacing,
+        enableSecretNarration,
+        narrationFormat,
         insertedBlocks,
         mergeTabs,
         mergeTabStyles,
@@ -2453,16 +3406,26 @@ export default function App() {
     e.stopPropagation();
     setIsDraggingFile(false);
     
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
+    const droppedFiles = Array.from(e.dataTransfer.files || []) as File[];
+    if (droppedFiles.length === 0) return;
 
-    const mockEvent = { target: { files: [file] } } as any;
-    if (file.name.toLowerCase().endsWith('.html') || file.name.toLowerCase().endsWith('.htm')) {
-      await handleLogUpload(mockEvent);
-    } else if (file.name.toLowerCase().endsWith('.json')) {
+    const htmlFilesRaw = droppedFiles.filter(f => f.name.toLowerCase().endsWith('.html') || f.name.toLowerCase().endsWith('.htm'));
+    const htmlFiles = ENABLE_MULTI_FILE_UI ? htmlFilesRaw : htmlFilesRaw.slice(0, 1);
+    const jsonFile = droppedFiles.find(f => f.name.toLowerCase().endsWith('.json'));
+
+    if (jsonFile) {
+      const mockEvent = { target: { files: [jsonFile] } } as any;
       await handleProjectUpload(mockEvent);
+    } else if (htmlFiles.length > 0) {
+      const mockEvent = { target: { files: htmlFiles } } as any;
+      if (files.length > 0) {
+        await handleAdditionalLogUpload(mockEvent);
+      } else {
+        await handleLogUpload(mockEvent);
+      }
     }
   };
+
 
   return (
     <SettingsProvider settings={{
@@ -2477,9 +3440,12 @@ export default function App() {
       charSettings,
       tabSettings,
       hideEmptyAvatars,
+      cropFaceTop,
       hideAllAvatars,
       narrationCharacter,
       enableSentenceSpacing,
+      enableSecretNarration,
+      narrationFormat,
       lineHeight,
       letterSpacing,
       blockSpacing,
@@ -2630,47 +3596,123 @@ export default function App() {
                   <SectionTitle icon={MessageSquare} title="로그 업로드" />
                   <label 
                     htmlFor="main-log-upload"
-                    className="w-full h-[50px] px-3 flex items-center justify-between border-2 border-dashed border-white/5 rounded-xl hover:border-[#e6005c] hover:bg-pink-500/5 transition-all group cursor-pointer"
+                    className="w-full h-[50px] px-3 flex items-center justify-between border-2 border-dashed border-white/5 rounded-xl hover:border-[#e6005c] hover:bg-pink-500/5 transition-all group cursor-pointer mb-3"
                   >
                     <div className="flex items-center gap-3 overflow-hidden">
-                      <div className={cn(
-                        "p-1.5 rounded-lg transition-colors shrink-0",
-                        originalFileName ? "bg-[#e6005c]/20" : "bg-[#242424] group-hover:bg-[#e6005c]/20"
-                      )}>
-                        <Upload className={cn(
-                          "w-3.5 h-3.5 transition-colors",
-                          originalFileName ? "text-[#e6005c]" : "text-white/20 group-hover:text-[#e6005c]"
-                        )} />
+                      <div className="p-1.5 rounded-lg bg-[#242424] group-hover:bg-[#e6005c]/20 transition-colors shrink-0">
+                        <Upload className="w-3.5 h-3.5 text-white/40 group-hover:text-[#e6005c] transition-colors" />
                       </div>
                       <div className="text-left w-full overflow-hidden">
-                        <p className={cn(
-                          "text-[11px] font-bold truncate leading-none mt-0.5 transition-colors",
-                          originalFileName ? "text-white/90" : "text-white/60"
-                        )}>
-                          {originalFileName ? `${originalFileName}.html` : 'HTML 로그 파일 선택'}
+                        <p className="text-[11px] font-bold text-white/70 truncate">
+                          HTML 로그 파일 선택 {ENABLE_MULTI_FILE_UI && '(다중 선택 가능)'}
                         </p>
                       </div>
                     </div>
-                    {originalFileName ? (
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setLogs([]);
-                          setOriginalFileName('');
-                          if (fileInputRef.current) fileInputRef.current.value = '';
-                        }}
-                        className="p-1 hover:bg-white/10 rounded-lg transition-colors shrink-0 flex items-center justify-center w-6 h-6 z-10 relative"
-                        title="업로드 취소"
-                      >
-                        <X className="w-3.5 h-3.5 text-white/60 hover:text-white" />
-                      </button>
-                    ) : (
-                      <div className="w-6 h-6 shrink-0" />
-                    )}
                   </label>
-                  <input type="file" id="main-log-upload" ref={fileInputRef} onChange={handleLogUpload} accept=".html" className="hidden" />
+                  
+                  <button 
+                    type="button"
+                    onClick={handleLoadDemo}
+                    className="flex items-center gap-1.5 text-[11px] font-medium text-white/40 hover:text-white/80 transition-colors px-1 mb-4"
+                  >
+                    <Info className="w-3.5 h-3.5" /> 데모 로그 보기
+                  </button>
+
+                  <input type="file" id="main-log-upload" ref={fileInputRef} onChange={handleLogUpload} accept=".html" multiple={ENABLE_MULTI_FILE_UI ? true : undefined} className="hidden" />
+                  <input type="file" ref={additionalFileInputRef} onChange={handleAdditionalLogUpload} accept=".html" multiple={ENABLE_MULTI_FILE_UI ? true : undefined} className="hidden" />
+
+
+                  {/* Uploaded Files List in Sidebar */}
+                  {ENABLE_MULTI_FILE_UI && files.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-white/5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">업로드된 파일 목록 ({files.length})</span>
+                      </div>
+
+                      <label 
+                        htmlFor="additional-log-upload-sidebar"
+                        className="w-full h-[46px] px-3 flex items-center justify-between border-2 border-dashed border-white/5 rounded-xl hover:border-[#e6005c] hover:bg-pink-500/5 transition-all group cursor-pointer my-2"
+                      >
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          <div className="p-1.5 rounded-lg bg-[#242424] group-hover:bg-[#e6005c]/20 transition-colors shrink-0">
+                            <Plus className="w-3.5 h-3.5 text-white/40 group-hover:text-[#e6005c] transition-colors" />
+                          </div>
+                          <div className="text-left w-full overflow-hidden">
+                            <p className="text-[11px] font-bold text-white/70 truncate">
+                              추가 로그 파일 선택 (다중 선택 가능)
+                            </p>
+                          </div>
+                        </div>
+                      </label>
+                      <input type="file" id="additional-log-upload-sidebar" ref={additionalFileInputRef} onChange={handleAdditionalLogUpload} accept=".html" multiple className="hidden" />
+
+                      <Reorder.Group
+                        axis="y"
+                        values={files}
+                        onReorder={setFiles}
+                        className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar pr-0.5"
+                      >
+                        {files.map(f => (
+                          <Reorder.Item
+                            key={f.id}
+                            value={f}
+                            className={cn(
+                              "flex items-center justify-between p-2 rounded-xl border transition-colors text-[11px] group/file select-none",
+                              f.id === activeFileId
+                                ? "bg-[#e6005c]/10 border-[#e6005c]/40 text-white font-bold"
+                                : "bg-white/5 border-white/5 text-white/60 hover:bg-white/10"
+                            )}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              <div 
+                                className="p-1 hover:bg-white/10 rounded cursor-grab active:cursor-grabbing text-white/30 hover:text-white/70 transition-colors shrink-0"
+                                title="드래그하여 순서 변경"
+                              >
+                                <GripVertical className="w-3.5 h-3.5" />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setActiveFileId(f.id)}
+                                className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+                              >
+                                <FileText className={cn("w-3.5 h-3.5 shrink-0", f.id === activeFileId ? "text-[#e6005c]" : "text-white/30")} />
+                                <span className="truncate">{f.name}.html</span>
+                                <span className="text-[9px] text-white/30 shrink-0">({f.logs.length}줄)</span>
+                              </button>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const name = prompt("변경할 파일 이름을 입력하세요", f.name);
+                                  if (name && name.trim()) handleRenameFile(f.id, name.trim());
+                                }}
+                                className="p-1 hover:bg-white/10 rounded transition-colors text-white/30 hover:text-white"
+                                title="이름 변경"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveFile(f.id);
+                                }}
+                                className="p-1 hover:bg-red-500/20 rounded transition-colors text-white/30 hover:text-red-400"
+                                title="파일 삭제"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </Reorder.Item>
+                        ))}
+                      </Reorder.Group>
+                    </div>
+                  )}
                 </Section>
+
 
                 <Section>
                   <SectionTitle 
@@ -2870,118 +3912,196 @@ export default function App() {
                     }
                   />
                   <div className="space-y-2">
-                  {sortedTabOrder.length > 0 ? (
-                    sortedTabOrder.map(tabId => {
+                  {(() => {
+                    const renderTabCard = (tabId: string) => {
                       const tab = tabSettings[tabId];
                       if (!tab) return null;
                       return (
                         <div key={tab.id} className="p-3 bg-white/5 rounded-xl border border-white/5 shadow-sm flex flex-col gap-3">
-                        <div className="flex items-center gap-2">
-                          <Toggle 
-                            enabled={tab.visible} 
-                            onChange={(val, e) => {
-                              if (e && e.altKey) {
-                                let next = { ...tabSettings };
-                                const isSolo = Object.keys(next).every(k => k === tab.id ? next[k].visible : !next[k].visible);
-                                if (isSolo) {
-                                  Object.keys(next).forEach(k => next[k] = { ...next[k], visible: true });
-                                } else {
-                                  Object.keys(next).forEach(k => next[k] = { ...next[k], visible: false });
-                                  next[tab.id].visible = true;
-                                }
-                                setTabSettings(next);
-                                saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
-                              } else {
-                                const next = { ...tabSettings, [tab.id]: { ...tab, visible: val } };
-                                setTabSettings(next);
-                                saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
-                              }
-                            }} 
-                          />
-                          {renamingTab === tab.id ? (
-                            <div className="flex gap-1 flex-1">
-                              <input 
-                                type="text"
-                                value={newTabNameInput}
-                                autoFocus
-                                onChange={(e) => setNewTabNameInput(e.target.value)}
-                                onBlur={() => renameTab(tab.id, newTabNameInput)}
-                                onKeyDown={(e) => {
-                                  if (e.nativeEvent.isComposing) return;
-                                  if (e.key === 'Enter') renameTab(tab.id, newTabNameInput);
-                                  if (e.key === 'Escape') setRenamingTab(null);
-                                }}
-                                className="bg-black/40 text-[11px] font-bold text-white px-2 py-1 rounded border border-[#e6005c] outline-none flex-1"
-                              />
-                              <button 
-                                onClick={() => renameTab(tab.id, newTabNameInput)}
-                                className="p-1 bg-[#e6005c] text-white rounded"
-                              >
-                                <CheckSquare className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 flex-1 overflow-hidden">
-                              <span 
-                                className="text-[11px] font-bold truncate text-white/80"
-                              >
-                                {tab.name}
-                              </span>
-                              <button 
-                                onClick={() => { setRenamingTab(tab.id); setNewTabNameInput(tab.name); }}
-                                className="p-1 text-white/20 hover:text-[#e6005c] transition-colors"
-                              >
-                                <Pencil className="w-3 h-3" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-3 flex-1">
-                            {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
-                              <button
-                                key={f}
-                                onClick={() => {
-                                  const next = { ...tabSettings, [tab.id]: { ...tab, format: f } };
+                          <div className="flex items-center gap-2">
+                            <Toggle 
+                              enabled={tab.visible} 
+                              onChange={(val, e) => {
+                                if (e && e.altKey) {
+                                  let next = { ...tabSettings };
+                                  const isSolo = Object.keys(next).every(k => k === tab.id ? next[k].visible : !next[k].visible);
+                                  if (isSolo) {
+                                    Object.keys(next).forEach(k => next[k] = { ...next[k], visible: true });
+                                  } else {
+                                    Object.keys(next).forEach(k => next[k] = { ...next[k], visible: false });
+                                    next[tab.id].visible = true;
+                                  }
                                   setTabSettings(next);
                                   saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
-                                }}
-                                className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
-                                  tab.format === f 
-                                    ? 'bg-[#e6005c] text-white shadow-sm' 
-                                    : 'text-white/30 hover:text-white/60'
-                                }`}
-                              >
-                                {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
-                              </button>
-                            ))}
-                          </div>
-                          
-                          <div className="relative">
-                            <button
-                              onClick={(e) => {
-                                if (activeColorPicker === `tab-${tab.id}`) {
-                                  setActiveColorPicker(null);
-                                  setColorPickerRect(null);
                                 } else {
-                                  setActiveColorPicker(`tab-${tab.id}`);
-                                  setColorPickerRect(e.currentTarget.getBoundingClientRect());
+                                  const next = { ...tabSettings, [tab.id]: { ...tab, visible: val } };
+                                  setTabSettings(next);
+                                  saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                                 }
-                              }}
-                              className="w-6 h-6 rounded-md border border-white/10 shadow-sm transition-all hover:scale-105"
-                              style={{ backgroundColor: tab.color || '#ffd400' }}
+                              }} 
                             />
+                            {renamingTab === tab.id ? (
+                              <div className="flex gap-1 flex-1">
+                                <input 
+                                  type="text"
+                                  value={newTabNameInput}
+                                  autoFocus
+                                  onChange={(e) => setNewTabNameInput(e.target.value)}
+                                  onBlur={() => renameTab(tab.id, newTabNameInput)}
+                                  onKeyDown={(e) => {
+                                    if (e.nativeEvent.isComposing) return;
+                                    if (e.key === 'Enter') renameTab(tab.id, newTabNameInput);
+                                    if (e.key === 'Escape') setRenamingTab(null);
+                                  }}
+                                  className="bg-black/40 text-[11px] font-bold text-white px-2 py-1 rounded border border-[#e6005c] outline-none flex-1"
+                                />
+                                <button 
+                                  onClick={() => renameTab(tab.id, newTabNameInput)}
+                                  className="p-1 bg-[#e6005c] text-white rounded"
+                                >
+                                  <CheckSquare className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1 flex-1 overflow-hidden">
+                                <span className="text-[11px] font-bold truncate text-white/80">
+                                  {tab.name}
+                                </span>
+                                <button 
+                                  onClick={() => { setRenamingTab(tab.id); setNewTabNameInput(tab.name); }}
+                                  className="p-1 text-white/20 hover:text-[#e6005c] transition-colors"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                            <div className="flex items-center bg-black/20 rounded-md border border-white/5 p-0.5 ml-1">
+                              <button
+                                onClick={(e) => {
+                                  if (activeColorPicker === `tab-text-${tab.id}`) {
+                                    setActiveColorPicker(null);
+                                    setColorPickerRect(null);
+                                  } else {
+                                    setActiveColorPicker(`tab-text-${tab.id}`);
+                                    setColorPickerRect(e.currentTarget.getBoundingClientRect());
+                                  }
+                                }}
+                                className="w-6 h-6 rounded flex items-center justify-center relative hover:bg-white/10 transition-colors"
+                                title="텍스트 색상"
+                              >
+                                <span className="font-bold text-[10px] text-white" style={{ color: tab.textColor || 'white' }}>A</span>
+                                <div className="absolute bottom-1 left-1.5 right-1.5 h-[2px] rounded-full" style={{ backgroundColor: tab.textColor || 'transparent' }} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const next = { ...tabSettings, [tab.id]: { ...tab, isBold: !tab.isBold } };
+                                  setTabSettings(next);
+                                  saveToHistory({ tabSettings: next });
+                                }}
+                                className={`w-6 h-6 rounded flex items-center justify-center font-serif font-bold text-[10px] transition-colors ${tab.isBold ? "bg-white/20 text-white" : "text-white/40 hover:bg-white/10 hover:text-white"}`}
+                                title="굵게"
+                              >
+                                B
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const next = { ...tabSettings, [tab.id]: { ...tab, isItalic: !tab.isItalic } };
+                                  setTabSettings(next);
+                                  saveToHistory({ tabSettings: next });
+                                }}
+                                className={`w-6 h-6 rounded flex items-center justify-center font-serif italic text-[11px] transition-colors ${tab.isItalic ? "bg-white/20 text-white" : "text-white/40 hover:bg-white/10 hover:text-white"}`}
+                                title="이탤릭"
+                              >
+                                I
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-3 flex-1">
+                              {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
+                                <button
+                                  key={f}
+                                  onClick={() => {
+                                    const next = { ...tabSettings, [tab.id]: { ...tab, format: f } };
+                                    setTabSettings(next);
+                                    saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                                  }}
+                                  className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
+                                    tab.format === f 
+                                      ? 'bg-[#e6005c] text-white shadow-sm' 
+                                      : 'text-white/30 hover:text-white/60'
+                                  }`}
+                                >
+                                  {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
+                                </button>
+                              ))}
+                            </div>
+                            
+                            <div className="relative">
+                              <button
+                                onClick={(e) => {
+                                  if (activeColorPicker === `tab-${tab.id}`) {
+                                    setActiveColorPicker(null);
+                                    setColorPickerRect(null);
+                                  } else {
+                                    setActiveColorPicker(`tab-${tab.id}`);
+                                    setColorPickerRect(e.currentTarget.getBoundingClientRect());
+                                  }
+                                }}
+                                className="w-6 h-6 rounded-md border border-white/10 shadow-sm transition-all hover:scale-105"
+                                style={{ backgroundColor: tab.color || '#ffd400' }}
+                              />
+                            </div>
                           </div>
                         </div>
+                      );
+                    };
+
+                    if (ENABLE_MULTI_FILE_UI && files.length > 1 && fileTabGroups) {
+                      return fileTabGroups.map(group => {
+                        const accordionKey = `tab-${group.fileId}`;
+                        const isCollapsed = !!collapsedAccordionFiles[accordionKey];
+                        return (
+                          <div key={group.fileId} className="border border-white/10 rounded-xl overflow-hidden bg-white/5">
+                            <button
+                              type="button"
+                              onClick={() => toggleAccordionFile(accordionKey)}
+                              className="w-full flex items-center justify-between p-2.5 bg-white/5 hover:bg-white/10 transition-colors text-left"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <FileText className="w-3.5 h-3.5 text-[#e6005c] shrink-0" />
+                                <span className="text-[11px] font-bold text-white/90 truncate">{group.fileName}</span>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/50 font-bold shrink-0">
+                                  {group.tabIds.length}개 탭
+                                </span>
+                              </div>
+                              <ChevronDown className={cn("w-4 h-4 text-white/40 transition-transform duration-200", isCollapsed && "-rotate-90")} />
+                            </button>
+                            {!isCollapsed && (
+                              <div className="p-2 space-y-2 bg-black/20 border-t border-white/5">
+                                {group.tabIds.length > 0 ? (
+                                  group.tabIds.map(tabId => renderTabCard(tabId))
+                                ) : (
+                                  <p className="text-[10px] text-white/30 text-center py-2">등록된 탭이 없습니다</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
+                    }
+
+                    if (sortedTabOrder.length > 0) {
+                      return sortedTabOrder.map(tabId => renderTabCard(tabId));
+                    }
+
+                    return (
+                      <div className="text-center py-20 text-white/10">
+                        <Settings className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                        <p className="text-sm font-medium">로그를 먼저 업로드하세요</p>
                       </div>
                     );
-                  })
-                ) : (
-                    <div className="text-center py-20 text-white/10">
-                      <Settings className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                      <p className="text-sm font-medium">로그를 먼저 업로드하세요</p>
-                    </div>
-                  )}
+                  })()}
                   </div>
                 </Section>
               </motion.div>
@@ -3051,16 +4171,63 @@ export default function App() {
                     </div>
 
                     {narrationCharacter && (
-                      <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11">
-                        <span className="text-[11px] font-bold text-white/70">나레이션 문단 자동 나누기</span>
-                        <Toggle 
-                          enabled={enableSentenceSpacing} 
-                          onChange={(val) => {
-                            setEnableSentenceSpacing(val);
-                            saveToHistory({ enableSentenceSpacing: val });
-                          }} 
-                        />
-                      </div>
+                      <>
+                        <div className="flex flex-col gap-2 mt-2 p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm">
+                          <span className="text-[11px] font-bold text-white/70">나레이션 출력 디자인</span>
+                          <div className="flex bg-black/20 border border-white/5 rounded-lg p-1 gap-1">
+                            <button
+                              onClick={() => { setNarrationFormat('style1'); saveToHistory({ narrationFormat: 'style1' }); }}
+                              className={`flex-1 py-1.5 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                narrationFormat === 'style1'
+                                  ? 'bg-[#e6005c] text-white shadow-sm'
+                                  : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                              }`}
+                            >
+                              스타일 1 (이탤릭)
+                            </button>
+                            <button
+                              onClick={() => { setNarrationFormat('style2'); saveToHistory({ narrationFormat: 'style2' }); }}
+                              className={`flex-1 py-1.5 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                narrationFormat === 'style2'
+                                  ? 'bg-[#e6005c] text-white shadow-sm'
+                                  : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                              }`}
+                            >
+                              스타일 2 (기본)
+                            </button>
+                            <button
+                              onClick={() => { setNarrationFormat('style3'); saveToHistory({ narrationFormat: 'style3' }); }}
+                              className={`flex-1 py-1.5 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                narrationFormat === 'style3'
+                                  ? 'bg-[#e6005c] text-white shadow-sm'
+                                  : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                              }`}
+                            >
+                              스타일 3 (단락)
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11">
+                          <span className="text-[11px] font-bold text-white/70">나레이션 문단 자동 나누기</span>
+                          <Toggle 
+                            enabled={enableSentenceSpacing} 
+                            onChange={(val) => {
+                              setEnableSentenceSpacing(val);
+                              saveToHistory({ enableSentenceSpacing: val });
+                            }} 
+                          />
+                        </div>
+                        <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 mt-2">
+                          <span className="text-[11px] font-bold text-white/70">비밀탭에도 적용</span>
+                          <Toggle 
+                            enabled={enableSecretNarration} 
+                            onChange={(val) => {
+                              setEnableSecretNarration(val);
+                              saveToHistory({ enableSecretNarration: val });
+                            }} 
+                          />
+                        </div>
+                      </>
                     )}
                   </div>
                 </Section>
@@ -3455,9 +4622,8 @@ export default function App() {
                       추가
                     </button>
                   </div>
-                  {sortedCharOrder.length > 0 ? (
-                    <div className="space-y-2">
-                    {sortedCharOrder.map(charId => {
+                  {(() => {
+                    const renderCharCard = (charId: string) => {
                       const char = charSettings[charId];
                       if (!char) return null;
                       return (
@@ -3571,14 +4737,61 @@ export default function App() {
                           </div>
                         </div>
                       );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-center py-20 text-white/10">
-                    <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                    <p className="text-sm font-medium">로그를 먼저 업로드하세요</p>
-                  </div>
-                )}
+                    };
+
+                    if (ENABLE_MULTI_FILE_UI && files.length > 1 && fileCharGroups) {
+                      return (
+                        <div className="space-y-2">
+                          {fileCharGroups.map(group => {
+                            const accordionKey = `char-${group.fileId}`;
+                            const isCollapsed = !!collapsedAccordionFiles[accordionKey];
+                            return (
+                              <div key={group.fileId} className="border border-white/10 rounded-xl overflow-hidden bg-white/5">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAccordionFile(accordionKey)}
+                                  className="w-full flex items-center justify-between p-2.5 bg-white/5 hover:bg-white/10 transition-colors text-left"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <FileText className="w-3.5 h-3.5 text-[#e6005c] shrink-0" />
+                                    <span className="text-[11px] font-bold text-white/90 truncate">{group.fileName}</span>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/50 font-bold shrink-0">
+                                      {group.charIds.length}명
+                                    </span>
+                                  </div>
+                                  <ChevronDown className={cn("w-4 h-4 text-white/40 transition-transform duration-200", isCollapsed && "-rotate-90")} />
+                                </button>
+                                {!isCollapsed && (
+                                  <div className="p-2 space-y-2 bg-black/20 border-t border-white/5">
+                                    {group.charIds.length > 0 ? (
+                                      group.charIds.map(charId => renderCharCard(charId))
+                                    ) : (
+                                      <p className="text-[10px] text-white/30 text-center py-2">등록된 캐릭터가 없습니다</p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    }
+
+                    if (sortedCharOrder.length > 0) {
+                      return (
+                        <div className="space-y-2">
+                          {sortedCharOrder.map(charId => renderCharCard(charId))}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="text-center py-20 text-white/10">
+                        <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                        <p className="text-sm font-medium">로그를 먼저 업로드하세요</p>
+                      </div>
+                    );
+                  })()}
                 </Section>
               </motion.div>
             )}
@@ -3672,35 +4885,34 @@ export default function App() {
                     }
                   />
 
-                  {logs.length > 0 ? (
-                    illustrations.length > 0 ? (
-                      <div className="space-y-2 mt-3">
-                        {illustrations.map((ill) => {
-                          let prevLog = null;
-                          let nextLog = null;
-                          if (ill.afterLogIndex !== null) {
-                            for (let i = ill.afterLogIndex; i >= 0; i--) {
-                              if (logs[i] && !logs[i].isIllustration) {
-                                prevLog = logs[i];
-                                break;
-                              }
-                            }
-                            for (let i = ill.afterLogIndex + 1; i < logs.length; i++) {
-                              if (logs[i] && !logs[i].isIllustration) {
-                                nextLog = logs[i];
-                                break;
-                              }
-                            }
+                  {(() => {
+                    const renderIllustrationCard = (ill: Illustration, targetFileId: string, fileLogs: LogEntry[]) => {
+                      let prevLog = null;
+                      let nextLog = null;
+                      if (ill.afterLogIndex !== null) {
+                        for (let i = ill.afterLogIndex; i >= 0; i--) {
+                          if (fileLogs[i] && !fileLogs[i].isIllustration) {
+                            prevLog = fileLogs[i];
+                            break;
                           }
+                        }
+                        for (let i = ill.afterLogIndex + 1; i < fileLogs.length; i++) {
+                          if (fileLogs[i] && !fileLogs[i].isIllustration) {
+                            nextLog = fileLogs[i];
+                            break;
+                          }
+                        }
+                      }
 
-                          const stripHtml = (html: string) => html.replace(/<[^>]*>?/gm, '');
-                          const prevSummary = ill.afterLogIndex !== null ? (prevLog ? `${prevLog.name || '무명'}: ${stripHtml(prevLog.content)}` : '(없음)') : '위치 미지정';
-                          const nextSummary = ill.afterLogIndex !== null ? (nextLog ? `${nextLog.name || '무명'}: ${stripHtml(nextLog.content)}` : '(없음)') : '위치 미지정';
-                          return (
-                            <div 
-                              key={ill.id} 
-                              className="flex items-center gap-3.5 p-2.5 bg-white/5 border border-white/5 rounded-2xl text-white relative pr-6.5 group/ill"
-                            >
+                      const stripHtml = (html: string) => html.replace(/<[^>]*>?/gm, '');
+                      const prevSummary = ill.afterLogIndex !== null ? (prevLog ? `${prevLog.name || '무명'}: ${stripHtml(prevLog.content)}` : '(없음)') : '위치 미지정';
+                      const nextSummary = ill.afterLogIndex !== null ? (nextLog ? `${nextLog.name || '무명'}: ${stripHtml(nextLog.content)}` : '(없음)') : '위치 미지정';
+
+                      return (
+                        <div 
+                          key={ill.id} 
+                          className="flex items-center gap-3.5 p-2.5 bg-white/5 border border-white/5 rounded-2xl text-white relative pr-6.5 group/ill"
+                        >
                               <div 
                                 className="w-16 h-16 shrink-0 bg-black/40 border border-white/10 rounded-xl overflow-hidden flex items-center justify-center relative group cursor-zoom-in"
                                 onMouseEnter={(e) => {
@@ -3798,7 +5010,7 @@ export default function App() {
 
                                   <div className="flex items-center gap-1 shrink-0">
                                     <button
-                                      onClick={() => scrollToIllustrationLog(ill.afterLogIndex)}
+                                      onClick={() => scrollToIllustrationLog(ill.afterLogIndex ?? 0, targetFileId)}
                                       className="p-1.5 bg-white/5 hover:bg-[#e6005c]/20 text-white/50 hover:text-[#e6005c] rounded-lg transition-all active:scale-95 shrink-0 flex items-center justify-center"
                                       title="미리보기 위치로 이동"
                                     >
@@ -3902,15 +5114,56 @@ export default function App() {
                               </div>
                             </div>
                           );
-                        })}
+                        };
+
+                        if (allIllustrationsGrouped.totalCount > 0) {
+                      return (
+                        <div className="space-y-4 mt-3">
+                          {allIllustrationsGrouped.groups.map((group, gIdx) => (
+                            <div key={group.fileId || gIdx} className="space-y-2">
+                              {/* Horizontal Bar Header for each log */}
+                              <div className="flex items-center gap-2 my-2">
+                                <div className="h-px bg-white/10 flex-1" />
+                                <span className="text-[10px] font-bold text-[#e6005c] bg-[#e6005c]/10 border border-[#e6005c]/20 px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                                  로그: {group.fileName} ({group.items.length}개)
+                                </span>
+                                <div className="h-px bg-white/10 flex-1" />
+                              </div>
+
+                              <div className="space-y-2">
+                                {group.items.map(ill => renderIllustrationCard(ill, group.fileId, group.fileLogs))}
+                              </div>
+                            </div>
+                          ))}
+
+                          {allIllustrationsGrouped.unplacedItems.length > 0 && (
+                            <div className="space-y-2 pt-2">
+                              <div className="flex items-center gap-2 my-2">
+                                <div className="h-px bg-white/10 flex-1" />
+                                <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                                  위치 미지정 삽화 ({allIllustrationsGrouped.unplacedItems.length}개)
+                                </span>
+                                <div className="h-px bg-white/10 flex-1" />
+                              </div>
+
+                              <div className="space-y-2">
+                                {allIllustrationsGrouped.unplacedItems.map(({ fileId, fileName, fileLogs, item }) =>
+                                  renderIllustrationCard(item, fileId, fileLogs)
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="text-center py-20 text-white/10">
+                        <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-20 text-white" />
+                        <p className="text-sm font-medium">로그를 먼저 업로드하거나 삽화를 등록하세요</p>
                       </div>
-                    ) : null
-                  ) : (
-                    <div className="text-center py-20 text-white/10">
-                      <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-20 text-white" />
-                      <p className="text-sm font-medium">로그를 먼저 업로드하세요</p>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </Section>
               </motion.div>
             )}
@@ -4021,6 +5274,16 @@ export default function App() {
                         onChange={(val) => {
                           setHideEmptyAvatars(val);
                           saveToHistory({ hideEmptyAvatars: val });
+                        }} 
+                      />
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
+                      <span className="text-[11px] font-bold text-white/70">얼굴 위주 크롭 (상단 1:1)</span>
+                      <Toggle 
+                        enabled={cropFaceTop} 
+                        onChange={(val) => {
+                          setCropFaceTop(val);
+                          saveToHistory({ cropFaceTop: val });
                         }} 
                       />
                     </div>
@@ -4301,7 +5564,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.8.14</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.10.10</span>
           </div>
         </div>
       </aside>
@@ -4404,64 +5667,64 @@ export default function App() {
 
           <div className="flex items-center gap-2 xl:gap-3 shrink-1 min-w-0">
             {isTitleEditing ? (
-              <div className="flex items-center gap-1 shrink-1 min-w-0">
-                <div className="relative w-28 xl:w-48 shrink-1 min-w-[80px]">
-                  <input 
-                    type="text"
-                    value={tempTitle}
-                    onChange={(e) => setTempTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.nativeEvent.isComposing) return;
-                      if (e.key === 'Enter') {
-                        setPageTitle(tempTitle);
-                        saveToHistory({ pageTitle: tempTitle });
-                        setIsTitleEditing(false);
-                      } else if (e.key === 'Escape') {
-                        setTempTitle(pageTitle);
-                        setIsTitleEditing(false);
-                      }
+                <div className="flex items-center gap-1 shrink-1 min-w-0">
+                  <div className="relative w-28 xl:w-48 shrink-1 min-w-[80px]">
+                    <input 
+                      type="text"
+                      value={tempTitle}
+                      onChange={(e) => setTempTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing) return;
+                        if (e.key === 'Enter') {
+                          setPageTitle(tempTitle);
+                          saveToHistory({ pageTitle: tempTitle });
+                          setIsTitleEditing(false);
+                        } else if (e.key === 'Escape') {
+                          setTempTitle(pageTitle);
+                          setIsTitleEditing(false);
+                        }
+                      }}
+                      className={cn(
+                        "w-full border rounded-xl px-3 py-2 text-[11px] font-bold outline-none transition-colors",
+                        "bg-black/20 border-[#e6005c] text-white placeholder:text-white/20"
+                      )}
+                      placeholder="제목 입력"
+                      autoFocus
+                      onBlur={() => {
+                        // Small delay to allow button click
+                        setTimeout(() => setIsTitleEditing(false), 200);
+                      }}
+                    />
+                  </div>
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setPageTitle(tempTitle);
+                      saveToHistory({ pageTitle: tempTitle });
+                      setIsTitleEditing(false);
                     }}
-                    className={cn(
-                      "w-full border rounded-xl px-3 py-2 text-[11px] font-bold outline-none transition-colors",
-                      "bg-black/20 border-[#e6005c] text-white placeholder:text-white/20"
-                    )}
-                    placeholder="제목 입력"
-                    autoFocus
-                    onBlur={() => {
-                      // Small delay to allow button click
-                      setTimeout(() => setIsTitleEditing(false), 200);
-                    }}
-                  />
+                    className="px-2.5 py-2 bg-[#e6005c] text-white rounded-xl text-[10px] font-bold hover:bg-[#ff0066] transition-all active:scale-95 shrink-0"
+                  >
+                    확인
+                  </button>
                 </div>
-                <button
-                  onMouseDown={(e) => e.preventDefault()}
+              ) : (
+                <div 
                   onClick={() => {
-                    setPageTitle(tempTitle);
-                    saveToHistory({ pageTitle: tempTitle });
-                    setIsTitleEditing(false);
+                    setIsTitleEditing(true);
+                    setTempTitle(pageTitle);
                   }}
-                  className="px-2.5 py-2 bg-[#e6005c] text-white rounded-xl text-[10px] font-bold hover:bg-[#ff0066] transition-all active:scale-95 shrink-0"
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/5 cursor-pointer group transition-colors shrink-1 min-w-0"
                 >
-                  확인
-                </button>
-              </div>
-            ) : (
-              <div 
-                onClick={() => {
-                  setIsTitleEditing(true);
-                  setTempTitle(pageTitle);
-                }}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/5 cursor-pointer group transition-colors shrink-1 min-w-0"
-              >
-                <span className={cn(
-                  "text-[11px] font-bold truncate max-w-[100px] xl:max-w-[180px]",
-                  pageTitle ? "text-white" : "text-white/20"
-                )}>
-                  {pageTitle || "제목 변경"}
-                </span>
-                <Pencil className="w-3.5 h-3.5 text-white/20 group-hover:text-white/40 transition-colors shrink-0" />
-              </div>
-            )}
+                  <span className={cn(
+                    "text-[11px] font-bold truncate max-w-[100px] xl:max-w-[180px]",
+                    pageTitle ? "text-white" : "text-white/20"
+                  )}>
+                    {pageTitle || "제목 변경"}
+                  </span>
+                  <Pencil className="w-3.5 h-3.5 text-white/20 group-hover:text-white/40 transition-colors shrink-0" />
+                </div>
+              )}
             <div className="relative">
               <button 
                 onClick={() => setShowSaveMenu(!showSaveMenu)}
@@ -4568,83 +5831,203 @@ export default function App() {
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
+                      className="absolute right-0 mt-2 w-72 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2.5 space-y-2"
                     >
-                      <button 
-                        onClick={() => { copyToClipboard(getHtmlString()); setShowDownloadMenu(false); }}
-                        className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
-                      >
-                        <Copy className="w-4 h-4 text-blue-400" />
-                        <div>
-                          <p className="text-[11px] font-bold text-white">HTML 복사</p>
-                          <p className="text-[9px] text-white/30">클립보드에 전체 HTML 복사</p>
-                        </div>
-                      </button>
-
-                      <div className="flex items-center gap-2 pr-2">
-                        <button 
-                          onClick={() => { downloadHtml(); setShowDownloadMenu(false); }}
-                          className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
-                        >
-                          <FileText className="w-4 h-4 text-emerald-400" />
-                          <div>
-                            <p className="text-[11px] font-bold text-white">전체 다운로드</p>
-                            <p className="text-[9px] text-white/30">하나의 HTML 파일로 저장</p>
-                          </div>
-                        </button>
-                      </div>
-                      
-                      {splitPoints.size > 0 && (
-                        <>
-                          <div className="h-px bg-white/5 my-1" />
-                          <div className="px-3 py-2">
-                            <p className="text-[9px] font-bold text-white/20 uppercase tracking-widest">분할 섹션</p>
-                          </div>
-                          <div className="max-h-64 overflow-y-auto custom-scrollbar">
-                            {sectionsList.map((s, i) => (
-                              <div key={i} className="flex items-center gap-2 pr-2 group">
-                                <button 
-                                  onClick={() => { downloadHtml({ id: s.id, name: s.name }); setShowDownloadMenu(false); }}
-                                  className="flex-1 flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
-                                >
-                                  <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center text-[9px] font-bold text-white/40 group-hover:text-white/60">
-                                    {i + 1}
-                                  </div>
-                                  <div>
-                                    <p className="text-[11px] font-bold text-white truncate max-w-[120px]">{s.name}</p>
-                                    <p className="text-[9px] text-white/30">{s.startBlock} ~ {s.endBlock}번 블록</p>
-                                  </div>
-                                </button>
-                                <button 
-                                  onClick={() => { copyToClipboard(getHtmlString(s.id)); setShowDownloadMenu(false); }}
-                                  className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/30 hover:text-white"
-                                  title="HTML 복사"
-                                >
-                                  <Copy className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                          <div className="h-px bg-white/5 my-1" />
-                          <button 
-                            onClick={() => { downloadZip(); setShowDownloadMenu(false); }}
-                            className="w-full flex items-center gap-3 p-3 hover:bg-[#e6005c]/20 rounded-xl transition-colors text-left group"
-                          >
-                            <Plus className="w-4 h-4 text-[#e6005c]" />
+                      {ENABLE_MULTI_FILE_UI ? (
+                        <div className="bg-[#e6005c]/10 border border-[#e6005c]/30 rounded-xl p-2.5 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-[#e6005c] shrink-0" />
                             <div>
-                              <p className="text-[11px] font-bold text-[#e6005c]">ZIP으로 모두 저장</p>
-                              <p className="text-[9px] text-[#e6005c]/40">모든 섹션을 압축파일로 저장</p>
+                              <p className="text-[11px] font-bold text-white">연속 파일 (전체 로그 통합)</p>
+                              <p className="text-[9px] text-white/40">목록 순서대로 모든 로그를 하나의 파일로 내보냅니다.</p>
                             </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 pt-1">
+                            <button 
+                              onClick={() => { copyToClipboard(getCombinedHtmlString()); setShowDownloadMenu(false); }}
+                              className="flex-1 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5"
+                            >
+                              <Copy className="w-3 h-3 text-white/80" /> 연속 파일 복사
+                            </button>
+                            <button 
+                              onClick={() => { downloadCombinedHtml(); setShowDownloadMenu(false); }}
+                              className="flex-1 py-1.5 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
+                            >
+                              <Download className="w-3 h-3 text-white" /> 연속 파일 저장
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-[#e6005c]/10 border border-[#e6005c]/30 rounded-xl p-2.5 space-y-1.5">
+                          <button 
+                            onClick={() => { downloadAllZip(); setShowDownloadMenu(false); }}
+                            className="w-full py-1.5 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
+                          >
+                            <Archive className="w-3 h-3 text-white" /> 모든 파일 ZIP 저장
                           </button>
-                        </>
+                        </div>
                       )}
+
+                      <div className="h-px bg-white/5" />
+
+                      <div className="px-1">
+                        <p className="text-[9px] font-bold text-white/30 uppercase tracking-widest">탭별 / 섹션별 내보내기</p>
+                      </div>
+
+                      <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-2 pr-0.5">
+                        {(files.length > 0 ? files : (activeFile ? [activeFile] : [])).map((f) => {
+                          const fSections = getFileSectionsList(f);
+                          return (
+                            <div key={f.id} className="bg-white/5 border border-white/5 rounded-xl p-2 space-y-1">
+                              {/* File Header */}
+                              <div className="flex items-center justify-between gap-2 pb-1 border-b border-white/5">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <FileText className="w-3.5 h-3.5 text-[#e6005c] shrink-0" />
+                                  <span className="text-[11px] font-bold text-white truncate max-w-[110px]">{f.name}</span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    onClick={() => { copyToClipboard(getHtmlStringForFile(f)); setShowDownloadMenu(false); }}
+                                    className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[9px] font-bold transition-colors flex items-center gap-1"
+                                    title="파일 전체 복사"
+                                  >
+                                    <Copy className="w-2.5 h-2.5" /> 복사
+                                  </button>
+                                  <button
+                                    onClick={() => { downloadHtmlForFile(f); setShowDownloadMenu(false); }}
+                                    className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded text-[9px] font-bold transition-colors flex items-center gap-1"
+                                    title="파일 전체 저장"
+                                  >
+                                    <Download className="w-2.5 h-2.5" /> 저장
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Sections if available */}
+                              {fSections.length > 0 && (
+                                <div className="space-y-1 pl-1 pt-0.5">
+                                  {fSections.map((s, sIdx) => (
+                                    <div key={sIdx} className="flex items-center justify-between py-0.5 px-1 hover:bg-white/5 rounded transition-colors">
+                                      <div className="flex items-center gap-1 min-w-0">
+                                        <span className="text-[9px] font-bold text-white/30 shrink-0">ㄴ</span>
+                                        <span className="text-[10px] font-medium text-white/80 truncate max-w-[90px]">{s.name}</span>
+                                        <span className="text-[8px] text-white/30 shrink-0">({s.startBlock}~{s.endBlock})</span>
+                                      </div>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                          onClick={() => { copyToClipboard(getHtmlStringForFile(f, s.id)); setShowDownloadMenu(false); }}
+                                          className="p-1 text-white/30 hover:text-white transition-colors"
+                                          title="섹션 복사"
+                                        >
+                                          <Copy className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                          onClick={() => { downloadHtmlForFile(f, s); setShowDownloadMenu(false); }}
+                                          className="p-1 text-emerald-400/60 hover:text-emerald-300 transition-colors"
+                                          title="섹션 저장"
+                                        >
+                                          <Download className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </motion.div>
+
                   </>
                 )}
               </AnimatePresence>
             </div>
           </div>
         </div>
+
+        {/* Multi-file Preview Window Tabs (Below Toolbar) */}
+        {ENABLE_MULTI_FILE_UI && files.length > 0 && (
+          <div className="flex items-center gap-1 px-3 bg-[#141414] border-b border-white/5 overflow-x-auto overflow-y-hidden shrink-0 h-9 [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-thumb]:rounded-full">
+            {files.map(f => {
+              const isActive = f.id === activeFileId;
+              const isEditing = editingFileId === f.id;
+              return (
+                <div
+                  key={f.id}
+                  onClick={() => {
+                    if (!isEditing) setActiveFileId(f.id);
+                  }}
+                  className={cn(
+                    "group relative flex items-center gap-1 px-2.5 h-7 rounded-t-md text-xs font-bold transition-all cursor-pointer select-none shrink-0 max-w-[240px]",
+                    isActive
+                      ? "bg-[#1f1f1f] text-white border-t-2 border-t-[#e6005c] border-x border-x-white/10"
+                      : "bg-white/[0.02] text-white/40 hover:bg-white/[0.05] hover:text-white/80 border-t-2 border-t-transparent"
+                  )}
+                >
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={editingFileName}
+                      onChange={(e) => setEditingFileName(e.target.value)}
+                      onBlur={() => finishRenameFile(f.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') finishRenameFile(f.id);
+                        if (e.key === 'Escape') setEditingFileId(null);
+                      }}
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                      className="bg-black/60 border border-[#e6005c] rounded px-1.5 py-0.5 text-xs text-white font-bold outline-none w-28"
+                    />
+                  ) : (
+                    <>
+                      <span className="truncate max-w-[150px] text-[11px]">{f.name}</span>
+                      <span className="text-[9px] opacity-40 font-normal shrink-0">({f.logs.length})</span>
+                      
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startRenameFile(f.id, f.name);
+                        }}
+                        className={cn(
+                          "p-0.5 rounded hover:bg-white/10 transition-colors ml-0.5",
+                          isActive ? "text-white/40 hover:text-white" : "opacity-0 group-hover:opacity-100 text-white/30 hover:text-white"
+                        )}
+                        title="제목 수정"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+
+                      {files.length > 1 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveFile(f.id);
+                          }}
+                          className={cn(
+                            "p-0.5 rounded hover:bg-white/10 transition-colors ml-0.5",
+                            isActive ? "text-white/40 hover:text-white" : "opacity-0 group-hover:opacity-100 text-white/30 hover:text-white"
+                          )}
+                          title="탭 닫기"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            <button
+              onClick={() => additionalFileInputRef.current?.click()}
+              className="p-1 text-white/30 hover:text-white hover:bg-white/5 rounded transition-colors shrink-0 ml-1"
+              title="새 파일 추가"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Preview Area */}
         <div 
@@ -4699,7 +6082,7 @@ export default function App() {
                     margin: '0 auto', 
                     padding: '0 0 40px 0',
                     backgroundColor: theme === 'dark' ? darkBgColor : lightBgColor,
-                    color: theme === 'dark' ? '#EEEEEE' : '#333333',
+                    color: theme === 'dark' ? '#FFFFFF' : '#333333',
                     fontFamily: fontFamily !== '(폰트 적용X)' ? (fonts.find(f => f.name === fontFamily)?.value || 'sans-serif') : undefined,
                     fontSize: `${fontSize}px`
                   }}>
@@ -4788,8 +6171,8 @@ export default function App() {
                         const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
                         const originalLogIndex = logs.findIndex((l: any) => l.id === stableId);
                         
-                        const isPrevNarration = idx > 0 && mergedLogs[idx - 1].charId === narrationCharacter && (tabSettings[mergedLogs[idx - 1].tabId]?.format || 'main') === 'main';
-                        const isNextNarration = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].charId === narrationCharacter && (tabSettings[mergedLogs[idx + 1].tabId]?.format || 'main') === 'main';
+                        const isPrevNarration = idx > 0 && mergedLogs[idx - 1].charId === narrationCharacter && ((tabSettings[mergedLogs[idx - 1].tabId]?.format || 'main') === 'main' || (enableSecretNarration && tabSettings[mergedLogs[idx - 1].tabId]?.format === 'secret'));
+                        const isNextNarration = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].charId === narrationCharacter && ((tabSettings[mergedLogs[idx + 1].tabId]?.format || 'main') === 'main' || (enableSecretNarration && tabSettings[mergedLogs[idx + 1].tabId]?.format === 'secret'));
 
                         return (
                           <div
@@ -4804,6 +6187,7 @@ export default function App() {
                               left: 0,
                               width: '100%',
                               transform: `translateY(${Math.round(virtualItem.start)}px)`,
+                              transition: isMovingBlock ? 'transform 0.2s ease-in-out' : 'none',
                             }}
                           >
                             <LogItem 
@@ -4827,8 +6211,16 @@ export default function App() {
                               onUpdateBlock={onUpdateBlock}
                               onRemoveBlock={onRemoveBlock}
                               onToggleImageInput={onToggleImageInput}
+                              bgmInputLoc={bgmInputLoc}
+                              onToggleBgmInput={onToggleBgmInput}
+                              onAddBgmBlock={onAddBgmBlock}
+                              currentPlayingBgmId={currentBgmTrack?.id || null}
+                              isGlobalBgmPlaying={isGlobalBgmPlaying}
+                              onSelectBgmTrack={(track) => setCurrentBgmTrack(track)}
                               onEditLog={onEditLog}
+                              onBatchUpdateLog={onBatchUpdateLog}
                               onDeleteLog={onDeleteLog}
+                              onMoveLog={onMoveLog}
                               insertLogBlock={insertLogBlock}
                               onChangeSpeaker={onChangeSpeaker}
                               onChangeTab={onChangeTab}
@@ -4889,7 +6281,27 @@ export default function App() {
 
                 {activeColorPicker && colorPickerRect && (
                   <>
-                    {activeColorPicker.startsWith('tab-') ? (
+                    {activeColorPicker.startsWith('tab-text-') ? (
+                      <ColorPickerPopup 
+                        color={tabSettings[activeColorPicker.replace('tab-text-', '')]?.textColor || '#ffffff'} 
+                        extractedColors={Array.from(new Set([...extractedColors, ...Object.values(charSettings).map((c: any) => c.color), ...Object.values(tabSettings).filter((t: any) => t.color).map((t: any) => t.color)]))}
+                        triggerRect={colorPickerRect}
+                        onClose={() => {
+                          setActiveColorPicker(null);
+                          setColorPickerRect(null);
+                        }}
+                        onChange={(newColor) => {
+                          const tabId = activeColorPicker.replace('tab-text-', '');
+                          const next = { ...tabSettings, [tabId]: { ...tabSettings[tabId], textColor: newColor } };
+                          setTabSettings(next);
+                        }}
+                        onChangeComplete={(newColor) => {
+                          const tabId = activeColorPicker.replace('tab-text-', '');
+                          const next = { ...tabSettings, [tabId]: { ...tabSettings[tabId], textColor: newColor } };
+                          saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                        }}
+                      />
+                    ) : activeColorPicker.startsWith('tab-') ? (
                       <ColorPickerPopup 
                         color={tabSettings[activeColorPicker.replace('tab-', '')]?.color || '#ffd400'} 
                         extractedColors={Array.from(new Set([...extractedColors, ...Object.values(charSettings).map((c: any) => c.color), ...Object.values(tabSettings).filter((t: any) => t.color).map((t: any) => t.color)]))}
@@ -4902,6 +6314,10 @@ export default function App() {
                           const tabId = activeColorPicker.replace('tab-', '');
                           const next = { ...tabSettings, [tabId]: { ...tabSettings[tabId], color: newColor } };
                           setTabSettings(next);
+                        }}
+                        onChangeComplete={(newColor) => {
+                          const tabId = activeColorPicker.replace('tab-', '');
+                          const next = { ...tabSettings, [tabId]: { ...tabSettings[tabId], color: newColor } };
                           saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                         }}
                       />
@@ -4917,6 +6333,9 @@ export default function App() {
                         onChange={(newColor) => {
                           const next = { ...charSettings, [activeColorPicker]: { ...charSettings[activeColorPicker], color: newColor } };
                           setCharSettings(next);
+                        }}
+                        onChangeComplete={(newColor) => {
+                          const next = { ...charSettings, [activeColorPicker]: { ...charSettings[activeColorPicker], color: newColor } };
                           saveToHistory({ charSettings: next, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                         }}
                       />
@@ -4954,10 +6373,15 @@ export default function App() {
             )}
           </div>
         </div>
+
+        {logs.length > 0 && currentBgmTrack && (
+          <GlobalBgmPlayer currentTrack={currentBgmTrack} onPlayStateChange={setIsGlobalBgmPlaying} />
+        )}
+
         {logs.length > 0 && (
           <div 
-            className="z-50 flex flex-col items-end"
-            style={{ position: 'fixed', bottom: '19px', right: '19px' }}
+            className="z-50 flex flex-col items-start transition-all duration-300 absolute"
+            style={{ bottom: '19px', left: '19px' }}
             onMouseEnter={() => setIsTocHovered(true)}
             onMouseLeave={() => setIsTocHovered(false)}
           >
@@ -4968,7 +6392,7 @@ export default function App() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className="mb-3 bg-[#1a1a1a]/95 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[350px] w-56 transform origin-bottom-right"
+                  className="mb-3 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[350px] w-56 transform origin-bottom-left"
                 >
                   <div className="px-3 border-b border-white/10 bg-white/5 flex items-center justify-center shrink-0" style={{ height: '26px' }}>
                     <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-widest text-center m-0 leading-none">섹션 이동</h3>
@@ -4989,7 +6413,7 @@ export default function App() {
               )}
             </AnimatePresence>
             <div 
-              className="bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-black/80 transition-colors shadow-lg cursor-pointer shrink-0"
+              className="bg-[#242424] border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-[#333333] transition-colors shadow-lg cursor-pointer shrink-0"
               style={{ width: '50px', height: '50px', borderRadius: '50%' }}
             >
               <List className="w-6 h-6" />

@@ -1,14 +1,46 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import DOMPurify from 'dompurify';
-import { Pencil, Trash2, Plus, X, Image as ImageIcon } from 'lucide-react';
-import { cn, r, linkifyAndFormat } from '../utils';
+import { Pencil, Trash2, Plus, X, Image as ImageIcon, Palette, Highlighter, ArrowUp, ArrowDown } from 'lucide-react';
+import { cn, r, linkifyAndFormat, markdownToHtml, htmlToMarkdown } from '../utils';
+import { ColorPickerPopup } from './ColorPickerPopup';
+import { EditorColorPickerPopup } from './EditorColorPickerPopup';
 import { LogImage } from './LogImage';
 import { LogAvatar } from './LogAvatar';
 import { SectionNameEditor } from './SectionNameEditor';
 import { BoundaryEditor } from './BoundaryEditor';
+import { BgmItem } from './BgmItem';
+import { BgmInlineInput } from './BgmInlineInput';
 import { useSettings } from '../contexts/SettingsContext';
 import { splitNarration } from '../utils/textTokenizer';
 import { SearchableSelect } from './SearchableSelect';
+// @ts-ignore
+import ReactQuill, { Quill } from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
+
+const ReactQuillComponent = ReactQuill as any;
+
+const ColorStyle = Quill.import('attributors/style/color');
+const BackgroundStyle = Quill.import('attributors/style/background');
+Quill.register(ColorStyle as any, true);
+Quill.register(BackgroundStyle as any, true);
+
+const PALETTE_COLORS = [
+  '#000000', '#333333', '#666666', '#999999', '#cccccc', '#ffffff',
+  '#e6005c', '#ff0000', '#ff4d4d', '#ff6699', '#ffb3c6', '#990033',
+  '#ff6600', '#ff9900', '#ffcc00', '#ffff00', '#fff3a0', '#b36b00',
+  '#008a00', '#00cc66', '#2ecc71', '#00cccc', '#a8e6cf', '#004d1a',
+  '#0066cc', '#3498db', '#0099ff', '#003399', '#89cff0', '#001a4d',
+  '#9933ff', '#8e44ad', '#cc66ff', '#e0b0ff', '#4b0082', '#6600cc'
+];
+
+const quillModules = {
+  toolbar: [
+    ['bold', 'italic', 'underline', 'strike'],
+    [{ 'color': PALETTE_COLORS }, { 'background': PALETTE_COLORS }],
+    ['clean']
+  ]
+};
+
 
 export const LogItem = React.memo(({ 
   log, 
@@ -21,17 +53,25 @@ export const LogItem = React.memo(({
   insertedBlocks,
   startBlocks,
   imageInputLoc,
+  bgmInputLoc,
   onAddBlock,
   onUpdateBlock,
   onRemoveBlock,
   onToggleImageInput,
+  onToggleBgmInput,
+  onAddBgmBlock,
+  currentPlayingBgmId,
+  isGlobalBgmPlaying,
+  onSelectBgmTrack,
   onAddIllustration,
   onUpdateIllustration,
   onRemoveIllustration,
   originalLogIndex,
   illustrations = [],
   onEditLog,
+  onBatchUpdateLog,
   onDeleteLog,
+  onMoveLog,
   insertLogBlock,
   onChangeSpeaker,
   onChangeTab,
@@ -50,9 +90,9 @@ export const LogItem = React.memo(({
 }: any) => {
   const { 
     theme, disableOtherColor, fontSize, textFontSize,
-    mergeTabStyles, showTabNames, hideEmptyAvatars, hideAllAvatars,
+    mergeTabStyles, showTabNames, hideEmptyAvatars, cropFaceTop, hideAllAvatars,
     narrationCharacter, charSettings: charSettingsFromContext, tabSettings,
-    enableSentenceSpacing,
+    enableSentenceSpacing, enableSecretNarration, narrationFormat,
     lineHeight = 1.6, letterSpacing = 0, blockSpacing = 2, contentPadding = 15.5, avatarSizeValue = 46,
     showLogDivider = false
   } = useSettings();
@@ -70,10 +110,40 @@ export const LogItem = React.memo(({
   const char = charSettings[log.charId] || { id: log.charId, name: log.name, color: log.color, visible: true, imageUrl: '' };
 
   const isEditing = editingLogId === log.id;
-  const [editContent, setEditContent] = useState(log.content.replace(/<br\s*\/?>/gi, '\n'));
+  const isAnyEditing = editingLogId !== null;
+  const [editContent, setEditContent] = useState(() => markdownToHtml(log.content));
   const [editCharId, setEditCharId] = useState(log.charId);
   const [editTabId, setEditTabId] = useState(log.tabId);
   const [isHoveringButton, setIsHoveringButton] = useState(false);
+  const [editingInsertedBlockId, setEditingInsertedBlockId] = useState<string | null>(null);
+
+  const [customColorPickerTarget, setCustomColorPickerTarget] = useState<'foreColor' | 'backColor' | null>(null);
+  const [customColorTriggerRect, setCustomColorTriggerRect] = useState<DOMRect | null>(null);
+  const [customColorVal, setCustomColorVal] = useState('#e6005c');
+  const quillRef = useRef<any>(null);
+  const savedQuillRange = useRef<any>(null);
+
+  const toolbarId = `quill-toolbar-${log.id}`;
+  const quillModules = useMemo(() => ({
+    toolbar: {
+      container: `#${toolbarId}`
+    }
+  }), [toolbarId]);
+
+  const handleOpenCustomColor = (e: React.MouseEvent, type: 'foreColor' | 'backColor') => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const quill = quillRef.current?.getEditor();
+    if (quill) {
+      savedQuillRange.current = quill.getSelection();
+    }
+    setCustomColorTriggerRect(rect);
+    setCustomColorPickerTarget(type);
+  };
+  
+
+
   const orderedTabs = useMemo(() => {
     if (tabOrder && tabOrder.length > 0) {
       return tabOrder.map((id: string) => tabSettings[id]).filter(Boolean);
@@ -158,7 +228,7 @@ export const LogItem = React.memo(({
 
   useEffect(() => {
     if (isEditing) {
-      setEditContent(log.content.replace(/<br\s*\/?>/gi, '\n'));
+      setEditContent(markdownToHtml(log.content));
       setEditCharId(log.charId);
       setEditTabId(log.tabId);
     }
@@ -172,16 +242,25 @@ export const LogItem = React.memo(({
   };
 
   const handleConfirm = () => {
-    const trimmed = editContent.trim();
+    const mdContent = htmlToMarkdown(editContent);
+    const trimmed = mdContent.trim();
     if (!trimmed) {
       onDeleteLog(log.id);
     } else {
-      onEditLog(log.id, editContent);
-      if (editCharId !== log.charId && onChangeSpeaker) {
-        onChangeSpeaker(log.id, editCharId);
-      }
-      if (editTabId !== log.tabId && onChangeTab) {
-        onChangeTab(log.id, editTabId);
+      if (onBatchUpdateLog) {
+        onBatchUpdateLog(log.id, {
+          content: mdContent,
+          charId: editCharId !== log.charId ? editCharId : undefined,
+          tabId: editTabId !== log.tabId ? editTabId : undefined
+        });
+      } else {
+        onEditLog(log.id, mdContent);
+        if (editCharId !== log.charId && onChangeSpeaker) {
+          onChangeSpeaker(log.id, editCharId);
+        }
+        if (editTabId !== log.tabId && onChangeTab) {
+          onChangeTab(log.id, editTabId);
+        }
       }
     }
     setEditingLogId(null);
@@ -196,10 +275,11 @@ export const LogItem = React.memo(({
           id={logId}
           onToggleSplit={() => onAddBlock(logId, 0, 'split')}
           onInsertImage={() => onToggleImageInput(logId, 0)}
+          onInsertBgm={() => onToggleBgmInput && onToggleBgmInput(logId, 0)}
           onInsertLog={() => insertLogBlock(log.id, isTopLevel)}
           allowSplit={!isTopLevel && !(isLastLog && blocks.length === 0)}
           isTopLevel={isTopLevel}
-          disabled={isHoveringButton}
+          disabled={isHoveringButton || isAnyEditing}
           onDropIllustration={(illId) => onUpdateIllustration(illId, { targetLogId: stableId, position: 'before' })}
         />
         {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === 0 && (
@@ -252,22 +332,181 @@ export const LogItem = React.memo(({
               >
                 추가
               </button>
+              <button
+                onClick={() => onToggleImageInput('', -1)}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-[11px] h-9 font-bold shrink-0 flex items-center justify-center transition-colors border",
+                  theme === 'dark' ? "bg-white/10 hover:bg-white/20 border-white/10 text-white" : "bg-white hover:bg-stone-50 border-stone-200 text-stone-700"
+                )}
+              >
+                취소
+              </button>
             </div>
           </div>
+        )}
+
+        {bgmInputLoc?.logId === logId && bgmInputLoc.insertIndex === 0 && (
+          <BgmInlineInput
+            onSave={(bgmData) => {
+              if (onAddBgmBlock) {
+                onAddBgmBlock(logId, 0, bgmData);
+              }
+            }}
+            onCancel={() => onToggleBgmInput && onToggleBgmInput(logId, 0)}
+          />
         )}
 
         {blocks.map((block, i) => (
           <React.Fragment key={block.id}>
             {block.type === 'image' && (
-              <LogImage 
-                url={block.url} 
-                width={block.width}
-                align={block.align}
-                onDelete={() => onRemoveBlock(logId, block.id)} 
-                onUpdateWidth={(w: string) => onUpdateBlock(logId, block.id, { width: w })}
-                onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateBlock(logId, block.id, { align: a })}
-                paddingSize={0}
-              />
+              editingInsertedBlockId === block.id ? (
+                <div className="w-full flex justify-center py-2 relative">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const formData = new FormData(e.currentTarget);
+                      const url = formData.get('url') as string;
+                      if (onUpdateBlock) {
+                        onUpdateBlock(logId, block.id, { url });
+                      }
+                      setEditingInsertedBlockId(null);
+                    }}
+                    className={cn(
+                      "mx-4 my-2 p-4 border border-dashed rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full max-w-lg",
+                      theme === 'dark' ? "bg-white/5 border-white/20 text-white" : "bg-stone-50 border-stone-200 text-stone-800 shadow-sm"
+                    )}
+                  >
+                    <input
+                      name="url"
+                      type="text"
+                      defaultValue={block.url}
+                      placeholder="이미지 URL"
+                      className={cn(
+                        "px-3 py-2 text-[11px] h-9 rounded-lg border focus:outline-none focus:ring-1 focus:ring-[#e6005c] flex-1",
+                        theme === 'dark' ? 'bg-black/40 border-white/20 text-white placeholder-white/30' : 'bg-white border-stone-200 text-stone-900 placeholder-stone-400'
+                      )}
+                      required
+                    />
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-[#e6005c] hover:bg-[#ff007f] text-white rounded-lg text-[11px] h-9 font-bold flex-1 sm:flex-none flex items-center justify-center transition-colors"
+                      >
+                        저장
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingInsertedBlockId(null)}
+                        className={cn(
+                          "px-4 py-2 rounded-lg text-[11px] h-9 font-bold flex-1 sm:flex-none flex items-center justify-center transition-colors border",
+                          theme === 'dark' ? "bg-white/10 hover:bg-white/20 border-white/10 text-white" : "bg-white hover:bg-stone-50 border-stone-200 text-stone-700"
+                        )}
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <div className="relative group/block w-full min-h-[30px] flex justify-center py-2">
+                  <LogImage 
+                    url={block.url} 
+                    width={block.width}
+                    align={block.align || 'center'}
+                    onUpdateWidth={(w: string) => onUpdateBlock && onUpdateBlock(logId, block.id, { width: w })}
+                    onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateBlock && onUpdateBlock(logId, block.id, { align: a })}
+                    paddingSize={0}
+                    tabOverride={block.tabOverride}
+                    onUpdateTabOverride={(t: string) => onUpdateBlock && onUpdateBlock(logId, block.id, { tabOverride: t })}
+                  />
+                  {!isAnyEditing && onRemoveBlock && (
+                    <div className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/block:opacity-100 transition-opacity z-20">
+                      <button
+                        onClick={() => setEditingInsertedBlockId(block.id)}
+                        className={cn(
+                          "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                          theme === 'dark'
+                            ? "bg-stone-800/80 text-white/60 hover:text-white border-white/10"
+                            : "bg-white/90 text-stone-600 hover:text-stone-900 border-stone-200"
+                        )}
+                        title="수정"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => onRemoveBlock(logId, block.id)}
+                        className={cn(
+                          "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                          theme === 'dark'
+                            ? "bg-stone-800/80 text-white/60 hover:text-red-400 border-white/10"
+                            : "bg-white/90 text-stone-600 hover:text-red-500 border-stone-200"
+                        )}
+                        title="삭제"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            )}
+            {block.type === 'bgm' && (
+              editingInsertedBlockId === block.id ? (
+                <div className="w-full relative">
+                  <BgmInlineInput
+                    initialTitle={block.title}
+                    initialUrl={block.url}
+                    initialUseTimestamp={block.useTimestamp}
+                    isEditing={true}
+                    onSave={(updated) => {
+                      if (onUpdateBlock) onUpdateBlock(logId, block.id, updated);
+                      setEditingInsertedBlockId(null);
+                    }}
+                    onCancel={() => setEditingInsertedBlockId(null)}
+                  />
+                </div>
+              ) : (
+                <div className="relative group/block w-full min-h-[30px] flex justify-center py-2">
+                  <BgmItem
+                    id={block.id}
+                    title={block.title || '🎧 BGM'}
+                    url={block.url || ''}
+                    videoId={block.videoId}
+                    startTime={block.startTime}
+                    useTimestamp={block.useTimestamp}
+                    isPlaying={currentPlayingBgmId === block.id && isGlobalBgmPlaying}
+                    onSelectBgm={(track) => onSelectBgmTrack && onSelectBgmTrack(track)}
+                  />
+                  {!isAnyEditing && onRemoveBlock && (
+                    <div className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/block:opacity-100 transition-opacity z-20">
+                      <button
+                        onClick={() => setEditingInsertedBlockId(block.id)}
+                        className={cn(
+                          "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                          theme === 'dark'
+                            ? "bg-stone-800/80 text-white/60 hover:text-white border-white/10"
+                            : "bg-white/90 text-stone-600 hover:text-stone-900 border-stone-200"
+                        )}
+                        title="수정"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => onRemoveBlock(logId, block.id)}
+                        className={cn(
+                          "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                          theme === 'dark'
+                            ? "bg-stone-800/80 text-white/60 hover:text-red-400 border-white/10"
+                            : "bg-white/90 text-stone-600 hover:text-red-500 border-stone-200"
+                        )}
+                        title="삭제"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
             )}
             {block.type === 'split' && (
               <div id={`section-${block.id}`} className="mt-1 mb-1 px-4 font-sans relative">
@@ -302,12 +541,13 @@ export const LogItem = React.memo(({
               id={logId}
               onToggleSplit={() => onAddBlock(logId, i + 1, 'split')}
               onInsertImage={() => onToggleImageInput(logId, i + 1)}
+              onInsertBgm={() => onToggleBgmInput && onToggleBgmInput(logId, i + 1)}
               onInsertLog={() => insertLogBlock(log.id, isTopLevel)}
               allowSplit={!(isLastLog && i === blocks.length - 1)}
-              disabled={isHoveringButton}
+              disabled={isHoveringButton || isAnyEditing}
               onDropIllustration={(illId) => onUpdateIllustration(illId, { targetLogId: stableId, position: 'after' })}
             />
-             {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === i + 1 && (
+            {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === i + 1 && (
               <div className={cn(
                 "mx-4 my-2 p-4 border border-dashed rounded-xl flex flex-col gap-3",
                 theme === 'dark' ? "bg-white/5 border-white/20" : "bg-stone-50 border-stone-200 shadow-sm"
@@ -357,8 +597,28 @@ export const LogItem = React.memo(({
                   >
                     추가
                   </button>
+                  <button
+                    onClick={() => onToggleImageInput('', -1)}
+                    className={cn(
+                      "px-4 py-2 rounded-lg text-[11px] h-9 font-bold shrink-0 flex items-center justify-center transition-colors border",
+                      theme === 'dark' ? "bg-white/10 hover:bg-white/20 border-white/10 text-white" : "bg-white hover:bg-stone-50 border-stone-200 text-stone-700"
+                    )}
+                  >
+                    취소
+                  </button>
                 </div>
               </div>
+            )}
+
+            {bgmInputLoc?.logId === logId && bgmInputLoc.insertIndex === i + 1 && (
+              <BgmInlineInput
+                onSave={(bgmData) => {
+                  if (onAddBgmBlock) {
+                    onAddBgmBlock(logId, i + 1, bgmData);
+                  }
+                }}
+                onCancel={() => onToggleBgmInput && onToggleBgmInput(logId, i + 1)}
+              />
             )}
           </React.Fragment>
         ))}
@@ -367,17 +627,26 @@ export const LogItem = React.memo(({
   };
 
   const format = tabSet?.format || 'main';
-  const color = char.color || log.color;
+  const rawColor = char.color || log.color;
+  const tabTextColor = tabSet?.textColor;
+  const color = tabTextColor || rawColor;
+  const nameWeight = tabSet?.isBold !== undefined ? (tabSet.isBold ? 'bold' : 'normal') : 'bold';
+  const nameFontStyle = tabSet?.isItalic ? 'italic' : 'normal';
   const otherNameColor = disableOtherColor ? (theme === 'dark' ? '#AAAAAA' : '#777777') : color;
+  const contentColor = tabTextColor || (theme === 'dark' ? '#FFFFFF' : '#333333');
+  const otherContentColor = tabTextColor || (theme === 'dark' ? '#AAAAAA' : '#777777');
+  const contentWeight = tabSet?.isBold ? 'bold' : 'normal';
+  const contentFontStyle = tabSet?.isItalic ? 'italic' : 'normal';
   const img = char.imageUrl;
   const isSecret = format === 'secret';
   const tabColor = tabSet?.color || '#ffd400';
-  const isNarration = log.charId === narrationCharacter && format === 'main';
+  const isNarration = log.charId === narrationCharacter && (format === 'main' || (enableSecretNarration && format === 'secret'));
 
   const narrationMargin = Math.floor(effectiveBlockSpacing * 1.2 + lineHeight * 6);
 
   let displayContent = log.content;
   if (log.isCommand) {
+    displayContent = displayContent.replace(/シークレットダイス\s*\?\?\?/g, 'Secret dice 🎲');
     displayContent = displayContent.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/(?:\r\n|\r|\n)+/g, ' ');
   }
 
@@ -422,7 +691,7 @@ export const LogItem = React.memo(({
   }
   
   const safeHtmlContentPieces = useMemo(() => {
-    return formattedPieces.map(html => DOMPurify.sanitize(html, { ADD_ATTR: ['target'] }));
+    return formattedPieces.map(html => DOMPurify.sanitize(html, { ADD_ATTR: ['target', 'style'] }));
   }, [formattedPieces]);
   const safeHtmlContent = safeHtmlContentPieces[0] || '';
   const safeHtmlName = useMemo(() => DOMPurify.sanitize(displayName), [displayName]);
@@ -668,6 +937,123 @@ export const LogItem = React.memo(({
     return itemMarginTop;
   }, [hasSpecialDividerAboveAndNoBadge, itemMarginTop]);
 
+  if (log.isBgmBlock) {
+    const bgmData = log.bgmData || {};
+    
+    if (isEditing) {
+      return (
+        <div className="w-full relative">
+          <BgmInlineInput
+            initialTitle={bgmData.title}
+            initialUrl={bgmData.url}
+            initialUseTimestamp={bgmData.useTimestamp}
+            isEditing={true}
+            onSave={(updated) => {
+              if (onBatchUpdateLog) onBatchUpdateLog(log.id, { bgmData: { ...bgmData, ...updated } });
+              setEditingLogId(null);
+            }}
+            onCancel={() => setEditingLogId(null)}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div 
+        className={cn("log-item-wrapper relative group/item w-full min-h-[30px] flex flex-col justify-center", isHighlighted ? 'bg-[#ffd400]/20' : '')}
+        style={{
+          marginTop: `${Math.floor(effectiveBlockSpacing / 2)}px`,
+          marginBottom: `${Math.ceil(effectiveBlockSpacing / 2)}px`
+        }}
+      >
+        {isCurrentMatch && (
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#e6005c] shadow-[0_0_10px_rgba(230,0,92,0.5)] z-10" />
+        )}
+        <div className="w-full flex justify-center py-2 relative group/img">
+          <BgmItem
+            id={bgmData.id || log.id}
+            title={bgmData.title || '🎧 BGM'}
+            url={bgmData.url || ''}
+            videoId={bgmData.videoId}
+            startTime={bgmData.startTime}
+            useTimestamp={bgmData.useTimestamp}
+            isPlaying={currentPlayingBgmId === (bgmData.id || log.id) && isGlobalBgmPlaying}
+            onSelectBgm={(track) => onSelectBgmTrack && onSelectBgmTrack(track)}
+          />
+        </div>
+        {!isAnyEditing && (
+          <div 
+            onMouseEnter={() => setIsHoveringButton(true)}
+            onMouseLeave={() => setIsHoveringButton(false)}
+            className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
+          >
+            <div className="bg-black/85 text-white/95 border border-white/10 rounded px-1.5 py-0.5 text-[9.5px] font-bold font-mono tracking-wider shadow-md leading-none">
+              #{originalLogIndex + 1}
+            </div>
+
+            <button
+              onClick={() => onMoveLog(log.id, 'up')}
+              disabled={idx === 0}
+              className={cn(
+                "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                theme === 'dark' 
+                  ? "bg-stone-800/80 text-white/60 border-white/10" 
+                  : "bg-white/90 text-stone-600 border-stone-200",
+                idx === 0 
+                  ? "opacity-30 cursor-not-allowed" 
+                  : (theme === 'dark' ? "hover:text-white" : "hover:text-stone-900")
+              )}
+              title="위로 이동"
+            >
+              <ArrowUp className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => onMoveLog(log.id, 'down')}
+              disabled={idx === mergedLogsCount - 1}
+              className={cn(
+                "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                theme === 'dark' 
+                  ? "bg-stone-800/80 text-white/60 border-white/10" 
+                  : "bg-white/90 text-stone-600 border-stone-200",
+                idx === mergedLogsCount - 1 
+                  ? "opacity-30 cursor-not-allowed" 
+                  : (theme === 'dark' ? "hover:text-white" : "hover:text-stone-900")
+              )}
+              title="아래로 이동"
+            >
+              <ArrowDown className="w-3 h-3" />
+            </button>
+
+            <button
+              onClick={() => setEditingLogId(log.id)}
+              className={cn(
+                "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                theme === 'dark'
+                  ? "bg-stone-800/80 text-white/60 hover:text-white border-white/10"
+                  : "bg-white/90 text-stone-600 hover:text-stone-900 border-stone-200"
+              )}
+              title="수정"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => onDeleteLog(log.id)}
+              className={cn(
+                "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                theme === 'dark'
+                  ? "bg-stone-800/80 text-white/60 hover:text-red-400 border-white/10"
+                  : "bg-white/90 text-stone-600 hover:text-red-500 border-stone-200"
+              )}
+              title="삭제"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (log.isIllustration) {
     const ill = log.illustration || {
       id: log.id,
@@ -737,14 +1123,63 @@ export const LogItem = React.memo(({
           </div>
         )}
 
-        {!log.isIllustration && (
+        {!isAnyEditing && (
           <div 
             onMouseEnter={() => setIsHoveringButton(true)}
             onMouseLeave={() => setIsHoveringButton(false)}
             className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
           >
+            <div className="bg-black/85 text-white/95 border border-white/10 rounded px-1.5 py-0.5 text-[9.5px] font-bold font-mono tracking-wider shadow-md leading-none">
+              #{originalLogIndex + 1}
+            </div>
+
+            <button
+              onClick={() => onMoveLog(log.id, 'up')}
+              disabled={idx === 0}
+              className={cn(
+                "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                theme === 'dark' 
+                  ? "bg-stone-800/80 text-white/60 border-white/10" 
+                  : "bg-white/90 text-stone-600 border-stone-200",
+                idx === 0 
+                  ? "opacity-30 cursor-not-allowed" 
+                  : (theme === 'dark' ? "hover:text-white" : "hover:text-stone-900")
+              )}
+              title="위로 이동"
+            >
+              <ArrowUp className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => onMoveLog(log.id, 'down')}
+              disabled={idx === mergedLogsCount - 1}
+              className={cn(
+                "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                theme === 'dark' 
+                  ? "bg-stone-800/80 text-white/60 border-white/10" 
+                  : "bg-white/90 text-stone-600 border-stone-200",
+                idx === mergedLogsCount - 1 
+                  ? "opacity-30 cursor-not-allowed" 
+                  : (theme === 'dark' ? "hover:text-white" : "hover:text-stone-900")
+              )}
+              title="아래로 이동"
+            >
+              <ArrowDown className="w-3 h-3" />
+            </button>
+
+            <button
+              onClick={() => setEditingLogId(log.id)}
+              className={cn(
+                "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+                theme === 'dark'
+                  ? "bg-stone-800/80 text-white/60 hover:text-white border-white/10"
+                  : "bg-white/90 text-stone-600 hover:text-stone-900 border-stone-200"
+              )}
+              title="수정"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
             <button 
-              onClick={() => onDeleteLog(log.id)} 
+              onClick={() => onDeleteLog(log.id)}
               className={cn(
                 "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
                 theme === 'dark' 
@@ -758,7 +1193,55 @@ export const LogItem = React.memo(({
           </div>
         )}
 
-        {illFormat === 'info' ? (
+        {isEditing ? (
+          <div className="w-full flex justify-center py-2 relative">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const url = formData.get('url') as string;
+                if (onUpdateIllustration) {
+                  onUpdateIllustration(ill.id, { url }); // Map to URL for App.tsx
+                }
+                setEditingLogId(null);
+              }}
+              className={cn(
+                "mx-4 my-2 p-4 border border-dashed rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full max-w-lg",
+                theme === 'dark' ? "bg-white/5 border-white/20 text-white" : "bg-stone-50 border-stone-200 text-stone-800 shadow-sm"
+              )}
+            >
+              <input
+                name="url"
+                type="text"
+                defaultValue={ill.url}
+                placeholder="이미지 URL"
+                className={cn(
+                  "px-3 py-2 text-[11px] h-9 rounded-lg border focus:outline-none focus:ring-1 focus:ring-[#e6005c] flex-1",
+                  theme === 'dark' ? 'bg-black/40 border-white/20 text-white placeholder-white/30' : 'bg-white border-stone-200 text-stone-900 placeholder-stone-400'
+                )}
+                required
+              />
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#e6005c] hover:bg-[#ff007f] text-white rounded-lg text-[11px] h-9 font-bold flex-1 sm:flex-none flex items-center justify-center transition-colors"
+                >
+                  저장
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingLogId(null)}
+                  className={cn(
+                    "px-4 py-2 rounded-lg text-[11px] h-9 font-bold flex-1 sm:flex-none flex items-center justify-center transition-colors border",
+                    theme === 'dark' ? "bg-white/10 hover:bg-white/20 border-white/10 text-white" : "bg-white hover:bg-stone-50 border-stone-200 text-stone-700"
+                  )}
+                >
+                  취소
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : illFormat === 'info' ? (
           <div
             style={{
               paddingTop: `${Math.round(12 * scale)}px`,
@@ -805,7 +1288,6 @@ export const LogItem = React.memo(({
               url={ill.url}
               width={ill.width}
               align={ill.align || 'center'}
-              onDelete={() => onUpdateIllustration && onUpdateIllustration(ill.id, { afterLogIndex: null })}
               onUpdateWidth={(w: string) => onUpdateIllustration && onUpdateIllustration(ill.id, { width: w })}
               onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateIllustration && onUpdateIllustration(ill.id, { align: a })}
               paddingSize={0}
@@ -826,7 +1308,6 @@ export const LogItem = React.memo(({
               url={ill.url}
               width={ill.width}
               align={ill.align || 'center'}
-              onDelete={() => onUpdateIllustration && onUpdateIllustration(ill.id, { afterLogIndex: null })}
               onUpdateWidth={(w: string) => onUpdateIllustration && onUpdateIllustration(ill.id, { width: w })}
               onUpdateAlign={(a: 'left' | 'center' | 'right') => onUpdateIllustration && onUpdateIllustration(ill.id, { align: a })}
               paddingSize={0}
@@ -894,7 +1375,7 @@ export const LogItem = React.memo(({
         <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#e6005c] z-40 pointer-events-none" />
       )}
       {idx === 0 && renderBlocks(startBlocks, '__start__', true)}
-      {!isEditing && (
+      {!isEditing && !isAnyEditing && (
         <div 
           onMouseEnter={() => setIsHoveringButton(true)}
           onMouseLeave={() => setIsHoveringButton(false)}
@@ -903,8 +1384,42 @@ export const LogItem = React.memo(({
           <div className="bg-black/85 text-white/95 border border-white/10 rounded px-1.5 py-0.5 text-[9.5px] font-bold font-mono tracking-wider shadow-md leading-none">
             #{originalLogIndex + 1}
           </div>
+          
           <button 
-            onClick={() => { setEditingLogId(log.id); setEditContent(log.content.replace(/<br\s*\/?>/gi, '\n')); setEditCharId(log.charId); }} 
+            onClick={() => onMoveLog(log.id, 'up')}
+            disabled={idx === 0}
+            className={cn(
+              "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+              theme === 'dark' 
+                ? "bg-stone-800/80 text-white/60 border-white/10" 
+                : "bg-white/90 text-stone-600 border-stone-200",
+              idx === 0 
+                ? "opacity-30 cursor-not-allowed" 
+                : (theme === 'dark' ? "hover:text-white" : "hover:text-stone-900")
+            )}
+            title="위로 이동"
+          >
+            <ArrowUp className="w-3 h-3" />
+          </button>
+          <button 
+            onClick={() => onMoveLog(log.id, 'down')}
+            disabled={idx === mergedLogsCount - 1}
+            className={cn(
+              "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
+              theme === 'dark' 
+                ? "bg-stone-800/80 text-white/60 border-white/10" 
+                : "bg-white/90 text-stone-600 border-stone-200",
+              idx === mergedLogsCount - 1 
+                ? "opacity-30 cursor-not-allowed" 
+                : (theme === 'dark' ? "hover:text-white" : "hover:text-stone-900")
+            )}
+            title="아래로 이동"
+          >
+            <ArrowDown className="w-3 h-3" />
+          </button>
+
+          <button 
+            onClick={() => { setEditingLogId(log.id); setEditContent(markdownToHtml(log.content)); setEditCharId(log.charId); }} 
             className={cn(
               "p-1 rounded border shadow-sm backdrop-blur-sm transition-colors",
               theme === 'dark' 
@@ -968,10 +1483,7 @@ export const LogItem = React.memo(({
                 theme === 'dark' ? "bg-black/20 border-white/10" : "bg-stone-100 border-stone-200 shadow-sm"
               )}>
                 {/* Header Control Row (above the Textarea) */}
-                <div className={cn(
-                  "flex items-center justify-between gap-3 pb-1.5 border-b",
-                  theme === 'dark' ? "border-white/5" : "border-stone-200/60"
-                )}>
+                <div className="flex items-center justify-between gap-3 pb-0.5">
                   <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
                     <div className="flex items-center gap-1.5">
                       <span className={cn("text-[10px] whitespace-nowrap font-medium shrink-0", theme === 'dark' ? "text-white/40" : "text-stone-500")}>탭:</span>
@@ -1018,18 +1530,101 @@ export const LogItem = React.memo(({
                   </div>
                 </div>
 
-                {/* Textarea */}
-                <textarea 
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  className={cn(
-                    "w-full text-[13px] p-1.5 rounded outline-none focus:border-[#e6005c] min-h-[64px] transition-colors resize-y",
-                    theme === 'dark' 
-                      ? "bg-black/35 text-white border-white/5" 
-                      : "bg-white text-stone-800 border-stone-200"
+                
+                {/* React Quill Editor */}
+                <div className={cn("quill-editor-container relative", theme === 'dark' ? "is-dark" : "is-light")} style={{ minHeight: '64px' }}>
+                  {/* Custom Slim Quill Toolbar */}
+                  <div 
+                    id={toolbarId} 
+                    className={cn(
+                      "ql-toolbar ql-snow flex items-center flex-wrap gap-0.5 rounded-t-md border border-b-0",
+                      theme === 'dark' ? "bg-[#1f1f25] border-white/15 text-white" : "bg-stone-100 border-stone-300 text-stone-800"
+                    )}
+                    style={{ minHeight: '26px', padding: '3px 6px' }}
+                  >
+                    <span className="ql-formats flex items-center gap-0.5 m-0! p-0!">
+                      <button className="ql-bold" title="굵게" style={{ width: '20px', height: '20px', padding: '1px' }} />
+                      <button className="ql-italic" title="기울임" style={{ width: '20px', height: '20px', padding: '1px' }} />
+                      <button className="ql-underline" title="밑줄" style={{ width: '20px', height: '20px', padding: '1px' }} />
+                      <button className="ql-strike" title="취소선" style={{ width: '20px', height: '20px', padding: '1px' }} />
+                    </span>
+
+                    {/* 깔끔한 세로 구분선 */}
+                    <div className="w-[1px] h-3 bg-stone-200 dark:bg-white/10 mx-1 self-center shrink-0" />
+
+                    <span className="ql-formats flex items-center gap-1 m-0! p-0!">
+                      {/* 글자색 버튼 */}
+                      <button
+                        type="button"
+                        onMouseDown={(e) => handleOpenCustomColor(e, 'foreColor')}
+                        className={cn(
+                          "flex flex-col items-center justify-center rounded transition-colors cursor-pointer hover:bg-stone-200 dark:hover:bg-stone-700/60 p-0.5 shrink-0",
+                          theme === 'dark' ? "text-stone-200" : "text-stone-800"
+                        )}
+                        style={{ width: '20px', height: '20px' }}
+                        title="글자색 선택"
+                      >
+                        <span className="font-serif font-black text-[11px] leading-none">A</span>
+                        <span className="w-3 h-[2px] rounded-full bg-red-500 mt-[1px]" />
+                      </button>
+
+                      {/* 하이라이트/배경색 버튼 */}
+                      <button
+                        type="button"
+                        onMouseDown={(e) => handleOpenCustomColor(e, 'backColor')}
+                        className={cn(
+                          "flex flex-col items-center justify-center rounded transition-colors cursor-pointer hover:bg-stone-200 dark:hover:bg-stone-700/60 p-0.5 shrink-0",
+                          theme === 'dark' ? "text-stone-200" : "text-stone-800"
+                        )}
+                        style={{ width: '20px', height: '20px' }}
+                        title="하이라이트색 선택"
+                      >
+                        <span className="font-serif font-black text-[11px] leading-none bg-yellow-300 dark:bg-yellow-400 text-stone-900 px-0.5 rounded-2xs">A</span>
+                      </button>
+                    </span>
+
+                    {/* 깔끔한 세로 구분선 */}
+                    <div className="w-[1px] h-3 bg-stone-200 dark:bg-white/10 mx-1 self-center shrink-0" />
+
+                    <span className="ql-formats flex items-center gap-0.5 m-0! p-0!">
+                      <button className="ql-clean" title="서식 지우기" style={{ width: '20px', height: '20px', padding: '1px' }} />
+                    </span>
+                  </div>
+
+                  <ReactQuillComponent 
+                    ref={quillRef}
+                    value={editContent}
+                    onChange={setEditContent}
+                    modules={quillModules}
+                    theme="snow"
+                    className={cn(
+                      "w-full text-[13px] rounded-b-md outline-none",
+                      theme === 'dark' ? "bg-black/35 text-white quill-dark" : "bg-white text-stone-800"
+                    )}
+                  />
+
+                  {customColorPickerTarget && customColorTriggerRect && (
+                    <EditorColorPickerPopup
+                      title={customColorPickerTarget === 'foreColor' ? '글자색 선택' : '하이라이트색 선택'}
+                      color={customColorVal}
+                      triggerRect={customColorTriggerRect}
+                      onClose={() => setCustomColorPickerTarget(null)}
+                      onChange={(color) => setCustomColorVal(color)}
+                      onChangeComplete={(color) => {
+                        setCustomColorVal(color);
+                        const quill = quillRef.current?.getEditor();
+                        if (quill) {
+                          if (savedQuillRange.current) {
+                            quill.setSelection(savedQuillRange.current.index, savedQuillRange.current.length);
+                          }
+                          const formatName = customColorPickerTarget === 'foreColor' ? 'color' : 'background';
+                          quill.format(formatName, color);
+                        }
+                        setCustomColorPickerTarget(null);
+                      }}
+                    />
                   )}
-                  autoFocus
-                />
+                </div>
               </div>
             </div>
           ) : log.isCommand ? (
@@ -1046,7 +1641,44 @@ export const LogItem = React.memo(({
               letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px`
             }}>
               {log.name !== 'system' && <span style={{ color, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", fontSize: `${scaledTextFontSize}px` }}>[ <span dangerouslySetInnerHTML={{ __html: safeHtmlName }} /> ]</span>}
-              <span style={{ color: theme === 'dark' ? '#EEEEEE' : '#333333', fontSize: `${scaledTextFontSize}px`, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', wordBreak: 'keep-all', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
+              <span style={{ color: theme === 'dark' ? '#FFFFFF' : '#333333', fontSize: `${scaledTextFontSize}px`, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', wordBreak: 'keep-all', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
+            </div>
+          ) : (isNarration && narrationFormat === 'style3') ? (
+            <div key="narration-style2" className={cn(
+              log.isContinuation && "pt-1 border-t-0 rounded-t-none",
+              isNextContinuation && "pb-1 border-b-0 rounded-b-none"
+            )} style={{ 
+              display: 'flex',
+              gap: '16px', 
+              paddingTop: log.isContinuation ? undefined : `${paddingVertical}px`,
+              paddingBottom: isNextContinuation ? undefined : `${mergeWithNext ? 4 : paddingVertical}px`,
+              paddingLeft: `${r(paddingHorizontal)}px`,
+              paddingRight: `${r(paddingHorizontal)}px`,
+              alignItems: 'flex-start',
+              background: isSecret ? getSecretBg(tabColor) : 'transparent',
+              borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
+              marginTop: isSecret ? (hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px')) : '0',
+              marginBottom: isSecret ? (mergeWithNext ? '0' : (hasSpecialDividerBelow ? '0' : '4px')) : '0',
+              marginLeft: isSecret ? `${r(paddingHorizontal)}px` : '0',
+              marginRight: isSecret ? `${r(paddingHorizontal)}px` : '0',
+              borderTopLeftRadius: mergeWithPrev && isSecret ? '0' : (isSecret ? '4px' : '0'),
+              borderTopRightRadius: mergeWithPrev && isSecret ? '0' : (isSecret ? '4px' : '0'),
+              borderBottomLeftRadius: mergeWithNext && isSecret ? '0' : (isSecret ? '4px' : '0'),
+              borderBottomRightRadius: mergeWithNext && isSecret ? '0' : (isSecret ? '4px' : '0')
+            }}>
+              <div style={{ fontWeight: nameWeight, fontStyle: nameFontStyle, color, fontSize: `${nameSize}px`, width: 'var(--name-col-width, 120px)', flexShrink: 0, textAlign: 'right' }}>
+                {!log.isContinuation && (
+                  <span className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName + ':' }} />
+                )}
+              </div>
+              <div style={{ flex: 1, minWidth: 0, lineHeight: lineHeight, letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px` }}>
+                {safeHtmlContentPieces.map((piece, pIdx) => (
+                  <React.Fragment key={`${log.id}-narration-s2-${pIdx}`}>
+                    {pIdx > 0 && <div style={{ marginTop: '0.8em' }}></div>}
+                    <div dangerouslySetInnerHTML={{ __html: piece }} style={{ color: contentColor, fontSize: `${scaledTextFontSize}px`, fontWeight: tabSet?.isBold !== undefined ? contentWeight : 'bold', fontStyle: contentFontStyle, whiteSpace: 'pre-wrap', wordBreak: 'keep-all', overflowWrap: 'break-word' }} />
+                  </React.Fragment>
+                ))}
+              </div>
             </div>
           ) : isNarration ? (
             <div key="narration" className="narration-row" style={{ 
@@ -1055,12 +1687,22 @@ export const LogItem = React.memo(({
               paddingLeft: `${r(paddingHorizontal)}px`,
               paddingRight: `${r(paddingHorizontal)}px`,
               textAlign: 'center',
-              color: theme === 'dark' ? '#EEEEEE' : '#333333',
+              color: contentColor,
               lineHeight: lineHeight,
               fontSize: `${scaledTextFontSize}px`,
               letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px`,
-              fontWeight: 'bold',
-              fontStyle: 'italic'
+              fontWeight: tabSet?.isBold !== undefined ? contentWeight : 'bold',
+              fontStyle: tabSet?.isItalic !== undefined ? contentFontStyle : (narrationFormat === 'style1' ? 'italic' : 'normal'),
+              background: isSecret ? getSecretBg(tabColor) : 'transparent',
+              borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
+              marginTop: isSecret ? (hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px')) : '0',
+              marginBottom: isSecret ? (mergeWithNext ? '0' : (hasSpecialDividerBelow ? '0' : '4px')) : '0',
+              marginLeft: isSecret ? `${r(paddingHorizontal)}px` : '0',
+              marginRight: isSecret ? `${r(paddingHorizontal)}px` : '0',
+              borderTopLeftRadius: mergeWithPrev && isSecret ? '0' : (isSecret ? '4px' : '0'),
+              borderTopRightRadius: mergeWithPrev && isSecret ? '0' : (isSecret ? '4px' : '0'),
+              borderBottomLeftRadius: mergeWithNext && isSecret ? '0' : (isSecret ? '4px' : '0'),
+              borderBottomRightRadius: mergeWithNext && isSecret ? '0' : (isSecret ? '4px' : '0')
             }}>
               {safeHtmlContentPieces.map((piece, pIdx) => (
                 <React.Fragment key={`${log.id}-narration-${pIdx}`}>
@@ -1072,9 +1714,9 @@ export const LogItem = React.memo(({
           ) : format === 'other' ? (
             <div key="other" style={{ padding: `2px ${r(paddingHorizontal)}px`, display: 'flex', gap: `${r(gapSize / 1.5)}px`, alignItems: 'baseline', lineHeight: lineHeight, letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px` }}>
               <div className="relative inline-block flex-shrink-0" style={{ opacity: log.isContinuation ? 0 : 1, pointerEvents: log.isContinuation ? 'none' : 'auto', userSelect: log.isContinuation ? 'none' : 'auto' }}>
-                <span style={{ fontWeight: 'bold', color: otherNameColor, fontSize: `${nameSize}px` }} className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName }} />
+                <span style={{ fontWeight: nameWeight, fontStyle: nameFontStyle, color: otherNameColor, fontSize: `${nameSize}px` }} className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName }} />
               </div>
-              <div style={{ color: theme === 'dark' ? '#AAAAAA' : '#777777', fontSize: `${scaledTextFontSize}px`, whiteSpace: 'pre-wrap', wordBreak: 'keep-all', overflowWrap: 'break-word' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
+              <div style={{ flex: 1, minWidth: 0, color: otherContentColor, fontWeight: contentWeight, fontStyle: contentFontStyle, fontSize: `${scaledTextFontSize}px`, whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'anywhere' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
             </div>
           ) : format === 'info' ? (
             <div key="info" className={cn(
@@ -1100,10 +1742,10 @@ export const LogItem = React.memo(({
             }}>
               {!log.isContinuation && (
                 <div className="relative inline-block" style={{ marginBottom: Math.max(4, Math.ceil(scaledTextFontSize * (lineHeight >= 1.4 ? 0.3 : 0.5))) + 'px' }}>
-                  <span style={{ fontWeight: 'bold', color, display: 'block', fontSize: `${nameSize}px` }} className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName }} />
+                  <span style={{ fontWeight: nameWeight, fontStyle: nameFontStyle, color, display: 'block', fontSize: `${nameSize}px` }} className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName }} />
                 </div>
               )}
-              <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', fontSize: `${scaledTextFontSize}px`, whiteSpace: 'pre-wrap', wordBreak: 'keep-all', overflowWrap: 'break-word' }} />
+              <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: tabTextColor || (theme === 'dark' ? 'inherit' : '#333333'), fontWeight: contentWeight, fontStyle: contentFontStyle, fontSize: `${scaledTextFontSize}px`, whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'anywhere' }} />
             </div>
           ) : (
             <div key="main" className={cn(
@@ -1130,13 +1772,13 @@ export const LogItem = React.memo(({
             }}>
               {hideAllAvatars ? (
                 <>
-                  <div style={{ fontWeight: 'bold', color, fontSize: `${nameSize}px`, width: 'var(--name-col-width, 120px)', flexShrink: 0, textAlign: 'right' }}>
+                  <div style={{ fontWeight: nameWeight, fontStyle: nameFontStyle, color, fontSize: `${nameSize}px`, width: 'var(--name-col-width, 120px)', flexShrink: 0, textAlign: 'right' }}>
                     {!log.isContinuation && (
                       <span className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName + ':' }} />
                     )}
                   </div>
                   <div style={{ flex: 1, minWidth: 0, lineHeight: lineHeight, letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px` }}>
-                    <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', fontSize: `${scaledTextFontSize}px`, whiteSpace: 'pre-wrap', wordBreak: 'keep-all', overflowWrap: 'break-word' }} />
+                    <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: tabTextColor || (theme === 'dark' ? 'inherit' : '#333333'), fontWeight: contentWeight, fontStyle: contentFontStyle, fontSize: `${scaledTextFontSize}px`, whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'anywhere' }} />
                   </div>
                 </>
               ) : (
@@ -1144,18 +1786,18 @@ export const LogItem = React.memo(({
                   {log.isContinuation ? (
                     <div style={{ width: `${avatarSize}px`, flexShrink: 0 }} />
                   ) : (
-                    <LogAvatar img={img} theme={theme} avatarSize={avatarSize} hideEmptyAvatars={hideEmptyAvatars} />
+                    <LogAvatar img={img} theme={theme} avatarSize={avatarSize} hideEmptyAvatars={hideEmptyAvatars} cropFaceTop={cropFaceTop} />
                   )}
-                  <div style={{ flexGrow: 1, lineHeight: lineHeight, letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px` }}>
+                  <div style={{ flex: 1, minWidth: 0, lineHeight: lineHeight, letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px` }}>
                     {!log.isContinuation && (
                       <div 
                         className="relative inline-block"
-                        style={{ fontWeight: 'bold', color, fontSize: `${nameSize}px`, marginBottom: Math.max(4, Math.ceil(scaledTextFontSize * (lineHeight >= 1.4 ? 0.3 : 0.5))) + 'px' }}
+                        style={{ fontWeight: nameWeight, fontStyle: nameFontStyle, color, fontSize: `${nameSize}px`, marginBottom: Math.max(4, Math.ceil(scaledTextFontSize * (lineHeight >= 1.4 ? 0.3 : 0.5))) + 'px' }}
                       >
                         <span className="cursor-default" dangerouslySetInnerHTML={{ __html: safeHtmlName }} />
                       </div>
                     )}
-                    <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: theme === 'dark' ? 'inherit' : '#333333', fontSize: `${scaledTextFontSize}px`, whiteSpace: 'pre-wrap', wordBreak: 'keep-all', overflowWrap: 'break-word' }} />
+                    <div dangerouslySetInnerHTML={{ __html: safeHtmlContent }} style={{ color: tabTextColor || (theme === 'dark' ? 'inherit' : '#333333'), fontWeight: contentWeight, fontStyle: contentFontStyle, fontSize: `${scaledTextFontSize}px`, whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'anywhere' }} />
                   </div>
                 </>
               )}

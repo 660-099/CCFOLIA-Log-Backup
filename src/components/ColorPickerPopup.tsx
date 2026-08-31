@@ -39,7 +39,7 @@ const DEFAULT_COLORS = [
   '#ffc107', '#ff9800', '#ff5722', '#795548', '#607d8b', '#9e9e9e', '#e0e0e0'
 ];
 
-export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose, onChange }: ColorPickerPopupProps) => {
+export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose, onChange, onChangeComplete }: ColorPickerPopupProps) => {
   const [mode, setMode] = useState<'hex' | 'rgb' | 'hsl'>('hex');
   const [isEditing, setIsEditing] = useState(false);
   const [selectedColor, setSelectedColor] = useState(color);
@@ -123,7 +123,7 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
               color={selectedColor}
               onChange={(newColor) => {
                 setSelectedColor(newColor);
-                onChange(newColor);
+                if (onChange) onChange(newColor);
               }}
             />
           </div>
@@ -243,7 +243,11 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
         </div>
 
         <button 
-          onClick={onClose}
+          onClick={() => {
+            if (onChangeComplete) onChangeComplete(selectedColor);
+            else onChange(selectedColor);
+            onClose();
+          }}
           className="w-full py-1.5 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-xl text-[11px] font-bold transition-all shadow-lg shadow-pink-500/20 active:scale-95"
         >
           확인

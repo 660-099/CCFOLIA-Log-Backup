@@ -21,6 +21,15 @@ export interface LogEntry {
   align?: 'left' | 'center' | 'right';
   imageName?: string;
   illustration?: Illustration;
+  isBgmBlock?: boolean;
+  bgmData?: {
+    id?: string;
+    title?: string;
+    url: string;
+    videoId?: string;
+    startTime?: number;
+    useTimestamp?: boolean;
+  };
 }
 
 export interface CharSetting {
@@ -38,6 +47,9 @@ export interface TabSetting {
   format: TabFormat;
   visible: boolean;
   color?: string; // For secret format
+  textColor?: string;
+  isBold?: boolean;
+  isItalic?: boolean;
 }
 
 export interface CharacterLibraryItem {
@@ -55,6 +67,7 @@ export interface ColorPickerPopupProps {
   extractedColors: string[];
   triggerRect: DOMRect;
   onChange: (newColor: string) => void;
+  onChangeComplete?: (newColor: string) => void;
   onClose: () => void;
 }
 
@@ -66,5 +79,12 @@ export interface Illustration {
   tabOverride: string;
   width?: string;
   align?: 'left' | 'center' | 'right';
+}
+
+export interface LogFile {
+  id: string;
+  name: string;
+  logs: LogEntry[];
+  insertedBlocks?: Record<number | string, { type: 'split' | 'image'; name?: string; src?: string }>;
 }
 

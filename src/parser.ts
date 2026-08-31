@@ -72,6 +72,10 @@ export const parseLogFile = async (file: File) => {
     }
 
     const isCommand = content.includes('|') || content.includes('＞') || content.includes('→') || content.includes('choice[');
+    
+    if (isCommand) {
+      content = content.replace(/シークレットダイス\s*\?\?\?/g, 'Secret dice 🎲');
+    }
 
     // Identity Extraction
     let tabId = p.getAttribute('data-tab-id');

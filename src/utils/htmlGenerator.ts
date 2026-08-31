@@ -3,12 +3,24 @@ import { cn, r, linkifyAndFormat } from '../utils';
 import DOMPurify from 'dompurify';
 import { fonts } from '../constants';
 import { splitNarration } from './textTokenizer';
+import { parseYoutubeUrl } from './youtube';
 
 const hexToRgbValues = (hex: string) => {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return { r, g, b };
+};
+
+export const isValidUrl = (url: string) => {
+  if (!url) return false;
+  return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image/');
+};
+
+export const isValidBgm = (block: any) => {
+  if (!block || block.type !== 'bgm') return false;
+  const parsed = parseYoutubeUrl(block.url, block.useTimestamp);
+  return Boolean(block.videoId || parsed.videoId);
 };
 
 export const generateFinalHtmlStr = (
@@ -25,9 +37,12 @@ export const generateFinalHtmlStr = (
   fontFamily: string,
   disableOtherColor: boolean,
   hideEmptyAvatars: boolean,
+  cropFaceTop: boolean,
   hideAllAvatars: boolean,
   narrationCharacter: string | null,
   enableSentenceSpacing: boolean,
+  enableSecretNarration: boolean,
+  narrationFormat: 'style1' | 'style2' | 'style3',
   insertedBlocks: Record<string, any[]>,
   mergeTabs: Set<string>,
   mergeTabStyles: Set<string>,
@@ -82,7 +97,7 @@ export const generateFinalHtmlStr = (
   const sectionIds = new Set(filteredLogs.map(l => l.sectionId).filter(Boolean));
   const isFullExport = sectionIds.size > 1;
   const bgColor = isDark ? darkBgColor : lightBgColor;
-  const textColor = isDark ? '#EEEEEE' : '#1a1a1a';
+  const textColor = isDark ? '#FFFFFF' : '#1a1a1a';
   const otherTextColor = isDark ? '#AAAAAA' : '#757575';
   const borderColor = isDark ? '#444' : '#e5e5e5';
   const infoBg = isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)';
@@ -200,18 +215,26 @@ export const generateFinalHtmlStr = (
         #f-btn {
           position: fixed !important; top: 20px; right: 20px;
           width: 40px; height: 40px; background: ${isDark ? '#1a1a1a' : '#f5f5f5'}; 
-          border: 1.5px solid ${borderColor}; border-radius: 6px;
+          border: 1.5px solid ${borderColor}; border-radius: 8px;
           cursor: pointer; z-index: 1000001;
           display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px;
+          transition: transform 0.2s ease, background-color 0.2s ease;
         }
+        #f-btn:hover { transform: scale(1.05); }
         #f-btn span { display: block; width: 20px; height: 1.5px; background: ${isDark ? '#888' : '#666'}; }
         #f-menu {
-          position: fixed !important; top: 65px; right: 20px;
-          width: 180px; max-height: 70vh; 
+          position: fixed !important; top: 68px; right: 20px;
+          width: 200px; max-height: 0; opacity: 0;
+          overflow: hidden; pointer-events: none;
+          transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, padding 0.25s ease;
           background: ${isDark ? 'rgba(30, 30, 30, 0.98)' : 'rgba(255, 255, 255, 0.98)'}; border: 1px solid ${borderColor}; 
-          border-radius: 6px; padding: 15px; 
-          display: none; overflow-y: auto; z-index: 1000000;
+          border-radius: 10px; padding: 0 15px; 
+          z-index: 1000000;
           box-shadow: -5px 5px 25px rgba(0,0,0,0.5);
+        }
+        #f-menu.expanded {
+          max-height: 70vh; opacity: 1; padding: 15px;
+          overflow-y: auto; pointer-events: auto;
         }
         #f-menu::-webkit-scrollbar { width: 4px; }
         #f-menu::-webkit-scrollbar-thumb { background: ${borderColor}; border-radius: 10px; }
@@ -264,9 +287,12 @@ export const generateFinalHtmlStr = (
           
           ${!isFixed ? `
           const b = id('f-btn'), m = id('f-menu');
-          document.body.appendChild(b); document.body.appendChild(m);
-          b.onclick = (e) => { e.stopPropagation(); m.style.display = (m.style.display === 'block') ? 'none' : 'block'; };
-          document.addEventListener('click', (e) => { if (!m.contains(e.target) && e.target !== b) m.style.display = 'none'; });
+          if (b && m) {
+            document.body.appendChild(b);
+            document.body.appendChild(m);
+            b.onclick = (e) => { e.stopPropagation(); m.classList.toggle('expanded'); };
+            document.addEventListener('click', (e) => { if (!m.contains(e.target) && e.target !== b) m.classList.remove('expanded'); });
+          }
           ` : ''}
           
           const update = () => {
@@ -335,11 +361,12 @@ export const generateFinalHtmlStr = (
   }
 
   const textResetCSS = `
-    .c-ct :is(p, span, a, b, strong, i, em, h1, h2, h3, h4, h5, h6, .m-c, .o-c, .m-nm, .o-nm, .n-r, .n-sr, .c-tx) {
+    .c-ct :is(p, a, b, strong, i, em, h1, h2, h3, h4, h5, h6, .m-c, .o-c, .m-nm, .o-nm, .n-r, .n-sr, .c-tx) {
       background-color: transparent !important;
     }
     .s-p { margin-top: 4px; }
     .s-p-nr { margin-top: 10px; }
+    .c-ct a, .c-ct a:visited, .c-ct a:hover, .c-ct a:active { color: inherit !important; text-decoration: underline !important; }
     .s-p-ob { margin-top: 0.8em; }
   `;
 
@@ -359,7 +386,7 @@ export const generateFinalHtmlStr = (
     .join('\n');
 
   let computedNameWidth = 120;
-  if (hideAllAvatars && typeof document !== 'undefined') {
+  if ((hideAllAvatars || narrationFormat === 'style2') && typeof document !== 'undefined') {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (ctx) {
@@ -368,12 +395,15 @@ export const generateFinalHtmlStr = (
       ctx.font = `bold ${nameSizePixel}px ${fw}`;
       let mw = 0;
       for (const log of filteredLogs) {
-        if (log.charId !== narrationCharacter && !log.isContinuation) {
-          const w = ctx.measureText(log.name + ':').width;
-          if (w > mw) mw = w;
+        if (!log.isContinuation) {
+          const isNarration = log.charId === narrationCharacter;
+          if (hideAllAvatars || (isNarration && narrationFormat === 'style2')) {
+            const w = ctx.measureText(log.name + ':').width;
+            if (w > mw) mw = w;
+          }
         }
       }
-      computedNameWidth = Math.min(Math.max(48, Math.ceil(mw + 8)), 120);
+      computedNameWidth = Math.min(Math.max(20, Math.ceil(mw + 4)), 160);
     }
   }
 
@@ -418,7 +448,7 @@ export const generateFinalHtmlStr = (
 
     .m-a { 
       width: ${avatarSize}px; height: ${avatarSize}px; flex-shrink: 0; 
-      background-color: ${avatarPlaceholder}; border-radius: 4px; object-fit: contain;
+      background-color: ${avatarPlaceholder}; border-radius: 4px; object-fit: ${cropFaceTop ? 'cover' : 'contain'}; object-position: ${cropFaceTop ? 'top' : 'center'};
     }
     .m-b { flex-grow: 1; line-height: ${lineHeight}; }
     .m-nm { font-weight: bold; font-size: ${r(textFontSize * 0.96)}px; margin-bottom: ${Math.max(4, Math.ceil(textFontSize * (lineHeight >= 1.4 ? 0.3 : 0.5)))}px; display: block; }
@@ -443,8 +473,8 @@ export const generateFinalHtmlStr = (
     }
     .c-tx { font-family: 'NanumGothicCodingLigature', monospace; color: ${textColor}; font-weight: bold; line-height: 1.6; }
 
-    .n-r { text-align: center; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: italic; }
-    .n-sr { text-align: center; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: italic; padding: ${s(2)}px ${paddingHorizontal}px; margin-bottom: 0px; }
+    .n-r { text-align: ${'center'}; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: ${narrationFormat === 'style1' ? 'italic' : 'normal'}; }
+    .n-sr { text-align: ${'center'}; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: ${narrationFormat === 'style1' ? 'italic' : 'normal'}; padding: ${s(2)}px ${paddingHorizontal}px; margin-bottom: 0px; }
 
     .c-dv { display: flex; align-items: center; justify-content: stretch; pointer-events: none; margin-left: 0; margin-right: 0; padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px; }
     .c-dv-ib { margin-left: ${paddingHorizontal}px; margin-right: ${paddingHorizontal}px; padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px; }
@@ -481,9 +511,27 @@ export const generateFinalHtmlStr = (
         const align = (typeof block === 'string' ? 'center' : block.align) || 'center';
         const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
         const width = typeof block === 'string' ? undefined : block.width;
-        const widthStyle = width ? `width: ${width}px;` : 'max-width: 100%;';
-        html += `<div class="c-e" style="${cleanStyle(`display: flex; justify-content: ${justify}; margin: 10px ${s(15.6)}px`)}">
-          <img src="${url}" style="${cleanStyle(`${widthStyle} border-radius: 8px; display: block`)}" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+        let widthStyle = 'max-width:100%;';
+        if (width) {
+          const widthStr = String(width);
+          widthStyle = widthStr.endsWith('px') || widthStr.endsWith('%') ? `width:${widthStr};` : `width:${widthStr}px;`;
+        }
+        html += `<div class="c-e" style="${cleanStyle(`display:flex;justify-content:${justify};margin:10px ${s(15.6)}px`)}">
+          <img src="${url}" style="${cleanStyle(`${widthStyle}border-radius:8px;display:block`)}" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+        </div>`;
+      } else if (block.type === 'bgm' && isValidBgm(block)) {
+        const bgmTitle = block.title || '🎧 BGM';
+        const parsed = parseYoutubeUrl(block.url, block.useTimestamp);
+        const videoId = block.videoId || parsed.videoId || '';
+        const startTime = block.startTime || parsed.startTime || 0;
+        const safeTitle = bgmTitle.replace(/"/g, '&quot;');
+        
+        html += `<div style="${cleanStyle(`position:relative;margin-top:0px;margin-bottom:0px;`)}">
+          <div class="c-i bgm-center-wrapper" style="display:flex;justify-content:center;align-items:center;width:100%;margin:12px 0;">
+            <div class="custom-bgm" data-vid="${videoId}" data-start="${startTime}" data-title="${safeTitle}" onclick="triggerBGM(event, this)">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> <span>${bgmTitle}</span>
+            </div>
+          </div>
         </div>`;
       }
     });
@@ -494,6 +542,33 @@ export const generateFinalHtmlStr = (
 
   (originalLogs || []).forEach((log, idx) => {
     if (log.isUnplaced) return; // Skip unplaced illustrations
+
+    if (log.isBgmBlock) {
+      const bgmLogEntry: any = {
+        id: log.id,
+        isBgmBlock: true,
+        bgmData: log.bgmData,
+        color: '',
+        tabId: 'main',
+        tab: tabSettings['main']?.name || '메인',
+        charId: 'system',
+        name: '',
+        content: '',
+        isCommand: false,
+        isContinuation: false,
+        isHiddenContent: false,
+        sectionId: log.sectionId
+      };
+      finalLogsSequence.push(bgmLogEntry);
+      prevLogForContinuation = bgmLogEntry;
+      return;
+    }
+
+    if (log.isBgmBlock) {
+      finalLogsSequence.push({ ...log, sectionId: log.sectionId });
+      prevLogForContinuation = log;
+      return;
+    }
 
     if (log.isIllustration) {
       let resolvedTabId = log.tabOverride;
@@ -647,15 +722,14 @@ export const generateFinalHtmlStr = (
   });
 
   const chunks: { logs: any[], stableId: string, blocksAfter: any[], isHidden: boolean }[] = [];
-  
-  const isValidUrl = (url: string) => {
-    if (!url) return false;
-    return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image/');
-  };
 
   finalLogsSequence.forEach((log) => {
     const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
-    const currentBlocks = (insertedBlocks[stableId] || []).filter(b => b.type === 'split' || (b.type === 'image' && isValidUrl(b.url)));
+    const currentBlocks = (insertedBlocks[stableId] || []).filter(b => 
+      b.type === 'split' || 
+      (b.type === 'image' && isValidUrl(b.url)) ||
+      (b.type === 'bgm' && isValidBgm(b))
+    );
     
     if (log.isContinuation && chunks.length > 0 && !log.isHiddenContent) {
       chunks[chunks.length - 1].logs.push(log);
@@ -789,6 +863,44 @@ export const generateFinalHtmlStr = (
 
   chunks.forEach((chunk, chunkIdx) => {
     const log = chunk.logs[0];
+
+    let nextVisibleChunkIdx = chunkIdx + 1;
+    while (nextVisibleChunkIdx < chunks.length && chunks[nextVisibleChunkIdx].isHidden) {
+      nextVisibleChunkIdx++;
+    }
+    const nextVisibleChunk = nextVisibleChunkIdx < chunks.length ? chunks[nextVisibleChunkIdx] : null;
+
+    if (log.isBgmBlock) {
+      const bgmData = log.bgmData || {};
+      const parsed = parseYoutubeUrl(bgmData.url, bgmData.useTimestamp);
+      const videoId = bgmData.videoId || parsed.videoId;
+      const startTime = bgmData.startTime || parsed.startTime || 0;
+      if (videoId) {
+        const isFilterEnabled = filterBarMode !== 'none';
+        const bgmAttrs = isFilterEnabled ? ` d-t="main" d-c="system" class="c-e"` : '';
+        const bgmTitle = bgmData.title || '🎧 BGM';
+        const safeTitle = bgmTitle.replace(/"/g, '&quot;').replace(/'/g, "\\'");
+        
+        const hasDividerBelow = getHasDividerBetween(chunk, nextVisibleChunk);
+        let dividerHtml = '';
+        if (hasDividerBelow) {
+          const borderStyleColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+          const dividerInStyle = isInline ? `width:100%;border-bottom:1px solid;border-color:${borderStyleColor};` : `border-color:${borderStyleColor};`;
+          dividerHtml = `<div class="c-dv" style="${cleanStyle(`display:flex;align-items:center;justify-content:stretch;pointer-events:none;margin-top:0px;margin-bottom:0px;`)}"><div class="c-dv-in" style="${cleanStyle(dividerInStyle)}"></div></div>`;
+        }
+
+        html += `<div${bgmAttrs} style="${cleanStyle(`position:relative;margin-top:0px;margin-bottom:0px;`)}">
+          <div class="c-i bgm-center-wrapper" style="display:flex;justify-content:center;align-items:center;width:100%;margin:12px 0;">
+            <div class="custom-bgm" data-vid="${videoId}" data-start="${startTime}" data-title="${safeTitle}" onclick="triggerBGM(event, this)">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> <span>${bgmTitle}</span>
+            </div>
+          </div>
+          ${hasDividerBelow ? dividerHtml : ''}
+        </div>`;
+      }
+      return;
+    }
+    
     const { logs: groupedLogs, blocksAfter, isHidden, stableId } = chunk;
 
     const tabSet = tabSettings[log.tabId];
@@ -800,11 +912,6 @@ export const generateFinalHtmlStr = (
     const hideAvatar = hideEmptyAvatars;
 
     const prevChunk = chunkIdx > 0 ? chunks[chunkIdx - 1] : null;
-    let nextVisibleChunkIdx = chunkIdx + 1;
-    while (nextVisibleChunkIdx < chunks.length && chunks[nextVisibleChunkIdx].isHidden) {
-      nextVisibleChunkIdx++;
-    }
-    const nextVisibleChunk = nextVisibleChunkIdx < chunks.length ? chunks[nextVisibleChunkIdx] : null;
     const isLastVisibleChunk = nextVisibleChunk === null;
 
     let prevVisibleChunkIdx = chunkIdx - 1;
@@ -825,9 +932,9 @@ export const generateFinalHtmlStr = (
     const isSectionEndOuter = !nextVisibleChunk || isNextSameTab === false || hasBlockAfter;
     const mergeWithNextOuter = shouldMergeStyle && isNextSameTab && !isSectionEndOuter;
 
-    const isNarration = log.charId === narrationCharacter && format === 'main';
-    const isPrevNarration = prevVisibleChunk ? (!hasBlockBefore && prevVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[prevVisibleChunk.logs[0].tabId]?.format || 'main') === 'main') : false;
-    const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && nextVisibleChunk.logs[0].charId === narrationCharacter && (tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main') : false;
+    const isNarration = log.charId === narrationCharacter && (format === 'main' || (enableSecretNarration && format === 'secret'));
+    const isPrevNarration = prevVisibleChunk ? (!hasBlockBefore && prevVisibleChunk.logs[0].charId === narrationCharacter && ((tabSettings[prevVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' || (enableSecretNarration && tabSettings[prevVisibleChunk.logs[0].tabId]?.format === 'secret'))) : false;
+    const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && nextVisibleChunk.logs[0].charId === narrationCharacter && ((tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' || (enableSecretNarration && tabSettings[nextVisibleChunk.logs[0].tabId]?.format === 'secret'))) : false;
 
     // Calculate divider presence and visual properties early
     const hasDividerBelow = nextVisibleChunk ? getHasDividerBetween(chunk, nextVisibleChunk) : false;
@@ -868,6 +975,42 @@ export const generateFinalHtmlStr = (
           nextFormat = formatVal;
         }
       }
+    }
+
+    if (log.isBgmBlock) {
+      if (!isHidden) {
+        const bgmData = log.bgmData || {};
+        
+        let linkHtml = '';
+        if (bgmData.url) {
+          const ytRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
+          const match = bgmData.url.match(ytRegex);
+          let finalUrl = bgmData.url;
+          if (match && bgmData.useTimestamp && bgmData.startTime > 0) {
+            const hasQ = finalUrl.includes('?');
+            finalUrl += (hasQ ? '&' : '?') + `t=${Math.floor(bgmData.startTime)}`;
+          }
+          linkHtml = `
+            <a href="${finalUrl}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: rgba(0, 0, 0, 0.04); border-radius: 6px; font-size: 13px; margin-top: 4px; transition: background 0.2s;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              <span>YouTube에서 듣기</span>
+            </a>
+          `;
+        }
+
+        html += `
+        <div style="width: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 12px 0; margin-top: 4px; margin-bottom: 4px;">
+          <div style="display: flex; flex-direction: column; align-items: center; background: ${theme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)'}; padding: 12px 20px; border-radius: 12px; border: 1px solid ${theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'}; max-width: 100%;">
+            <div style="font-size: 13px; opacity: 0.8; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+              <span>${bgmData.title || '🎧 BGM'}</span>
+            </div>
+            ${linkHtml}
+          </div>
+        </div>
+        `;
+      }
+      return;
     }
 
     if (log.isIllustration) {
@@ -1036,13 +1179,38 @@ export const generateFinalHtmlStr = (
         if (block.type === 'image' && isValidUrl(block.url)) {
           const align = block.align || 'center';
           const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
-          const widthStyle = block.width ? `width:${block.width}px;` : 'max-width:100%;';
+          
+          let widthStyle = 'max-width:100%;';
+          if (block.width) {
+            const widthStr = String(block.width);
+            widthStyle = widthStr.endsWith('px') || widthStr.endsWith('%') ? `width:${widthStr};` : `width:${widthStr}px;`;
+          }
+          
           const isMainTab = format === 'main';
           const imgAttrs = isFilterEnabled 
             ? ` d-t="${shortenId(log.tabId)}" d-c="${shortenId(log.charId)}"${isMainTab ? ' d-mt="1"' : ''} class="c-e"`
             : '';
           blocksAfterHtml += `<div${imgAttrs} style="${cleanStyle(`display:flex;justify-content:${justify};margin:10px ${s(15.6)}px`)}">
             <img src="${block.url}" style="${cleanStyle(`${widthStyle}border-radius:8px;display:block`)}" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
+          </div>`;
+        } else if (block.type === 'bgm' && isValidBgm(block)) {
+          const bgmTitle = block.title || '🎧 BGM';
+          const parsed = parseYoutubeUrl(block.url, block.useTimestamp);
+          const videoId = block.videoId || parsed.videoId || '';
+          const startTime = block.startTime || parsed.startTime || 0;
+          const safeTitle = bgmTitle.replace(/"/g, '&quot;');
+          
+          const isMainTab = format === 'main';
+          const bgmAttrs = isFilterEnabled 
+            ? ` d-t="${shortenId(log.tabId)}" d-c="${shortenId(log.charId)}"${isMainTab ? ' d-mt="1"' : ''} class="c-e"`
+            : '';
+            
+          blocksAfterHtml += `<div${bgmAttrs} style="${cleanStyle(`position:relative;margin-top:0px;margin-bottom:0px;`)}">
+            <div class="c-i bgm-center-wrapper" style="display:flex;justify-content:center;align-items:center;width:100%;margin:12px 0;">
+              <div class="custom-bgm" data-vid="${videoId}" data-start="${startTime}" data-title="${safeTitle}" onclick="triggerBGM(event, this)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> <span>${bgmTitle}</span>
+              </div>
+            </div>
           </div>`;
         }
       });
@@ -1052,6 +1220,7 @@ export const generateFinalHtmlStr = (
     let finalHtmlContentPieces = groupedLogs.map((l, i) => {
       let content = l.content;
       if (l.isCommand) {
+        content = content.replace(/シークレットダイス\s*\?\?\?/g, 'Secret dice 🎲');
         content = content.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/(?:\r\n|\r|\n)+/g, ' ');
       }
       
@@ -1070,7 +1239,7 @@ export const generateFinalHtmlStr = (
           });
         }
         let sanitizeFn = (DOMPurify && DOMPurify.sanitize) ? DOMPurify.sanitize.bind(DOMPurify) : (global as any).DOMPurify?.sanitize;
-        return sanitizeFn ? sanitizeFn(pieceHtml, { ADD_ATTR: ['target'] }) : pieceHtml;
+        return sanitizeFn ? sanitizeFn(pieceHtml, { ADD_ATTR: ['target', 'style'] }) : pieceHtml;
       });
       return htmlPieces;
     });
@@ -1110,7 +1279,7 @@ export const generateFinalHtmlStr = (
 
     if (isInline) {
       const charClass = shortenId(log.charId);
-      const avatarStyle = `width:${avatarSize}px;height:${avatarSize}px;flex-shrink:0;background-color:${hideAvatar ? 'transparent' : avatarPlaceholder};border-radius:4px;object-fit:contain;`;
+      const avatarStyle = `width:${avatarSize}px;height:${avatarSize}px;flex-shrink:0;background-color:${hideAvatar ? 'transparent' : avatarPlaceholder};border-radius:4px;object-fit:${cropFaceTop ? 'cover' : 'contain'};object-position:${cropFaceTop ? 'top' : 'center'};`;
       const bodyStyle = `flex:1;`;
       const nameStyle = `font-size:0.96em;margin-bottom:${Math.max(4, Math.ceil(textFontSize * (lineHeight >= 1.4 ? 0.3 : 0.5)))}px;display:block;`;
       const contentStyle = `white-space:pre-wrap;word-break:break-all;`;
@@ -1145,14 +1314,43 @@ export const generateFinalHtmlStr = (
 
       const fullFilterAttrs = getFilterAttrs(log);
         
-      if (isNarration) {
-        const narrStyle = `padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;text-align:center;`;
+      if (isNarration && narrationFormat === 'style2') {
+        html += `<div${fullFilterAttrs} style="position:relative;margin-bottom:${itemMarginBottom};margin-top:${itemMarginTop};">`;
+        const wrapperStyle = `display:flex;gap:16px;padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;align-items:flex-start;`;
+        const flatPieces = finalHtmlContentPieces.flat();
+        let nameHtml = '';
+        if (!log.isContinuation) {
+            nameHtml = `<b><span class="${charClass}" style="${cleanStyle(`color:${log.color};font-size:0.96em;`)}">${log.name}:</span></b>`;
+        }
+        let innerContent = flatPieces.map((piece, pIdx) => {
+          const prefix = pIdx > 0 ? `<div style="height:${Math.max(lineHeight * textFontSize, 8)}px;"></div>` : '';
+          return `${prefix}<div style="white-space:pre-wrap;word-break:keep-all;overflow-wrap:break-word;font-weight:bold;">${piece}</div>`;
+        }).join('');
+        
+        html += `
+        <div style="${cleanStyle(wrapperStyle)}">
+          <div style="${cleanStyle(`width:${computedNameWidth}px;flex-shrink:0;text-align:right;`)}">
+            ${nameHtml}
+          </div>
+          <div style="${cleanStyle(`flex:1;min-width:0;line-height:${lineHeight};font-size:${textFontSize}px;`)}">
+            ${innerContent}
+          </div>
+        </div>`;
+        if (blocksAfterHtml) {
+          html += blocksAfterHtml;
+        }
+        if (hasDividerBelow) {
+          html += dividerHtml;
+        }
+        html += `</div>`;
+      } else if (isNarration) {
+        const narrStyle = `padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;text-align:${'center'};`;
         html += `<div${fullFilterAttrs} style="position:relative;margin-bottom:${itemMarginBottom};margin-top:${itemMarginTop};">`;
         html += `<div style="${cleanStyle(narrStyle)}">`;
         const flatPieces = finalHtmlContentPieces.flat();
         html += flatPieces.map((piece, pIdx) => {
           const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
-          return `${prefix}<div style="white-space:pre-wrap;word-break:break-all;"><b><i>${piece}</i></b></div>`;
+          return `${prefix}<div style="white-space:pre-wrap;word-break:break-all;"><b>${narrationFormat === 'style1' ? `<i>${piece}</i>` : piece}</b></div>`;
         }).join('');
         html += `</div>`;
         if (blocksAfterHtml) {
@@ -1211,9 +1409,23 @@ export const generateFinalHtmlStr = (
  
           const borderTopStyle = secretBorderTop ? `border-top:${secretBorderTop};` : '';
           const borderBottomStyle = secretBorderBottom ? `border-bottom:${secretBorderBottom};` : '';
- 
-          const wrapperStyle = `display:flex;gap:${gapSize}px;padding:${paddingVertical}px ${paddingHorizontal}px;align-items:flex-start;background:${secretBg};border-left:4px solid ${tabColor};margin:${secretMargin};border-radius:${secretRadius};${borderTopStyle}${borderBottomStyle}`;
-          html += `
+
+          if (isNarration) {
+            const wrapperStyle = `padding:${paddingVertical}px ${paddingHorizontal}px;background:${secretBg};border-left:4px solid ${tabColor};margin:${secretMargin};border-radius:${secretRadius};${borderTopStyle}${borderBottomStyle}`;
+            const flatPieces = finalHtmlContentPieces.flat();
+            let innerContent = `<div style="${cleanStyle(`text-align:${'center'};font-weight:bold;font-style:${narrationFormat === 'style1' ? 'italic' : 'normal'};color:${textColor};width:100%;`)}">`;
+            innerContent += flatPieces.map((piece, pIdx) => {
+              const prefix = pIdx > 0 ? `<div style="height:${Math.max(lineHeight * textFontSize, 8)}px;"></div>` : '';
+              return `${prefix}<div style="white-space:pre-wrap;word-break:keep-all;overflow-wrap:break-word;">${piece}</div>`;
+            }).join('');
+            innerContent += `</div>`;
+            html += `
+            <div style="${cleanStyle(wrapperStyle)}">
+              ${innerContent}
+            </div>`;
+          } else {
+            const wrapperStyle = `display:flex;gap:${gapSize}px;padding:${paddingVertical}px ${paddingHorizontal}px;align-items:flex-start;background:${secretBg};border-left:4px solid ${tabColor};margin:${secretMargin};border-radius:${secretRadius};${borderTopStyle}${borderBottomStyle}`;
+            html += `
             <div style="${cleanStyle(wrapperStyle)}">
               ${imgTag}
               <div style="${cleanStyle(bodyStyle)}">
@@ -1221,6 +1433,7 @@ export const generateFinalHtmlStr = (
                 <div style="${cleanStyle(contentStyle)}">${finalHtmlContent}</div>
               </div>
             </div>`;
+          }
         } else {
           const avatarHtml = img 
             ? `<img src="${img}" style="${cleanStyle(avatarStyle)}" />` 
@@ -1278,6 +1491,16 @@ export const generateFinalHtmlStr = (
         } else {
           html += `<div class="c-bx" style="display: flex; align-items: center; flex-wrap: wrap;">${nameHtml}<span class="c-tx" style="${marginLeft}">${finalHtmlContent}</span></div>`;
         }
+      } else if (isNarration && narrationFormat === 'style2') {
+        const flatPieces = finalHtmlContentPieces.flat();
+        let nameHtml = '';
+        if (!log.isContinuation) {
+            nameHtml = `<span class="m-nm ${charClass}">${log.name}:</span>`;
+        }
+        html += `<div class="m-r no-avatar-grid">${nameHtml}<div class="m-b"><div class="m-c" style="font-weight:bold;">${flatPieces.map((piece, pIdx) => {
+          const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
+          return `${prefix}<div style="white-space: pre-wrap; word-break: keep-all; overflow-wrap: break-word;">${piece}</div>`;
+        }).join('')}</div></div></div>`;
       } else if (isNarration) {
         const flatPieces = finalHtmlContentPieces.flat();
         html += `<div class="n-r" style="padding: ${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;">`;
@@ -1313,7 +1536,26 @@ export const generateFinalHtmlStr = (
           shouldMergeStyle && tZ ? 'border-top: none;' : ''
         ].filter(Boolean).join(' ');
 
-        if (hideAllAvatars) {
+        if (isNarration && narrationFormat === 'style2') {
+          const flatPieces = finalHtmlContentPieces.flat();
+          let nameHtml = '';
+          if (!log.isContinuation) {
+              nameHtml = `<span class="m-nm ${charClass}">${log.name}:</span>`;
+          }
+          html += `<div class="s-r no-avatar-grid" style="${st}">${nameHtml}<div class="m-b"><div class="m-c" style="font-weight:bold;">${flatPieces.map((piece, pIdx) => {
+            const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
+            return `${prefix}<div style="white-space: pre-wrap; word-break: keep-all; overflow-wrap: break-word;">${piece}</div>`;
+          }).join('')}</div></div></div>`;
+        } else if (isNarration) {
+          const flatPieces = finalHtmlContentPieces.flat();
+          html += `<div class="s-r" style="${st} padding:${paddingVertical}px ${paddingHorizontal}px;">`;
+          html += `<div style="text-align:${'center'};font-weight:bold;font-style:${narrationFormat === 'style1' ? 'italic' : 'normal'};color:${textColor};width:100%;">`;
+          html += flatPieces.map((piece, pIdx) => {
+            const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
+            return `${prefix}<div style="white-space: pre-wrap; word-break: keep-all; overflow-wrap: break-word;">${piece}</div>`;
+          }).join('');
+          html += `</div></div>`;
+        } else if (hideAllAvatars) {
           html += `<div class="s-r no-avatar-grid" style="${st}"><span class="m-nm ${charClass}">${log.name}:</span><div class="m-b"><div class="m-c">${finalHtmlContent}</div></div></div>`;
         } else {
           const avatarHtml = img ? `<img src="${img}" class="m-a"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="m-a"${avSt ? ` style="${avSt}"` : ''}></div>`;
@@ -1339,6 +1581,258 @@ export const generateFinalHtmlStr = (
     }
   });
 
+  const hasValidBgm = (originalLogs || []).some((l: any) => l.isBgmBlock || (insertedBlocks[l.id]?.some((b: any) => b.type === 'bgm' && isValidBgm(b))));
+
+  const bgmPlayerCSS = hasValidBgm ? `
+    .bgm-center-wrapper { display: flex; justify-content: center; margin: 16px 0; }
+    .custom-bgm { cursor: pointer; display: inline-flex; align-items: center; gap: 10px; font-size: 13px; background: rgba(255, 255, 255, 0.05); padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1); color: #AAAAAA; user-select: none; transition: 0.2s; }
+    .custom-bgm:hover { background: rgba(255, 255, 255, 0.1); color: #EEEEEE; }
+    .custom-bgm.active { border-color: #EEEEEE; color: #EEEEEE; background: rgba(255, 255, 255, 0.15); }
+    .custom-bgm svg { width: 12px; height: 12px; fill: currentColor; }
+
+    .global-wrapper { position: fixed !important; bottom: 20px !important; right: 20px !important; z-index: 1000000 !important; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; }
+    .gc-card { position: absolute; bottom: 70px; right: 0; width: 260px; background: rgba(30, 30, 30, 0.98); border: 1px solid #444; border-radius: 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 12px; opacity: 0; pointer-events: none; transform: translateY(15px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden; }
+    .global-wrapper.expanded .gc-card { opacity: 1; pointer-events: auto; transform: translateY(0); }
+    .yt-container { width: 100%; height: 120px; max-height: 120px; background: #000; border-radius: 6px; overflow: hidden; flex-shrink: 0; border: 1px solid rgba(255, 255, 255, 0.1); position: relative; }
+    .yt-container iframe { position: absolute; inset: 0; width: 100% !important; height: 100% !important; pointer-events: auto; border: none; display: block; transform: scale(1.5); transform-origin: center center; }
+    .gc-info-ctrl { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; box-sizing: border-box; font-family: 'Noto Sans KR', sans-serif; }
+    .cd-btn { width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0; background: conic-gradient(from 0deg, #555, #999, #eee, #999, #555); border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 4px 8px rgba(0,0,0,0.5); cursor: pointer; position: relative; transition: 0.3s; }
+    .cd-btn::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 16px; height: 16px; background: ${theme === 'dark' ? darkBgColor : lightBgColor}; border-radius: 50%; }
+    .cd-btn:hover { box-shadow: 0 6px 12px rgba(0,0,0,0.8); }
+    .global-wrapper.is-playing .cd-btn { animation: gc-spin 4s linear infinite; }
+    @keyframes gc-spin { 100% { transform: rotate(360deg); } }
+    .gc-row-1 { display: flex; justify-content: space-between; align-items: center; width: 100%; box-sizing: border-box; }
+    .gc-title { font-size: 12px; font-weight: bold; color: #EEEEEE; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+    .gc-link { font-size: 11px; color: #777; text-decoration: none; transition: 0.2s; }
+    .gc-link:hover { color: #aaa; text-decoration: underline; }
+    .gc-link.disabled { pointer-events: none; opacity: 0.4; }
+    .gc-row-2 { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #aaa; width: 100%; box-sizing: border-box; }
+    .gc-btn { background: none; border: none; color: #666; cursor: pointer; padding: 2px; transition: 0.2s; display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; outline: none; }
+    .gc-btn svg { width: 14px; height: 14px; fill: currentColor; }
+    .gc-btn:hover { color: #AAA; }
+    .gc-btn.active { color: #EEE; }
+    .gc-btn-loop.active { color: #EEEEEE; filter: drop-shadow(0 0 2px rgba(255,255,255,0.4)); }
+    .gc-progress-bar { flex-grow: 1; min-width: 0; cursor: pointer; height: 3px; border-radius: 2px; appearance: none; background: #444; outline: none; transition: 0.2s; }
+    .gc-progress-bar:hover { height: 5px; }
+    .gc-progress-bar::-webkit-slider-thumb { appearance: none; width: 10px; height: 10px; border-radius: 50%; background: #999; cursor: pointer; transition: 0.2s; }
+    .gc-progress-bar:hover::-webkit-slider-thumb { background: #EEEEEE; }
+    .time-text { flex-shrink: 0; min-width: 26px; text-align: center; font-size: 10px; font-family: monospace; white-space: nowrap; }
+  ` : '';
+
+  const bgmPlayerHtml = hasValidBgm ? `
+    <div id="global-controller" class="global-wrapper">
+      <div class="gc-card" id="gc-card">
+        <div class="yt-container" id="yt-player-visible"></div>
+        <div class="gc-info-ctrl">
+          <div class="gc-row-1">
+            <div class="gc-title" id="gc-title">선택된 BGM 없음</div>
+            <a id="gc-link" class="gc-link disabled" href="#" target="_blank" title="새 탭에서 열기" onclick="return gcLinkHasTarget();">⧉ Open Tab</a>
+          </div>
+          <div class="gc-row-2">
+            <button class="gc-btn" id="btn-playpause" onclick="togglePlayPause()" title="재생/일시정지">
+              <svg id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              <svg id="icon-pause" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <span class="time-text" id="gc-time-curr">0:00</span>
+            <input type="range" class="gc-progress-bar" id="gc-progress" min="0" max="100" value="0">
+            <span class="time-text" id="gc-time-total">0:00</span>
+            <button class="gc-btn gc-btn-loop active" id="btn-loop" onclick="toggleLoop()" title="반복 재생">
+              <svg viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="cd-btn" id="cd-trigger" onclick="toggleCard(event)" title="컨트롤러 열기/닫기"></div>
+    </div>
+
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+      var wrapper = document.getElementById('global-controller');
+
+      function toggleCard(e) {
+        if (e) e.stopPropagation();
+        if (wrapper) wrapper.classList.toggle('expanded');
+      }
+
+      document.addEventListener('click', function(e) {
+        if (wrapper && !wrapper.contains(e.target)) {
+          wrapper.classList.remove('expanded');
+        }
+      });
+      document.addEventListener('DOMContentLoaded', function() {
+        if (wrapper) document.body.appendChild(wrapper);
+      });
+
+      var ytPlayer;
+      var isApiReady = false;
+      var isLooping = true;
+      var progressInterval;
+      var activeTriggerBtn = null;
+      var isDraggingProgress = false;
+      var currentStartSec = 0;
+
+      function onYouTubeIframeAPIReady() {
+        ytPlayer = new YT.Player('yt-player-visible', {
+          playerVars: { 'autoplay': 0, 'controls': 0, 'playsinline': 1, 'rel': 0 },
+          events: {
+            'onReady': function() { isApiReady = true; },
+            'onStateChange': onPlayerStateChange
+          }
+        });
+      }
+
+      function onPlayerStateChange(event) {
+        var playBtn = document.getElementById('btn-playpause'), iconPlay = document.getElementById('icon-play'), iconPause = document.getElementById('icon-pause');
+        if (event.data === YT.PlayerState.PLAYING) {
+          if (iconPlay) iconPlay.style.display = 'none'; 
+          if (iconPause) iconPause.style.display = 'block';
+          if (playBtn) playBtn.classList.add('active'); 
+          if (wrapper) wrapper.classList.add('is-playing');
+          if (activeTriggerBtn) {
+            activeTriggerBtn.classList.add('active');
+            var iconSpan = activeTriggerBtn.querySelector('svg');
+            if (iconSpan) iconSpan.outerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+          }
+          startProgressTimer();
+        } else {
+          if (iconPlay) iconPlay.style.display = 'block'; 
+          if (iconPause) iconPause.style.display = 'none';
+          if (playBtn) playBtn.classList.remove('active'); 
+          if (wrapper) wrapper.classList.remove('is-playing');
+          stopProgressTimer();
+          if (event.data === YT.PlayerState.ENDED && isLooping) {
+            if (ytPlayer && ytPlayer.seekTo) {
+              ytPlayer.seekTo(currentStartSec, true); 
+              ytPlayer.playVideo(); 
+            }
+            return;
+          }
+          if (activeTriggerBtn) {
+            activeTriggerBtn.classList.remove('active');
+            var iconSpan = activeTriggerBtn.querySelector('svg');
+            if (iconSpan) iconSpan.outerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+          }
+        }
+      }
+
+      function gcLinkHasTarget() { 
+        var gcLink = document.getElementById('gc-link');
+        return gcLink ? !gcLink.classList.contains('disabled') : false; 
+      }
+
+      function triggerBGM(e, btn) {
+        if (e) e.stopPropagation();
+        if (!isApiReady) { alert("유튜브 API 로딩중입니다."); return; }
+
+        var vidId = btn.getAttribute('data-vid');
+        var startSec = parseInt(btn.getAttribute('data-start')) || 0;
+        var title = btn.getAttribute('data-title');
+        
+        if (wrapper) wrapper.classList.add('expanded');
+
+        if (activeTriggerBtn === btn) {
+          if (ytPlayer && ytPlayer.seekTo) {
+            ytPlayer.seekTo(currentStartSec, true);
+            if (ytPlayer.getPlayerState && ytPlayer.getPlayerState() !== YT.PlayerState.PLAYING) ytPlayer.playVideo();
+          }
+          return;
+        }
+
+        if (activeTriggerBtn) {
+          activeTriggerBtn.classList.remove('active');
+          var iconSpan = activeTriggerBtn.querySelector('svg');
+          if (iconSpan) iconSpan.outerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+        }
+        activeTriggerBtn = btn;
+        activeTriggerBtn.classList.add('active');
+        currentStartSec = startSec;
+        
+        var tElem = document.getElementById('gc-title');
+        var lElem = document.getElementById('gc-link');
+        var cdElem = document.getElementById('cd-trigger');
+
+        if (tElem) tElem.innerText = title;
+        if (lElem) {
+          lElem.href = 'https://www.youtube.com/watch?v=' + vidId + (startSec ? '&t=' + startSec + 's' : '');
+          lElem.classList.remove('disabled');
+        }
+        if (cdElem) cdElem.setAttribute('title', title);
+        
+        if (ytPlayer && ytPlayer.loadVideoById) {
+          ytPlayer.loadVideoById({ videoId: vidId, startSeconds: startSec });
+        }
+      }
+
+      function togglePlayPause() {
+        if (!isApiReady || !activeTriggerBtn) return;
+        if (ytPlayer && ytPlayer.getPlayerState) {
+          if (ytPlayer.getPlayerState() === YT.PlayerState.PLAYING) ytPlayer.pauseVideo();
+          else ytPlayer.playVideo();
+        }
+      }
+
+      function toggleLoop() {
+        isLooping = !isLooping;
+        var loopBtn = document.getElementById('btn-loop');
+        if (loopBtn) {
+          if (isLooping) loopBtn.classList.add('active');
+          else loopBtn.classList.remove('active');
+        }
+      }
+
+      var progressRange = document.getElementById('gc-progress');
+      var timeCurr = document.getElementById('gc-time-curr');
+      var timeTotal = document.getElementById('gc-time-total');
+
+      function formatTime(seconds) {
+        var m = Math.floor(seconds / 60);
+        var s = Math.floor(seconds % 60);
+        return m + ':' + (s < 10 ? '0' : '') + s;
+      }
+
+      function startProgressTimer() {
+        if (progressInterval) clearInterval(progressInterval);
+        progressInterval = setInterval(function() {
+          if (!isDraggingProgress && isApiReady && ytPlayer && ytPlayer.getDuration) {
+            var curr = ytPlayer.getCurrentTime();
+            var duration = ytPlayer.getDuration();
+            if (duration > 0) {
+              if (progressRange) progressRange.value = (curr / duration) * 100;
+              if (timeCurr) timeCurr.innerText = formatTime(curr);
+              if (timeTotal) timeTotal.innerText = formatTime(duration);
+            }
+          }
+        }, 500);
+      }
+
+      function stopProgressTimer() { clearInterval(progressInterval); }
+
+      if (progressRange) {
+        progressRange.addEventListener('mousedown', function() { isDraggingProgress = true; });
+        progressRange.addEventListener('touchstart', function() { isDraggingProgress = true; });
+        progressRange.addEventListener('mouseup', function(e) {
+          isDraggingProgress = false;
+        });
+        progressRange.addEventListener('touchend', function(e) {
+          isDraggingProgress = false;
+        });
+        progressRange.addEventListener('input', function(e) {
+          isDraggingProgress = true;
+          if (timeCurr && isApiReady && ytPlayer && ytPlayer.getDuration) {
+            var newTime = (e.target.value / 100) * ytPlayer.getDuration();
+            timeCurr.innerText = formatTime(newTime);
+          }
+        });
+        progressRange.addEventListener('change', function(e) {
+          if (isApiReady && ytPlayer && ytPlayer.getDuration) {
+            var newTime = (e.target.value / 100) * ytPlayer.getDuration();
+            ytPlayer.seekTo(newTime, true);
+          }
+        });
+      }
+    </script>
+  ` : '';
+
   const finalHtml = `
     <!DOCTYPE html>
     <html lang="ko">
@@ -1350,11 +1844,12 @@ export const generateFinalHtmlStr = (
       ${isInline ? `<style>
         ${fontImport}
         ${filterBarCSS}
+        ${bgmPlayerCSS}
         ${textResetCSS}
         ${dynamicColorsCss}
         .c-tx { font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; }
         .c-ct * { box-sizing: border-box; min-width: 0; }
-      </style>` : `<style>${css}</style>`}
+      </style>` : `<style>${css}\n${bgmPlayerCSS}</style>`}
     </head>
     <body>
       <div class="c-mc"${isInline ? ` style="${cleanStyle(`background-color: ${bgColor}; margin: 0; padding: 0`)}"` : ''}>
@@ -1362,6 +1857,7 @@ export const generateFinalHtmlStr = (
         ${isInline ? `<div class="c-ct" style="${cleanStyle(`width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: ${lineHeight}; letter-spacing: ${letterSpacing === 0 ? 'normal' : `${letterSpacing}px`}; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden`)}">\n${html}\n</div>` : `<div class="c-ct">\n${html}\n</div>`}
       </div>
       ${filterBarScript}
+      ${bgmPlayerHtml}
     </body>
     </html>
   `;

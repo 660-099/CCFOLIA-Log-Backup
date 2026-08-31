@@ -1,6 +1,7 @@
 export type InsertedBlock = 
   | { id: string; type: 'image'; url: string; width?: string; align?: 'left' | 'center' | 'right' }
-  | { id: string; type: 'split'; name: string };
+  | { id: string; type: 'split'; name: string }
+  | { id: string; type: 'bgm'; title: string; url: string; videoId?: string; startTime?: number; useTimestamp?: boolean };
 
 export function migrateToInsertedBlocks(images: any, splits: any, names: any): Record<string, InsertedBlock[]> {
   const blocks: Record<string, InsertedBlock[]> = {};

@@ -21,9 +21,123 @@ export const rgbToHex = (colorStr: string) => {
   return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 };
 
+export const markdownToHtml = (text: string) => {
+  if (!text) return '';
+  let processed = text;
+  
+  // Custom format parsing
+  processed = processed.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  processed = processed.replace(/\*([^*]+)\*/g, '<i>$1</i>');
+  processed = processed.replace(/__([^_]+)__/g, '<u>$1</u>');
+  processed = processed.replace(/~~([^~]+)~~/g, '<s>$1</s>');
+  processed = processed.replace(/\[c:([^\]]+)\]([\s\S]*?)\[\/c\]/g, '<span style="color:$1">$2</span>');
+  processed = processed.replace(/\[bg:([^\]]+)\]([\s\S]*?)\[\/bg\]/g, '<span style="background-color:$1">$2</span>');
+
+  processed = processed.replace(/\n/g, '<br>');
+  return processed;
+};
+
+function rgbToHexInternal(colorStr: string) {
+  if (!colorStr) return '';
+  const trimmed = colorStr.trim();
+  if (trimmed.startsWith('#')) return trimmed;
+  
+  const match = trimmed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)/);
+  if (!match) return trimmed;
+  
+  const r = parseInt(match[1]);
+  const g = parseInt(match[2]);
+  const b = parseInt(match[3]);
+  return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
+export const htmlToMarkdown = (html: string) => {
+  if (typeof document === 'undefined') return html;
+
+  const temp = document.createElement('div');
+  temp.innerHTML = html.replace(/\u00a0/g, ' ');
+
+  function processNode(node: Node): string {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent || '';
+    }
+
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      let content = Array.from(el.childNodes).map(processNode).join('');
+
+      if (el.tagName === 'DIV' || el.tagName === 'P') {
+        if (el.childNodes.length === 1 && el.firstChild?.nodeName === 'BR') {
+          return '\n'; // Just one newline for an empty div
+        }
+        return '\n' + content;
+      }
+      if (el.tagName === 'BR') {
+        return '\n';
+      }
+
+      if (el.tagName === 'B' || el.tagName === 'STRONG') {
+        return `**${content}**`;
+      }
+      if (el.tagName === 'I' || el.tagName === 'EM') {
+        return `*${content}*`;
+      }
+      if (el.tagName === 'U') {
+        return `__${content}__`;
+      }
+      if (el.tagName === 'S' || el.tagName === 'STRIKE') {
+        return `~~${content}~~`;
+      }
+      if (el.tagName === 'MARK') {
+        const bg = el.style.backgroundColor || '#ffff00';
+        return `[bg:${rgbToHexInternal(bg)}]${content}[/bg]`;
+      }
+
+      if (el.tagName === 'FONT') {
+        const color = el.getAttribute('color');
+        if (color) {
+          content = `[c:${rgbToHexInternal(color)}]${content}[/c]`;
+        }
+      }
+
+      // Check inline styles for colors
+      const bgColor = el.style.backgroundColor || (el as any).style?.background;
+      if (bgColor && bgColor !== 'transparent' && bgColor !== 'inherit' && bgColor !== 'initial') {
+        content = `[bg:${rgbToHexInternal(bgColor)}]${content}[/bg]`;
+      }
+      
+      const color = el.style.color;
+      if (color && color !== 'inherit' && color !== 'transparent' && color !== 'initial') {
+        content = `[c:${rgbToHexInternal(color)}]${content}[/c]`;
+      }
+
+      return content;
+    }
+    return '';
+  }
+
+  let text = Array.from(temp.childNodes).map(processNode).join('');
+  
+  // Clean up extra newlines at start that might be caused by top-level divs
+  text = text.replace(/^\n+/, '');
+
+  return text;
+};
+
 export const linkifyAndFormat = (text: string) => {
+  if (!text) return '';
+  let processed = text;
+  
+  // Custom format parsing
+  processed = processed.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  processed = processed.replace(/\*([^*]+)\*/g, '<i>$1</i>');
+  processed = processed.replace(/__([^_]+)__/g, '<u>$1</u>');
+  processed = processed.replace(/~~([^~]+)~~/g, '<s>$1</s>');
+  processed = processed.replace(/\[c:([^\]]+)\]([\s\S]*?)\[\/c\]/g, '<span style="color:$1">$2</span>');
+  processed = processed.replace(/\[bg:([^\]]+)\]([\s\S]*?)\[\/bg\]/g, '<span style="background-color:$1">$2</span>');
+
   const urlPattern = /(https?:\/\/[^\s<]+)/g;
-  let processed = text.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">$1</a>');
+  processed = processed.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">$1</a>');
   processed = processed.replace(/\n/g, '<br/>');
   return processed;
 };

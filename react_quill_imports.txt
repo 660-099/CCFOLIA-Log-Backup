@@ -1,0 +1,16 @@
+// @ts-ignore
+import ReactQuill, { Quill } from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
+
+const ColorStyle = Quill.import('attributors/style/color');
+const BackgroundStyle = Quill.import('attributors/style/background');
+Quill.register(ColorStyle, true);
+Quill.register(BackgroundStyle, true);
+
+const quillModules = {
+  toolbar: [
+    ['bold', 'italic', 'underline', 'strike'],
+    [{ 'color': [] }, { 'background': [] }],
+    ['clean']
+  ]
+};

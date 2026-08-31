@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 
-export const LogAvatar = React.memo(({ img, theme, avatarSize, hideEmptyAvatars }: any) => {
+export const LogAvatar = React.memo(({ img, theme, avatarSize, hideEmptyAvatars, cropFaceTop }: any) => {
   const [hasError, setHasError] = useState(false);
   return (
     <div style={{ 
@@ -19,7 +19,7 @@ export const LogAvatar = React.memo(({ img, theme, avatarSize, hideEmptyAvatars 
         <img 
           src={img} 
           alt="" 
-          style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+          style={{ width: '100%', height: '100%', objectFit: cropFaceTop ? 'cover' : 'contain', objectPosition: cropFaceTop ? 'top' : 'center' }} 
           onError={() => setHasError(true)}
           referrerPolicy="no-referrer"
         />

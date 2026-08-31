@@ -1,0 +1,67 @@
+--- src/App.tsx
++++ src/App.tsx
+@@ -4131,27 +4131,27 @@
+                         <div className="flex flex-col gap-2 mt-2 p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm">
+                           <span className="text-[11px] font-bold text-white/70">나레이션 출력 디자인</span>
+-                          <div className="flex flex-col gap-2">
+-                            <button 
+-                              onClick={() => { setNarrationFormat('style1'); saveToHistory({ narrationFormat: 'style1' }); }}
+-                              className={`w-full py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold text-left ${
+-                                narrationFormat === 'style1' 
+-                                  ? 'bg-[#e6005c] border-[#e6005c] text-white' 
+-                                  : 'bg-white/5 border-white/5 text-white/40 hover:border-white/10'
+-                              }`}
+-                            >
+-                              스타일 1 (기본, 이탤릭)
+-                            </button>
+-                            <button 
+-                              onClick={() => { setNarrationFormat('style2'); saveToHistory({ narrationFormat: 'style2' }); }}
+-                              className={`w-full py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold text-left ${
+-                                narrationFormat === 'style2' 
+-                                  ? 'bg-[#e6005c] border-[#e6005c] text-white' 
+-                                  : 'bg-white/5 border-white/5 text-white/40 hover:border-white/10'
+-                              }`}
+-                            >
+-                              스타일 2 (기본, 이탤릭 없음)
+-                            </button>
+-                            <button 
+-                              onClick={() => { setNarrationFormat('style3'); saveToHistory({ narrationFormat: 'style3' }); }}
+-                              className={`w-full py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold text-left ${
+-                                narrationFormat === 'style3' 
+-                                  ? 'bg-[#e6005c] border-[#e6005c] text-white' 
+-                                  : 'bg-white/5 border-white/5 text-white/40 hover:border-white/10'
+-                              }`}
+-                            >
+-                              스타일 3 (단락형)
+-                            </button>
++                          <div className="flex bg-black/20 border border-white/5 rounded-lg p-1 gap-1">
++                            <button
++                              onClick={() => { setNarrationFormat('style1'); saveToHistory({ narrationFormat: 'style1' }); }}
++                              className={`flex-1 py-1.5 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
++                                narrationFormat === 'style1'
++                                  ? 'bg-[#e6005c] text-white shadow-sm'
++                                  : 'text-white/40 hover:text-white/70 hover:bg-white/5'
++                              }`}
++                            >
++                              스타일 1 (이탤릭)
++                            </button>
++                            <button
++                              onClick={() => { setNarrationFormat('style2'); saveToHistory({ narrationFormat: 'style2' }); }}
++                              className={`flex-1 py-1.5 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
++                                narrationFormat === 'style2'
++                                  ? 'bg-[#e6005c] text-white shadow-sm'
++                                  : 'text-white/40 hover:text-white/70 hover:bg-white/5'
++                              }`}
++                            >
++                              스타일 2 (기본)
++                            </button>
++                            <button
++                              onClick={() => { setNarrationFormat('style3'); saveToHistory({ narrationFormat: 'style3' }); }}
++                              className={`flex-1 py-1.5 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
++                                narrationFormat === 'style3'
++                                  ? 'bg-[#e6005c] text-white shadow-sm'
++                                  : 'text-white/40 hover:text-white/70 hover:bg-white/5'
++                              }`}
++                            >
++                              스타일 3 (단락)
++                            </button>

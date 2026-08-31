@@ -132,3 +132,322 @@ body {
   outline: none !important;
 }
 
+
+/* ContentEditable Rich Text Styles */
+b, strong {
+  font-weight: bold;
+}
+i, em {
+  font-style: italic;
+}
+u {
+  text-decoration: underline;
+}
+s, strike {
+  text-decoration: line-through;
+}
+
+/* Link Override */
+.ql-editor a, .log-item-wrapper a, .ql-editor a:visited, .ql-editor a:hover, .ql-editor a:active {
+  color: inherit !important;
+  text-decoration: underline !important;
+}
+
+/* React Quill Customizations */
+.quill-editor-container .ql-toolbar {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px 6px 0 0;
+  background-color: #fafafa;
+  padding-right: 95px !important;
+}
+.quill-editor-container .ql-container {
+  border: 1px solid #e2e8f0;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  font-family: inherit;
+}
+.quill-editor-container .ql-editor {
+  min-height: 64px;
+  font-size: 13px;
+  padding: 12px;
+}
+
+/* Light Theme explicitly */
+.quill-editor-container.is-light .ql-toolbar {
+  background-color: #fafafa;
+  border-color: #e2e8f0;
+}
+.quill-editor-container.is-light .ql-toolbar .ql-stroke {
+  stroke: #475569;
+}
+.quill-editor-container.is-light .ql-toolbar .ql-fill {
+  fill: #475569;
+}
+.quill-editor-container.is-light .ql-toolbar .ql-picker {
+  color: #475569;
+}
+.quill-editor-container.is-light .ql-container {
+  border-color: #e2e8f0;
+  background-color: #ffffff;
+  color: #1e293b;
+}
+
+/* Dark Theme explicitly */
+.dark .quill-editor-container .ql-toolbar,
+.quill-editor-container.is-dark .ql-toolbar {
+  border-color: rgba(255,255,255,0.12);
+  background-color: #1e1e24;
+}
+.dark .quill-editor-container .ql-toolbar .ql-stroke,
+.quill-editor-container.is-dark .ql-toolbar .ql-stroke {
+  stroke: rgba(255,255,255,0.85) !important;
+}
+.dark .quill-editor-container .ql-toolbar .ql-fill,
+.quill-editor-container.is-dark .ql-toolbar .ql-fill {
+  fill: rgba(255,255,255,0.85) !important;
+}
+.dark .quill-editor-container .ql-toolbar .ql-picker,
+.quill-editor-container.is-dark .ql-toolbar .ql-picker {
+  color: rgba(255,255,255,0.85) !important;
+}
+.dark .quill-editor-container .ql-toolbar button:hover,
+.dark .quill-editor-container .ql-toolbar button.ql-active,
+.quill-editor-container.is-dark .ql-toolbar button:hover,
+.quill-editor-container.is-dark .ql-toolbar button.ql-active {
+  background-color: rgba(255,255,255,0.1) !important;
+  border-radius: 4px;
+}
+.dark .quill-editor-container .ql-toolbar button:hover .ql-stroke,
+.dark .quill-editor-container .ql-toolbar button.ql-active .ql-stroke,
+.quill-editor-container.is-dark .ql-toolbar button:hover .ql-stroke,
+.quill-editor-container.is-dark .ql-toolbar button.ql-active .ql-stroke {
+  stroke: #e6005c !important;
+}
+.dark .quill-editor-container .ql-container,
+.quill-editor-container.is-dark .ql-container {
+  border-color: rgba(255,255,255,0.12);
+  background-color: rgba(0,0,0,0.35);
+  color: #ffffff;
+}
+
+/* Quill Color Picker Dropdown Grid & Dark Options */
+.ql-snow .ql-picker.ql-color-picker .ql-picker-options,
+.ql-snow .ql-picker.ql-background-picker .ql-picker-options {
+  width: 172px !important;
+  padding: 8px !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 3px !important;
+}
+.dark .ql-snow .ql-picker-options,
+.quill-editor-container.is-dark .ql-picker-options {
+  background-color: #27272a !important;
+  border-color: rgba(255,255,255,0.15) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+.ql-snow .ql-picker.ql-color-picker .ql-picker-item,
+.ql-snow .ql-picker.ql-background-picker .ql-picker-item {
+  width: 20px !important;
+  height: 20px !important;
+  border-radius: 3px !important;
+  margin: 0 !important;
+  border: 1px solid rgba(0, 0, 0, 0.15) !important;
+}
+.dark .ql-snow .ql-picker.ql-color-picker .ql-picker-item,
+.dark .ql-snow .ql-picker.ql-background-picker .ql-picker-item,
+.quill-editor-container.is-dark .ql-snow .ql-picker.ql-color-picker .ql-picker-item,
+.quill-editor-container.is-dark .ql-snow .ql-picker.ql-background-picker .ql-picker-item {
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Quill Toolbar Flex & Vertical Alignment Reset */
+.ql-toolbar.ql-snow {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+}
+
+.ql-toolbar.ql-snow .ql-formats {
+  display: flex !important;
+  align-items: center !important;
+  float: none !important;
+  margin-right: 6px !important;
+  margin-bottom: 0 !important;
+}
+
+.ql-toolbar.ql-snow button {
+  float: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 !important;
+}
+
+.ql-toolbar.ql-snow button svg {
+  width: 13px !important;
+  height: 13px !important;
+}
+
+/* Global BGM Controller Styles */
+.custom-bgm {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #AAAAAA;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+.custom-bgm:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #EEEEEE;
+}
+.custom-bgm.active {
+  border-color: #EEEEEE;
+  color: #EEEEEE;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.left-expand-wrapper {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.left-expand-card {
+  width: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(30, 30, 30, 0.98);
+  border: 1px solid #444;
+  border-radius: 8px;
+  height: 76px;
+  box-shadow: -5px 5px 25px rgba(0,0,0,0.5);
+  box-sizing: border-box;
+}
+
+.left-expand-wrapper.expanded .left-expand-card {
+  width: 320px;
+  opacity: 1;
+  padding: 0 16px;
+  margin-right: 15px;
+  overflow: visible;
+}
+
+.le-cd-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: conic-gradient(from 0deg, #555, #999, #eee, #999, #555);
+  border: 1px solid rgba(255,255,255,0.2);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+  cursor: pointer;
+  position: relative;
+}
+
+.le-cd-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 16px;
+  background: #212121;
+  border-radius: 50%;
+}
+
+.left-expand-wrapper.is-playing .le-cd-btn {
+  animation: spin 4s linear infinite;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.gc-row-1 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.gc-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #EEEEEE;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 210px;
+}
+
+.gc-link {
+  font-size: 11px;
+  color: #777;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.gc-link:hover {
+  color: #aaa;
+  text-decoration: underline;
+}
+
+.gc-row-2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: #aaa;
+  width: 100%;
+}
+
+.gc-btn {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+
+.gc-btn.active {
+  color: #EEE;
+}
+
+.gc-btn-loop.active {
+  color: #EEEEEE;
+  text-shadow: 0 0 5px rgba(255,255,255,0.4);
+}
+
+.left-expand-card input[type=range] {
+  flex-grow: 1;
+  cursor: pointer;
+  height: 3px;
+  border-radius: 2px;
+  appearance: none;
+  background: #444;
+  outline: none;
+}
+

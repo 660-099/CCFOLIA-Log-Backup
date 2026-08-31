@@ -13,9 +13,12 @@ export type SettingsContextType = {
   charSettings: Record<string, CharSetting>;
   tabSettings: Record<string, TabSetting>;
   hideEmptyAvatars: boolean;
+  cropFaceTop: boolean;
   hideAllAvatars: boolean;
   narrationCharacter: string | null;
   enableSentenceSpacing: boolean;
+  enableSecretNarration: boolean;
+  narrationFormat: 'style1' | 'style2' | 'style3';
   lineHeight: number;
   letterSpacing: number;
   blockSpacing: number;
@@ -52,9 +55,12 @@ export const SettingsProvider: React.FC<{
     settings.charSettings,
     settings.tabSettings,
     settings.hideEmptyAvatars,
+    settings.cropFaceTop,
     settings.hideAllAvatars,
     settings.narrationCharacter,
     settings.enableSentenceSpacing,
+    settings.enableSecretNarration,
+    settings.narrationFormat,
     settings.lineHeight,
     settings.letterSpacing,
     settings.blockSpacing,
