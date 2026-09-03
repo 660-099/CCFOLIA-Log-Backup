@@ -1983,7 +1983,7 @@ export default function App() {
 
   const exportProject = () => {
     const data: any = { 
-      version: '1.10.1',
+      version: '1.10.16',
       files,
       activeFileId,
       originalFileName,
@@ -5568,7 +5568,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.10.10</span>
+            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.10.16</span>
           </div>
         </div>
       </aside>
