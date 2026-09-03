@@ -76,21 +76,22 @@ export const htmlToMarkdown = (html: string) => {
         return '\n';
       }
 
-      if (el.tagName === 'B' || el.tagName === 'STRONG') {
-        return `**${content}**`;
+      // First apply text formatting styles
+      if (el.tagName === 'B' || el.tagName === 'STRONG' || el.style.fontWeight === 'bold' || el.style.fontWeight === '700' || el.style.fontWeight > '400') {
+        content = `**${content}**`;
       }
-      if (el.tagName === 'I' || el.tagName === 'EM') {
-        return `*${content}*`;
+      if (el.tagName === 'I' || el.tagName === 'EM' || el.style.fontStyle === 'italic') {
+        content = `*${content}*`;
       }
-      if (el.tagName === 'U') {
-        return `__${content}__`;
+      if (el.tagName === 'U' || el.style.textDecoration === 'underline') {
+        content = `__${content}__`;
       }
-      if (el.tagName === 'S' || el.tagName === 'STRIKE') {
-        return `~~${content}~~`;
+      if (el.tagName === 'S' || el.tagName === 'STRIKE' || el.style.textDecoration === 'line-through') {
+        content = `~~${content}~~`;
       }
       if (el.tagName === 'MARK') {
         const bg = el.style.backgroundColor || '#ffff00';
-        return `[bg:${rgbToHexInternal(bg)}]${content}[/bg]`;
+        content = `[bg:${rgbToHexInternal(bg)}]${content}[/bg]`;
       }
 
       if (el.tagName === 'FONT') {
@@ -136,7 +137,7 @@ export const linkifyAndFormat = (text: string) => {
   processed = processed.replace(/\[c:([^\]]+)\]([\s\S]*?)\[\/c\]/g, '<span style="color:$1">$2</span>');
   processed = processed.replace(/\[bg:([^\]]+)\]([\s\S]*?)\[\/bg\]/g, '<span style="background-color:$1">$2</span>');
 
-  const urlPattern = /(https?:\/\/[^\s<]+)/g;
+  const urlPattern = /(https?:\/\/[^\s<]*[^\s<.,!?:;"'])/g;
   processed = processed.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">$1</a>');
   processed = processed.replace(/\n/g, '<br/>');
   return processed;

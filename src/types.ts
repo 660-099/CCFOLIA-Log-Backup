@@ -48,6 +48,7 @@ export interface TabSetting {
   visible: boolean;
   color?: string; // For secret format
   textColor?: string;
+  applyColorToName?: boolean;
   isBold?: boolean;
   isItalic?: boolean;
 }
@@ -69,6 +70,7 @@ export interface ColorPickerPopupProps {
   onChange: (newColor: string) => void;
   onChangeComplete?: (newColor: string) => void;
   onClose: () => void;
+  onReset?: () => void;
 }
 
 export interface Illustration {

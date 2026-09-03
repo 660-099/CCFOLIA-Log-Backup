@@ -62,7 +62,8 @@ import {
   ArrowDown,
   GripVertical,
   Edit2,
-  Archive
+  Archive,
+
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
@@ -3613,9 +3614,9 @@ export default function App() {
                   <button 
                     type="button"
                     onClick={handleLoadDemo}
-                    className="flex items-center gap-1.5 text-[11px] font-medium text-white/40 hover:text-white/80 transition-colors px-1 mb-4"
+                    className="flex items-center gap-1.5 text-[11px] font-medium text-white/40 hover:text-white/80 cursor-pointer px-1 mb-4"
                   >
-                    <Info className="w-3.5 h-3.5" /> 데모 로그 보기
+                    <Info className="w-3.5 h-3.5" /> 데모 로그 보기 (간단 설명서)
                   </button>
 
                   <input type="file" id="main-log-upload" ref={fileInputRef} onChange={handleLogUpload} accept=".html" multiple={ENABLE_MULTI_FILE_UI ? true : undefined} className="hidden" />
@@ -3977,6 +3978,18 @@ export default function App() {
                             )}
                             <div className="flex items-center bg-black/20 rounded-md border border-white/5 p-0.5 ml-1">
                               <button
+                                onClick={() => {
+                                  const next = { ...tabSettings, [tab.id]: { ...tab, applyColorToName: !tab.applyColorToName } };
+                                  setTabSettings(next);
+                                  saveToHistory({ tabSettings: next });
+                                }}
+                                className={`w-6 h-6 rounded flex items-center justify-center relative transition-colors ${tab.applyColorToName ? "bg-white/20" : "text-white/40 hover:bg-white/10 hover:text-white"}`}
+                                title="이름에 색상 적용"
+                              >
+                                <User className="w-3.5 h-3.5 -translate-y-[1px]" style={{ color: tab.applyColorToName ? (tab.textColor || 'white') : 'currentColor' }} />
+                                <div className="absolute bottom-1 left-1.5 right-1.5 h-[2px] rounded-full transition-colors" style={{ backgroundColor: tab.textColor || 'white', opacity: tab.applyColorToName ? 1 : 0.3 }} />
+                              </button>
+                              <button
                                 onClick={(e) => {
                                   if (activeColorPicker === `tab-text-${tab.id}`) {
                                     setActiveColorPicker(null);
@@ -3989,8 +4002,8 @@ export default function App() {
                                 className="w-6 h-6 rounded flex items-center justify-center relative hover:bg-white/10 transition-colors"
                                 title="텍스트 색상"
                               >
-                                <span className="font-bold text-[10px] text-white" style={{ color: tab.textColor || 'white' }}>A</span>
-                                <div className="absolute bottom-1 left-1.5 right-1.5 h-[2px] rounded-full" style={{ backgroundColor: tab.textColor || 'transparent' }} />
+                                <span className="font-bold text-[10px]" style={{ color: tab.textColor || 'white' }}>A</span>
+                                <div className="absolute bottom-1 left-1.5 right-1.5 h-[2px] rounded-full" style={{ backgroundColor: tab.textColor || 'white' }} />
                               </button>
                               <button
                                 onClick={() => {
@@ -4183,7 +4196,7 @@ export default function App() {
                                   : 'text-white/40 hover:text-white/70 hover:bg-white/5'
                               }`}
                             >
-                              스타일 1 (이탤릭)
+                              스타일 1 (기본)
                             </button>
                             <button
                               onClick={() => { setNarrationFormat('style2'); saveToHistory({ narrationFormat: 'style2' }); }}
@@ -4193,7 +4206,7 @@ export default function App() {
                                   : 'text-white/40 hover:text-white/70 hover:bg-white/5'
                               }`}
                             >
-                              스타일 2 (기본)
+                              스타일 2 (이탤릭)
                             </button>
                             <button
                               onClick={() => { setNarrationFormat('style3'); saveToHistory({ narrationFormat: 'style3' }); }}
@@ -4229,6 +4242,26 @@ export default function App() {
                         </div>
                       </>
                     )}
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
+                      <span className="text-[11px] font-bold text-white/70">스탠딩 숨김</span>
+                      <Toggle 
+                        enabled={hideAllAvatars} 
+                        onChange={(val) => {
+                          setHideAllAvatars(val);
+                          saveToHistory({ hideAllAvatars: val });
+                        }} 
+                      />
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
+                      <span className="text-[11px] font-bold text-white/70">얼굴 위주 크롭 (상단 1:1)</span>
+                      <Toggle 
+                        enabled={cropFaceTop} 
+                        onChange={(val) => {
+                          setCropFaceTop(val);
+                          saveToHistory({ cropFaceTop: val });
+                        }} 
+                      />
+                    </div>
                   </div>
                 </Section>
 
@@ -5121,15 +5154,6 @@ export default function App() {
                         <div className="space-y-4 mt-3">
                           {allIllustrationsGrouped.groups.map((group, gIdx) => (
                             <div key={group.fileId || gIdx} className="space-y-2">
-                              {/* Horizontal Bar Header for each log */}
-                              <div className="flex items-center gap-2 my-2">
-                                <div className="h-px bg-white/10 flex-1" />
-                                <span className="text-[10px] font-bold text-[#e6005c] bg-[#e6005c]/10 border border-[#e6005c]/20 px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">
-                                  로그: {group.fileName} ({group.items.length}개)
-                                </span>
-                                <div className="h-px bg-white/10 flex-1" />
-                              </div>
-
                               <div className="space-y-2">
                                 {group.items.map(ill => renderIllustrationCard(ill, group.fileId, group.fileLogs))}
                               </div>
@@ -5268,32 +5292,12 @@ export default function App() {
                       />
                     </div>
                     <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/70">이미지 배경 숨김</span>
+                      <span className="text-[11px] font-bold text-white/70">스탠딩 배경 숨김</span>
                       <Toggle 
                         enabled={hideEmptyAvatars} 
                         onChange={(val) => {
                           setHideEmptyAvatars(val);
                           saveToHistory({ hideEmptyAvatars: val });
-                        }} 
-                      />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/70">얼굴 위주 크롭 (상단 1:1)</span>
-                      <Toggle 
-                        enabled={cropFaceTop} 
-                        onChange={(val) => {
-                          setCropFaceTop(val);
-                          saveToHistory({ cropFaceTop: val });
-                        }} 
-                      />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/70">스탠딩 숨김</span>
-                      <Toggle 
-                        enabled={hideAllAvatars} 
-                        onChange={(val) => {
-                          setHideAllAvatars(val);
-                          saveToHistory({ hideAllAvatars: val });
                         }} 
                       />
                     </div>
@@ -6216,7 +6220,13 @@ export default function App() {
                               onAddBgmBlock={onAddBgmBlock}
                               currentPlayingBgmId={currentBgmTrack?.id || null}
                               isGlobalBgmPlaying={isGlobalBgmPlaying}
-                              onSelectBgmTrack={(track) => setCurrentBgmTrack(track)}
+                              onSelectBgmTrack={(track) => {
+                                if (currentBgmTrack?.id === track.id) {
+                                  window.dispatchEvent(new CustomEvent('bgm-toggle-play', { detail: { id: track.id } }));
+                                } else {
+                                  setCurrentBgmTrack(track);
+                                }
+                              }}
                               onEditLog={onEditLog}
                               onBatchUpdateLog={onBatchUpdateLog}
                               onDeleteLog={onDeleteLog}
@@ -6298,6 +6308,13 @@ export default function App() {
                         onChangeComplete={(newColor) => {
                           const tabId = activeColorPicker.replace('tab-text-', '');
                           const next = { ...tabSettings, [tabId]: { ...tabSettings[tabId], textColor: newColor } };
+                          saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                        }}
+                        onReset={() => {
+                          const tabId = activeColorPicker.replace('tab-text-', '');
+                          const next = { ...tabSettings, [tabId]: { ...tabSettings[tabId] } };
+                          delete next[tabId].textColor;
+                          setTabSettings(next);
                           saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                         }}
                       />

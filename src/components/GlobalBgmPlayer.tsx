@@ -173,6 +173,26 @@ export const GlobalBgmPlayer: React.FC<GlobalBgmPlayerProps> = ({
   }, [currentTrack, startProgressTimer, stopProgressTimer]);
 
   useEffect(() => {
+    const handleToggle = (e) => {
+      const { id } = e.detail || {};
+      if (currentTrack && currentTrack.id === id) {
+        if (isPlaying) {
+          if (typeof playerRef.current?.pauseVideo === 'function') playerRef.current.pauseVideo();
+          setIsPlaying(false);
+          stopProgressTimer();
+        } else {
+          if (typeof playerRef.current?.seekTo === 'function') playerRef.current.seekTo(currentTrack.startTime || 0, true);
+          if (typeof playerRef.current?.playVideo === 'function') playerRef.current.playVideo();
+          setIsPlaying(true);
+          startProgressTimer();
+        }
+      }
+    };
+    window.addEventListener('bgm-toggle-play', handleToggle);
+    return () => window.removeEventListener('bgm-toggle-play', handleToggle);
+  }, [currentTrack, isPlaying]);
+
+  useEffect(() => {
     if (playerRef.current && playerRef.current.getIframe) {
       const iframe = playerRef.current.getIframe();
       if (iframe && iframe.style) {
@@ -246,13 +266,13 @@ export const GlobalBgmPlayer: React.FC<GlobalBgmPlayerProps> = ({
           position: absolute; bottom: 70px; right: 0;
           width: 260px; background: rgba(30, 30, 30, 0.98); border: 1px solid #444; border-radius: 8px;
           box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;
-          padding: 12px; opacity: 0; pointer-events: none;
+          padding: 12px; opacity: 0; pointer-events: none; visibility: hidden;
           transform: translateY(15px); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
           overflow: hidden;
         }
         .global-wrapper.expanded .gc-card {
-          opacity: 1; pointer-events: auto; transform: translateY(0);
+          opacity: 1; pointer-events: auto; transform: translateY(0); visibility: visible;
         }
         .yt-container {
           width: 100%; height: 120px; max-height: 120px; background: #000;

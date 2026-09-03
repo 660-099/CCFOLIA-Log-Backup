@@ -386,7 +386,7 @@ export const generateFinalHtmlStr = (
     .join('\n');
 
   let computedNameWidth = 120;
-  if ((hideAllAvatars || narrationFormat === 'style2') && typeof document !== 'undefined') {
+  if ((hideAllAvatars || narrationFormat === 'style3') && typeof document !== 'undefined') {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (ctx) {
@@ -397,7 +397,7 @@ export const generateFinalHtmlStr = (
       for (const log of filteredLogs) {
         if (!log.isContinuation) {
           const isNarration = log.charId === narrationCharacter;
-          if (hideAllAvatars || (isNarration && narrationFormat === 'style2')) {
+          if (hideAllAvatars || (isNarration && narrationFormat === 'style3')) {
             const w = ctx.measureText(log.name + ':').width;
             if (w > mw) mw = w;
           }
@@ -473,8 +473,8 @@ export const generateFinalHtmlStr = (
     }
     .c-tx { font-family: 'NanumGothicCodingLigature', monospace; color: ${textColor}; font-weight: bold; line-height: 1.6; }
 
-    .n-r { text-align: ${'center'}; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: ${narrationFormat === 'style1' ? 'italic' : 'normal'}; }
-    .n-sr { text-align: ${'center'}; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: ${narrationFormat === 'style1' ? 'italic' : 'normal'}; padding: ${s(2)}px ${paddingHorizontal}px; margin-bottom: 0px; }
+    .n-r { text-align: ${'center'}; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: ${narrationFormat === 'style2' ? 'italic' : 'normal'}; }
+    .n-sr { text-align: ${'center'}; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: ${narrationFormat === 'style2' ? 'italic' : 'normal'}; padding: ${s(2)}px ${paddingHorizontal}px; margin-bottom: 0px; }
 
     .c-dv { display: flex; align-items: center; justify-content: stretch; pointer-events: none; margin-left: 0; margin-right: 0; padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px; }
     .c-dv-ib { margin-left: ${paddingHorizontal}px; margin-right: ${paddingHorizontal}px; padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px; }
@@ -1023,7 +1023,11 @@ export const generateFinalHtmlStr = (
 
         const align = ill.align || 'center';
         const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
-        const widthVal = ill.width ? `width: ${ill.width}px;` : 'max-width: 100%;';
+        let widthVal = 'max-width: 100%;';
+        if (ill.width) {
+          const wStr = String(ill.width);
+          widthVal = wStr.endsWith('px') || wStr.endsWith('%') ? `width: ${wStr};` : `width: ${wStr}px;`;
+        }
 
         // 1. Render Tab Name Badge if showTabNames has this format and isFirstInSection
         if (showTabNames.has(illFormat) && !isPrevSameTab) {
@@ -1314,7 +1318,7 @@ export const generateFinalHtmlStr = (
 
       const fullFilterAttrs = getFilterAttrs(log);
         
-      if (isNarration && narrationFormat === 'style2') {
+      if (isNarration && narrationFormat === 'style3') {
         html += `<div${fullFilterAttrs} style="position:relative;margin-bottom:${itemMarginBottom};margin-top:${itemMarginTop};">`;
         const wrapperStyle = `display:flex;gap:16px;padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;align-items:flex-start;`;
         const flatPieces = finalHtmlContentPieces.flat();
@@ -1350,7 +1354,7 @@ export const generateFinalHtmlStr = (
         const flatPieces = finalHtmlContentPieces.flat();
         html += flatPieces.map((piece, pIdx) => {
           const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
-          return `${prefix}<div style="white-space:pre-wrap;word-break:break-all;"><b>${narrationFormat === 'style1' ? `<i>${piece}</i>` : piece}</b></div>`;
+          return `${prefix}<div style="white-space:pre-wrap;word-break:break-all;"><b>${narrationFormat === 'style2' ? `<i>${piece}</i>` : piece}</b></div>`;
         }).join('');
         html += `</div>`;
         if (blocksAfterHtml) {
@@ -1413,7 +1417,7 @@ export const generateFinalHtmlStr = (
           if (isNarration) {
             const wrapperStyle = `padding:${paddingVertical}px ${paddingHorizontal}px;background:${secretBg};border-left:4px solid ${tabColor};margin:${secretMargin};border-radius:${secretRadius};${borderTopStyle}${borderBottomStyle}`;
             const flatPieces = finalHtmlContentPieces.flat();
-            let innerContent = `<div style="${cleanStyle(`text-align:${'center'};font-weight:bold;font-style:${narrationFormat === 'style1' ? 'italic' : 'normal'};color:${textColor};width:100%;`)}">`;
+            let innerContent = `<div style="${cleanStyle(`text-align:${'center'};font-weight:bold;font-style:${narrationFormat === 'style2' ? 'italic' : 'normal'};color:${textColor};width:100%;`)}">`;
             innerContent += flatPieces.map((piece, pIdx) => {
               const prefix = pIdx > 0 ? `<div style="height:${Math.max(lineHeight * textFontSize, 8)}px;"></div>` : '';
               return `${prefix}<div style="white-space:pre-wrap;word-break:keep-all;overflow-wrap:break-word;">${piece}</div>`;
@@ -1491,7 +1495,7 @@ export const generateFinalHtmlStr = (
         } else {
           html += `<div class="c-bx" style="display: flex; align-items: center; flex-wrap: wrap;">${nameHtml}<span class="c-tx" style="${marginLeft}">${finalHtmlContent}</span></div>`;
         }
-      } else if (isNarration && narrationFormat === 'style2') {
+      } else if (isNarration && narrationFormat === 'style3') {
         const flatPieces = finalHtmlContentPieces.flat();
         let nameHtml = '';
         if (!log.isContinuation) {
@@ -1536,7 +1540,7 @@ export const generateFinalHtmlStr = (
           shouldMergeStyle && tZ ? 'border-top: none;' : ''
         ].filter(Boolean).join(' ');
 
-        if (isNarration && narrationFormat === 'style2') {
+        if (isNarration && narrationFormat === 'style3') {
           const flatPieces = finalHtmlContentPieces.flat();
           let nameHtml = '';
           if (!log.isContinuation) {
@@ -1549,7 +1553,7 @@ export const generateFinalHtmlStr = (
         } else if (isNarration) {
           const flatPieces = finalHtmlContentPieces.flat();
           html += `<div class="s-r" style="${st} padding:${paddingVertical}px ${paddingHorizontal}px;">`;
-          html += `<div style="text-align:${'center'};font-weight:bold;font-style:${narrationFormat === 'style1' ? 'italic' : 'normal'};color:${textColor};width:100%;">`;
+          html += `<div style="text-align:${'center'};font-weight:bold;font-style:${narrationFormat === 'style2' ? 'italic' : 'normal'};color:${textColor};width:100%;">`;
           html += flatPieces.map((piece, pIdx) => {
             const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
             return `${prefix}<div style="white-space: pre-wrap; word-break: keep-all; overflow-wrap: break-word;">${piece}</div>`;
@@ -1586,9 +1590,10 @@ export const generateFinalHtmlStr = (
   const bgmPlayerCSS = hasValidBgm ? `
     .bgm-center-wrapper { display: flex; justify-content: center; margin: 16px 0; }
     .custom-bgm { cursor: pointer; display: inline-flex; align-items: center; gap: 10px; font-size: 13px; background: rgba(255, 255, 255, 0.05); padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1); color: #AAAAAA; user-select: none; transition: 0.2s; }
+    .custom-bgm span { text-align: left; word-break: keep-all; overflow-wrap: break-word; line-height: 1.4; }
     .custom-bgm:hover { background: rgba(255, 255, 255, 0.1); color: #EEEEEE; }
     .custom-bgm.active { border-color: #EEEEEE; color: #EEEEEE; background: rgba(255, 255, 255, 0.15); }
-    .custom-bgm svg { width: 12px; height: 12px; fill: currentColor; }
+    .custom-bgm svg { width: 12px; height: 12px; fill: currentColor; flex-shrink: 0; }
 
     .global-wrapper { position: fixed !important; bottom: 20px !important; right: 20px !important; z-index: 1000000 !important; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; }
     .gc-card { position: absolute; bottom: 70px; right: 0; width: 260px; background: rgba(30, 30, 30, 0.98); border: 1px solid #444; border-radius: 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 12px; opacity: 0; pointer-events: none; transform: translateY(15px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); overflow: hidden; }
@@ -1731,10 +1736,7 @@ export const generateFinalHtmlStr = (
         if (wrapper) wrapper.classList.add('expanded');
 
         if (activeTriggerBtn === btn) {
-          if (ytPlayer && ytPlayer.seekTo) {
-            ytPlayer.seekTo(currentStartSec, true);
-            if (ytPlayer.getPlayerState && ytPlayer.getPlayerState() !== YT.PlayerState.PLAYING) ytPlayer.playVideo();
-          }
+          togglePlayPause();
           return;
         }
 

@@ -303,6 +303,12 @@ s, strike {
   user-select: none;
   transition: all 0.2s ease;
 }
+.custom-bgm span {
+  text-align: left;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  line-height: 1.4;
+}
 .custom-bgm:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #EEEEEE;

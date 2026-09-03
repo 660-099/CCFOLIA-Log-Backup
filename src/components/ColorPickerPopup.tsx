@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Edit2, Pencil, ChevronsUpDown } from 'lucide-react';
+import { Check, Edit2, Pencil, ChevronsUpDown, RotateCcw } from 'lucide-react';
 import { HexColorPicker } from 'react-colorful';
 import { cn, hexToRgbValues, rgbToHexValues, hexToHsl } from '../utils';
 import { ColorPickerPopupProps } from '../types';
@@ -39,7 +39,7 @@ const DEFAULT_COLORS = [
   '#ffc107', '#ff9800', '#ff5722', '#795548', '#607d8b', '#9e9e9e', '#e0e0e0'
 ];
 
-export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose, onChange, onChangeComplete }: ColorPickerPopupProps) => {
+export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose, onChange, onChangeComplete, onReset }: ColorPickerPopupProps) => {
   const [mode, setMode] = useState<'hex' | 'rgb' | 'hsl'>('hex');
   const [isEditing, setIsEditing] = useState(false);
   const [selectedColor, setSelectedColor] = useState(color);
@@ -242,16 +242,30 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
           </div>
         </div>
 
-        <button 
-          onClick={() => {
-            if (onChangeComplete) onChangeComplete(selectedColor);
-            else onChange(selectedColor);
-            onClose();
-          }}
-          className="w-full py-1.5 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-xl text-[11px] font-bold transition-all shadow-lg shadow-pink-500/20 active:scale-95"
-        >
-          확인
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => {
+              if (onChangeComplete) onChangeComplete(selectedColor);
+              else onChange(selectedColor);
+              onClose();
+            }}
+            className="flex-1 py-1.5 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-xl text-[11px] font-bold transition-all shadow-lg shadow-pink-500/20 active:scale-95"
+          >
+            확인
+          </button>
+          {onReset && (
+            <button
+              onClick={() => {
+                onReset();
+                onClose();
+              }}
+              className="w-8 h-8 shrink-0 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/50 hover:text-white rounded-xl transition-all"
+              title="초기화"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
     </div>,
     document.body

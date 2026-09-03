@@ -279,7 +279,7 @@ export const LogItem = React.memo(({
           onInsertLog={() => insertLogBlock(log.id, isTopLevel)}
           allowSplit={!isTopLevel && !(isLastLog && blocks.length === 0)}
           isTopLevel={isTopLevel}
-          disabled={isHoveringButton || isAnyEditing}
+          disabled={isAnyEditing}
           onDropIllustration={(illId) => onUpdateIllustration(illId, { targetLogId: stableId, position: 'before' })}
         />
         {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === 0 && (
@@ -544,7 +544,7 @@ export const LogItem = React.memo(({
               onInsertBgm={() => onToggleBgmInput && onToggleBgmInput(logId, i + 1)}
               onInsertLog={() => insertLogBlock(log.id, isTopLevel)}
               allowSplit={!(isLastLog && i === blocks.length - 1)}
-              disabled={isHoveringButton || isAnyEditing}
+              disabled={isAnyEditing}
               onDropIllustration={(illId) => onUpdateIllustration(illId, { targetLogId: stableId, position: 'after' })}
             />
             {imageInputLoc?.logId === logId && imageInputLoc.insertIndex === i + 1 && (
@@ -629,10 +629,16 @@ export const LogItem = React.memo(({
   const format = tabSet?.format || 'main';
   const rawColor = char.color || log.color;
   const tabTextColor = tabSet?.textColor;
-  const color = tabTextColor || rawColor;
-  const nameWeight = tabSet?.isBold !== undefined ? (tabSet.isBold ? 'bold' : 'normal') : 'bold';
-  const nameFontStyle = tabSet?.isItalic ? 'italic' : 'normal';
-  const otherNameColor = disableOtherColor ? (theme === 'dark' ? '#AAAAAA' : '#777777') : color;
+  
+  let nameColor = (tabSet?.applyColorToName && tabTextColor) ? tabTextColor : rawColor;
+  let otherNameColor = disableOtherColor 
+    ? (tabTextColor || (theme === 'dark' ? '#AAAAAA' : '#777777')) 
+    : nameColor;
+  
+  const color = nameColor;
+  const nameWeight = 'bold';
+  const nameFontStyle = 'normal';
+  
   const contentColor = tabTextColor || (theme === 'dark' ? '#FFFFFF' : '#333333');
   const otherContentColor = tabTextColor || (theme === 'dark' ? '#AAAAAA' : '#777777');
   const contentWeight = tabSet?.isBold ? 'bold' : 'normal';
@@ -694,7 +700,7 @@ export const LogItem = React.memo(({
     return formattedPieces.map(html => DOMPurify.sanitize(html, { ADD_ATTR: ['target', 'style'] }));
   }, [formattedPieces]);
   const safeHtmlContent = safeHtmlContentPieces[0] || '';
-  const safeHtmlName = useMemo(() => DOMPurify.sanitize(displayName), [displayName]);
+  const safeHtmlName = useMemo(() => DOMPurify.sanitize(displayName, { ADD_ATTR: ['style'] }), [displayName]);
   
   const getSecretBg = (hex: string) => {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -960,12 +966,26 @@ export const LogItem = React.memo(({
 
     return (
       <div 
-        className={cn("log-item-wrapper relative group/item w-full min-h-[30px] flex flex-col justify-center", isHighlighted ? 'bg-[#ffd400]/20' : '')}
+        className={cn(
+          "log-item-wrapper relative group/item w-full min-h-[30px] flex flex-col justify-center", 
+          isHighlighted && "bg-[#ffd400]/20",
+          dragOverPart === 'top' && "is-drag-over-top",
+          dragOverPart === 'bottom' && "is-drag-over-bottom"
+        )}
         style={{
           marginTop: `${Math.floor(effectiveBlockSpacing / 2)}px`,
           marginBottom: `${Math.ceil(effectiveBlockSpacing / 2)}px`
         }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
+        {dragOverPart === 'top' && (
+          <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#e6005c] z-50 pointer-events-none" />
+        )}
+        {dragOverPart === 'bottom' && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#e6005c] z-50 pointer-events-none" />
+        )}
         {isCurrentMatch && (
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#e6005c] shadow-[0_0_10px_rgba(230,0,92,0.5)] z-10" />
         )}
@@ -1596,6 +1616,7 @@ export const LogItem = React.memo(({
                     value={editContent}
                     onChange={setEditContent}
                     modules={quillModules}
+                    formats={['bold', 'italic', 'underline', 'strike', 'color', 'background']}
                     theme="snow"
                     className={cn(
                       "w-full text-[13px] rounded-b-md outline-none",
@@ -1692,7 +1713,7 @@ export const LogItem = React.memo(({
               fontSize: `${scaledTextFontSize}px`,
               letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px`,
               fontWeight: tabSet?.isBold !== undefined ? contentWeight : 'bold',
-              fontStyle: tabSet?.isItalic !== undefined ? contentFontStyle : (narrationFormat === 'style1' ? 'italic' : 'normal'),
+              fontStyle: tabSet?.isItalic !== undefined ? contentFontStyle : (narrationFormat === 'style2' ? 'italic' : 'normal'),
               background: isSecret ? getSecretBg(tabColor) : 'transparent',
               borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
               marginTop: isSecret ? (hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px')) : '0',
