@@ -147,7 +147,7 @@ export const SearchableSelect = ({
           className={cn(
             "w-full text-[10px] px-2 py-1.5 pr-6 rounded-lg outline-none focus:border-[#e6005c] transition-colors font-medium",
             theme === 'dark'
-              ? "bg-black/40 border border-white/10 text-white/80 placeholder:text-white/30"
+              ? "bg-black/40 border border-white/10 text-white/90 placeholder:text-white/40"
               : "bg-white border border-stone-250 text-stone-800 placeholder:text-stone-400",
             disabled && "opacity-40 cursor-not-allowed pointer-events-none"
           )}
@@ -155,7 +155,7 @@ export const SearchableSelect = ({
         />
         <ChevronDown className={cn(
           "w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none transition-transform", 
-          theme === 'dark' ? "text-white/40" : "text-stone-400",
+          theme === 'dark' ? "text-white/50" : "text-stone-400",
           isOpen && "rotate-180",
           disabled && "opacity-40"
         )} />
@@ -177,10 +177,10 @@ export const SearchableSelect = ({
               className={cn(
                 "px-2 py-1.5 text-[10px] cursor-pointer truncate transition-colors font-medium",
                 theme === 'dark'
-                  ? (idx === highlightedIndex ? "bg-white/10 text-white" : "text-white/80 hover:bg-[#e6005c] hover:text-white")
+                  ? (idx === highlightedIndex ? "bg-white/10 text-white" : "text-white/90 hover:bg-[#e6005c] hover:text-white")
                   : (idx === highlightedIndex ? "bg-stone-100 text-stone-900" : "text-stone-700 hover:bg-[#e6005c] hover:text-white"),
-                opt.value === '' && (theme === 'dark' ? "text-white/50" : "text-stone-400"), // Placeholder styling
-                opt.isGrayed && (theme === 'dark' ? "text-white/30" : "text-stone-400")
+                opt.value === '' && (theme === 'dark' ? "text-white/60" : "text-stone-400"), // Placeholder styling
+                opt.isGrayed && (theme === 'dark' ? "text-white/40" : "text-stone-400")
               )}
               style={opt.color ? { color: opt.color } : undefined}
               onMouseEnter={() => setHighlightedIndex(idx)}
@@ -195,7 +195,7 @@ export const SearchableSelect = ({
           {filteredOptions.length === 0 && (
             <div className={cn(
               "px-2 py-1.5 text-[10px]",
-              theme === 'dark' ? "text-white/40" : "text-stone-400"
+              theme === 'dark' ? "text-white/50" : "text-stone-400"
             )}>결과 없음</div>
           )}
         </div>

@@ -176,7 +176,7 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
               </div>
             ) : (
               <span 
-                className="text-[10px] font-bold text-white cursor-pointer hover:text-white/80 transition-colors truncate"
+                className="text-[10px] font-bold text-white cursor-pointer hover:text-white/90 transition-colors truncate"
                 onClick={() => {
                   setTempColorInput(mode === 'hex' ? selectedColor.toUpperCase() : `${rgb.r}, ${rgb.g}, ${rgb.b}`);
                   setIsEditing(true);
@@ -188,7 +188,7 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
           </div>
           <button 
             onClick={() => setMode(mode === 'hex' ? 'rgb' : 'hex')}
-            className="w-6 h-6 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-md text-white/40 hover:text-white transition-colors shrink-0 group relative"
+            className="w-6 h-6 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-md text-white/50 hover:text-white transition-colors shrink-0 group relative"
           >
             <ChevronsUpDown className="w-3.5 h-3.5" />
             <div className="absolute right-0 bottom-full mb-2 whitespace-nowrap bg-white text-black text-[10px] px-2 py-1 rounded shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all pointer-events-none">
@@ -201,7 +201,7 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
         <div className="pt-3 border-t border-white/10 space-y-4">
           {usedColors.length > 0 && (
             <div className="space-y-2.5">
-              <span className="text-[9px] font-bold text-white/50">사용중인 색상</span>
+              <span className="text-[9px] font-bold text-white/60">사용중인 색상</span>
               <div className="grid grid-cols-7 gap-1.5">
                 {usedColors.map(c => (
                   <button
@@ -222,7 +222,7 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
           )}
 
           <div className="space-y-2.5">
-            <span className="text-[9px] font-bold text-white/50">기본 색상</span>
+            <span className="text-[9px] font-bold text-white/60">기본 색상</span>
             <div className="grid grid-cols-7 gap-1.5">
               {DEFAULT_COLORS.map(c => (
                 <button
@@ -259,7 +259,7 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
                 onReset();
                 onClose();
               }}
-              className="w-8 h-8 shrink-0 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/50 hover:text-white rounded-xl transition-all"
+              className="w-8 h-8 shrink-0 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white/60 hover:text-white rounded-xl transition-all"
               title="초기화"
             >
               <RotateCcw className="w-3.5 h-3.5" />

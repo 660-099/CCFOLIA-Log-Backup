@@ -145,13 +145,13 @@ const MenuHeaderWrapper = ({
   isSubHeader?: boolean
 }) => (
   <div className="flex items-center gap-1.5">
-    {Icon && <Icon className={cn("w-3.5 h-3.5 shrink-0", isSubHeader ? "text-white/40" : "text-white/30")} />}
-    <h2 className={cn("text-[10px] font-bold tracking-tight flex items-center pr-1 m-0 p-0 leading-none", isSubHeader ? "text-white/40" : "text-white/30")}>
+    {Icon && <Icon className={cn("w-3.5 h-3.5 shrink-0", isSubHeader ? "text-white/50" : "text-white/40")} />}
+    <h2 className={cn("text-[10px] font-bold tracking-tight flex items-center pr-1 m-0 p-0 leading-none", isSubHeader ? "text-white/50" : "text-white/40")}>
       {title}
     </h2>
     {tooltip && (
       <Tooltip position="right" content={typeof tooltip === 'string' ? <div className="text-[11px] leading-relaxed w-[180px] text-center">{tooltip}</div> : tooltip}>
-        <HelpCircle className="w-3.5 h-3.5 text-white/30 hover:text-white/60 cursor-help transition-colors shrink-0" />
+        <HelpCircle className="w-3.5 h-3.5 text-white/40 hover:text-white/70 cursor-help transition-colors shrink-0" />
       </Tooltip>
     )}
   </div>
@@ -213,7 +213,7 @@ const NumberAdjuster = ({
           <div className="flex items-center gap-1.5 bg-black/20 rounded-md p-0.5 border border-white/5">
             <button 
               onClick={() => { const v = Number(Math.max(min, value - step).toFixed(1)); onChange(v); if (onSave) onSave(v); }} 
-              className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white transition-colors outline-none"
+              className="p-1 hover:bg-white/10 rounded text-white/50 hover:text-white transition-colors outline-none"
             >
               <ChevronDown className="w-3 h-3" />
             </button>
@@ -244,7 +244,7 @@ const NumberAdjuster = ({
             
             <button 
               onClick={() => { const v = Number(Math.min(max, value + step).toFixed(1)); onChange(v); if (onSave) onSave(v); }} 
-              className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white transition-colors outline-none"
+              className="p-1 hover:bg-white/10 rounded text-white/50 hover:text-white transition-colors outline-none"
             >
               <ChevronUp className="w-3 h-3" />
             </button>
@@ -253,7 +253,7 @@ const NumberAdjuster = ({
             <button 
               onClick={() => { onChange(highlightDefault); if (onSave) onSave(highlightDefault); }}
               disabled={!isChanged}
-              className={cn("p-1 rounded transition-colors outline-none shrink-0", isChanged ? "text-white/60 hover:text-white hover:bg-white/10" : "text-white/20")}
+              className={cn("p-1 rounded transition-colors outline-none shrink-0", isChanged ? "text-white/70 hover:text-white hover:bg-white/10" : "text-white/30")}
               title="기본값으로 초기화"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -385,7 +385,7 @@ const Tooltip = ({
             transition: 'opacity 0.2s',
             visibility: coords.opacity === 0 ? 'hidden' : 'visible'
           }}
-          className={unstyled ? `fixed z-[9999] pointer-events-none ${className || ''}` : cn("fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-xl p-3 text-[11px] leading-relaxed text-white/60 shadow-2xl pointer-events-none w-max max-w-xs font-normal text-left break-keep", className)}
+          className={unstyled ? `fixed z-[9999] pointer-events-none ${className || ''}` : cn("fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-xl p-3 text-[11px] leading-relaxed text-white/70 shadow-2xl pointer-events-none w-max max-w-xs font-normal text-left break-keep", className)}
         >
           {content}
         </div>,
@@ -531,13 +531,13 @@ const SizeControl = ({ value, onChange }: { value: string; onChange: (val: strin
             onChange(raw ? `${raw}${unitVal}` : `100${unitVal}`);
           }}
           onFocus={() => setIsOpen(true)}
-          className="w-12 h-full text-center text-[10px] font-mono font-bold bg-transparent border-none outline-none text-white px-1 placeholder:text-white/30"
+          className="w-12 h-full text-center text-[10px] font-mono font-bold bg-transparent border-none outline-none text-white px-1 placeholder:text-white/40"
           placeholder="100"
         />
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="h-full px-1.5 flex items-center justify-center text-white/40 hover:text-white border-l border-white/5 transition-colors"
+          className="h-full px-1.5 flex items-center justify-center text-white/50 hover:text-white border-l border-white/5 transition-colors"
           title="프리셋 목록"
         >
           <ChevronDown className="w-3 h-3" />
@@ -545,7 +545,7 @@ const SizeControl = ({ value, onChange }: { value: string; onChange: (val: strin
 
         {isOpen && (
           <div className="absolute top-full left-0 mt-1 w-24 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
-            <div className="px-2 py-0.5 text-[8px] font-bold text-white/30 uppercase tracking-wider">프리셋</div>
+            <div className="px-2 py-0.5 text-[8px] font-bold text-white/40 uppercase tracking-wider">프리셋</div>
             {presets.map((preset) => (
               <button
                 key={preset}
@@ -556,7 +556,7 @@ const SizeControl = ({ value, onChange }: { value: string; onChange: (val: strin
                 }}
                 className={cn(
                   "w-full text-left px-2.5 py-1 text-[10px] font-mono font-bold hover:bg-white/10 transition-colors flex items-center justify-between",
-                  value === preset ? "text-[#e6005c] bg-white/5" : "text-white/80"
+                  value === preset ? "text-[#e6005c] bg-white/5" : "text-white/90"
                 )}
               >
                 {preset}
@@ -575,7 +575,7 @@ const SizeControl = ({ value, onChange }: { value: string; onChange: (val: strin
             "h-6 px-2 text-[9px] font-mono font-bold rounded transition-all flex items-center justify-center",
             unitVal === '%' 
               ? "bg-white/10 text-white font-bold shadow-sm" 
-              : "text-white/30 hover:text-white/60"
+              : "text-white/40 hover:text-white/70"
           )}
         >
           %
@@ -587,7 +587,7 @@ const SizeControl = ({ value, onChange }: { value: string; onChange: (val: strin
             "h-6 px-2 text-[9px] font-mono font-bold rounded transition-all flex items-center justify-center",
             unitVal === 'px' 
               ? "bg-white/10 text-white font-bold shadow-sm" 
-              : "text-white/30 hover:text-white/60"
+              : "text-white/40 hover:text-white/70"
           )}
         >
           px
@@ -3492,7 +3492,7 @@ export default function App() {
                 <FileDown className="w-10 h-10 text-[#e6005c] animate-bounce drop-shadow-[0_0_15px_rgba(230,0,92,0.5)]" />
               </div>
               <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight mb-2 drop-shadow-md">파일을 여기에 놓아주세요</h2>
-              <p className="text-white/50 text-xs sm:text-sm font-medium">HTML 로그 파일 또는 JSON 프로젝트 백업</p>
+              <p className="text-white/60 text-xs sm:text-sm font-medium">HTML 로그 파일 또는 JSON 프로젝트 백업</p>
             </div>
           </div>
         )}
@@ -3510,19 +3510,19 @@ export default function App() {
                 <FileText className="w-5 h-5 text-white" />
               </div>
               <div className="min-w-0 flex flex-col justify-center">
-                <p className="text-[9px] font-bold text-white/30 uppercase tracking-[0.15em]">CCFOLIA LOG FORMATTER</p>
+                <p className="text-[9px] font-bold text-white/40 uppercase tracking-[0.15em]">CCFOLIA LOG FORMATTER</p>
                 <h1 className="text-[17px] font-bold text-white whitespace-nowrap leading-tight">코코포리아 로그 편집기</h1>
               </div>
             </div>
 
             <div className="flex flex-col items-end text-right shrink-0 gap-1">
-              <p className="text-[9px] font-medium text-white/20">
-                제작: <span className="text-white/40 font-bold">한냥</span>
+              <p className="text-[9px] font-medium text-white/30">
+                제작: <span className="text-white/50 font-bold">한냥</span>
                 <a 
                   href="https://posty.pe/7oldqj" 
                   target="_blank" 
                   rel="noopener noreferrer" 
-                  className="ml-1 text-white/30 hover:text-[#e6005c] transition-colors underline underline-offset-2 decoration-white/5"
+                  className="ml-1 text-white/40 hover:text-[#e6005c] transition-colors underline underline-offset-2 decoration-white/5"
                 >
                   (후원하기)
                 </a>
@@ -3531,7 +3531,7 @@ export default function App() {
                 href="https://posty.pe/7s025t" 
                 target="_blank" 
                 rel="noopener noreferrer" 
-                className="text-[9px] font-bold text-white/40 hover:text-white transition-all flex items-center gap-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-2 py-1"
+                className="text-[9px] font-bold text-white/50 hover:text-white transition-all flex items-center gap-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-2 py-1"
               >
                 도움말 보기
                 <ExternalLink className="w-2.5 h-2.5 opacity-30" />
@@ -3553,7 +3553,7 @@ export default function App() {
               key={tab.id}
               onClick={() => handleTabChange(tab.id as any)}
               className={`flex-1 py-3 flex flex-col items-center gap-1.5 transition-all relative ${
-                activeTab === tab.id ? 'text-[#e6005c]' : 'text-white/30 hover:text-white/60'
+                activeTab === tab.id ? 'text-[#e6005c]' : 'text-white/40 hover:text-white/70'
               }`}
             >
               <tab.icon className="w-4 h-4" />
@@ -3601,10 +3601,10 @@ export default function App() {
                   >
                     <div className="flex items-center gap-3 overflow-hidden">
                       <div className="p-1.5 rounded-lg bg-[#242424] group-hover:bg-[#e6005c]/20 transition-colors shrink-0">
-                        <Upload className="w-3.5 h-3.5 text-white/40 group-hover:text-[#e6005c] transition-colors" />
+                        <Upload className="w-3.5 h-3.5 text-white/50 group-hover:text-[#e6005c] transition-colors" />
                       </div>
                       <div className="text-left w-full overflow-hidden">
-                        <p className="text-[11px] font-bold text-white/70 truncate">
+                        <p className="text-[11px] font-bold text-white/80 truncate">
                           HTML 로그 파일 선택 {ENABLE_MULTI_FILE_UI && '(다중 선택 가능)'}
                         </p>
                       </div>
@@ -3614,7 +3614,7 @@ export default function App() {
                   <button 
                     type="button"
                     onClick={handleLoadDemo}
-                    className="flex items-center gap-1.5 text-[11px] font-medium text-white/40 hover:text-white/80 cursor-pointer px-1 mb-4"
+                    className="flex items-center gap-1.5 text-[11px] font-medium text-white/50 hover:text-white/90 cursor-pointer px-1 mb-4"
                   >
                     <Info className="w-3.5 h-3.5" /> 데모 로그 보기 (간단 설명서)
                   </button>
@@ -3627,7 +3627,7 @@ export default function App() {
                   {ENABLE_MULTI_FILE_UI && files.length > 0 && (
                     <div className="space-y-2 pt-2 border-t border-white/5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">업로드된 파일 목록 ({files.length})</span>
+                        <span className="text-[10px] font-bold text-white/50 uppercase tracking-wider">업로드된 파일 목록 ({files.length})</span>
                       </div>
 
                       <label 
@@ -3636,10 +3636,10 @@ export default function App() {
                       >
                         <div className="flex items-center gap-3 overflow-hidden">
                           <div className="p-1.5 rounded-lg bg-[#242424] group-hover:bg-[#e6005c]/20 transition-colors shrink-0">
-                            <Plus className="w-3.5 h-3.5 text-white/40 group-hover:text-[#e6005c] transition-colors" />
+                            <Plus className="w-3.5 h-3.5 text-white/50 group-hover:text-[#e6005c] transition-colors" />
                           </div>
                           <div className="text-left w-full overflow-hidden">
-                            <p className="text-[11px] font-bold text-white/70 truncate">
+                            <p className="text-[11px] font-bold text-white/80 truncate">
                               추가 로그 파일 선택 (다중 선택 가능)
                             </p>
                           </div>
@@ -3661,12 +3661,12 @@ export default function App() {
                               "flex items-center justify-between p-2 rounded-xl border transition-colors text-[11px] group/file select-none",
                               f.id === activeFileId
                                 ? "bg-[#e6005c]/10 border-[#e6005c]/40 text-white font-bold"
-                                : "bg-white/5 border-white/5 text-white/60 hover:bg-white/10"
+                                : "bg-white/5 border-white/5 text-white/70 hover:bg-white/10"
                             )}
                           >
                             <div className="flex items-center gap-1.5 min-w-0 flex-1">
                               <div 
-                                className="p-1 hover:bg-white/10 rounded cursor-grab active:cursor-grabbing text-white/30 hover:text-white/70 transition-colors shrink-0"
+                                className="p-1 hover:bg-white/10 rounded cursor-grab active:cursor-grabbing text-white/40 hover:text-white/80 transition-colors shrink-0"
                                 title="드래그하여 순서 변경"
                               >
                                 <GripVertical className="w-3.5 h-3.5" />
@@ -3676,9 +3676,9 @@ export default function App() {
                                 onClick={() => setActiveFileId(f.id)}
                                 className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
                               >
-                                <FileText className={cn("w-3.5 h-3.5 shrink-0", f.id === activeFileId ? "text-[#e6005c]" : "text-white/30")} />
+                                <FileText className={cn("w-3.5 h-3.5 shrink-0", f.id === activeFileId ? "text-[#e6005c]" : "text-white/40")} />
                                 <span className="truncate">{f.name}.html</span>
-                                <span className="text-[9px] text-white/30 shrink-0">({f.logs.length}줄)</span>
+                                <span className="text-[9px] text-white/40 shrink-0">({f.logs.length}줄)</span>
                               </button>
                             </div>
 
@@ -3690,7 +3690,7 @@ export default function App() {
                                   const name = prompt("변경할 파일 이름을 입력하세요", f.name);
                                   if (name && name.trim()) handleRenameFile(f.id, name.trim());
                                 }}
-                                className="p-1 hover:bg-white/10 rounded transition-colors text-white/30 hover:text-white"
+                                className="p-1 hover:bg-white/10 rounded transition-colors text-white/40 hover:text-white"
                                 title="이름 변경"
                               >
                                 <Edit2 className="w-3 h-3" />
@@ -3701,7 +3701,7 @@ export default function App() {
                                   e.stopPropagation();
                                   handleRemoveFile(f.id);
                                 }}
-                                className="p-1 hover:bg-red-500/20 rounded transition-colors text-white/30 hover:text-red-400"
+                                className="p-1 hover:bg-red-500/20 rounded transition-colors text-white/40 hover:text-red-400"
                                 title="파일 삭제"
                               >
                                 <X className="w-3 h-3" />
@@ -3748,13 +3748,13 @@ export default function App() {
                       )}>
                         <FileJson className={cn(
                           "w-3.5 h-3.5 transition-colors",
-                          jsonFileName ? "text-blue-400" : (logs.length > 0 ? "text-white/20 group-hover:text-blue-400" : "text-white/20")
+                          jsonFileName ? "text-blue-400" : (logs.length > 0 ? "text-white/30 group-hover:text-blue-400" : "text-white/30")
                         )} />
                       </div>
                       <div className="text-left w-full overflow-hidden">
                         <p className={cn(
                           "text-[11px] font-bold truncate leading-none mt-0.5 transition-colors",
-                          jsonFileName ? "text-white/90" : "text-white/60",
+                          jsonFileName ? "text-white" : "text-white/70",
                           logs.length === 0 && "opacity-50"
                         )}>
                           {jsonFileName || '프로젝트 파일(.json) 선택'}
@@ -3771,7 +3771,7 @@ export default function App() {
                         className="p-1 hover:bg-white/10 rounded-lg transition-colors shrink-0 flex items-center justify-center w-6 h-6"
                         title="업로드 취소"
                       >
-                        <X className="w-3.5 h-3.5 text-white/60 hover:text-white" />
+                        <X className="w-3.5 h-3.5 text-white/70 hover:text-white" />
                       </button>
                     ) : (
                       <div className="w-6 h-6 shrink-0" />
@@ -3794,7 +3794,7 @@ export default function App() {
                   <div className="space-y-2">
                     <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-white/70">탭 이름 표시</span>
+                        <span className="text-[11px] font-bold text-white/80">탭 이름 표시</span>
                       </div>
                       <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-0.75">
                         {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
@@ -3810,7 +3810,7 @@ export default function App() {
                             className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
                               showTabNames.has(f) 
                                 ? 'bg-[#e6005c] text-white shadow-sm' 
-                                : 'text-white/30 hover:text-white/60'
+                                : 'text-white/40 hover:text-white/70'
                             }`}
                           >
                             {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
@@ -3821,8 +3821,8 @@ export default function App() {
 
                     <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-white/70">발언자별 통합</span>
-                        <div className="text-[9px] text-white/30 font-medium text-right">
+                        <span className="text-[11px] font-bold text-white/80">발언자별 통합</span>
+                        <div className="text-[9px] text-white/40 font-medium text-right">
                           연속되는 대사를 하나의 블록으로 합칩니다.
                         </div>
                       </div>
@@ -3839,7 +3839,7 @@ export default function App() {
                             className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
                               mergeTabs.has(f) 
                                 ? 'bg-[#e6005c] text-white shadow-sm' 
-                                : 'text-white/30 hover:text-white/60'
+                                : 'text-white/40 hover:text-white/70'
                             }`}
                           >
                             {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
@@ -3850,8 +3850,8 @@ export default function App() {
 
                     <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-white/70">탭별 통합</span>
-                        <div className="text-[9px] text-white/30 font-medium text-right">
+                        <span className="text-[11px] font-bold text-white/80">탭별 통합</span>
+                        <div className="text-[9px] text-white/40 font-medium text-right">
                           동일한 탭의 블록을 연결합니다.
                         </div>
                       </div>
@@ -3873,7 +3873,7 @@ export default function App() {
                                   ? 'bg-transparent text-white/10 cursor-not-allowed'
                                   : mergeTabStyles.has(f) 
                                     ? 'bg-[#e6005c] text-white shadow-sm' 
-                                    : 'text-white/30 hover:text-white/60'
+                                    : 'text-white/40 hover:text-white/70'
                               }`}
                             >
                               {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
@@ -3894,7 +3894,7 @@ export default function App() {
                       <div className="flex items-center gap-1.5">
                         <button 
                           onClick={handleRandomizeTabColors}
-                          className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
+                          className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5"
                           title="모든 탭에 무작위 색상을 겹치지 않게 지정합니다"
                         >
                           <Palette className="w-3 h-3" />
@@ -3904,7 +3904,7 @@ export default function App() {
                           onClick={() => {
                             setTabSortMode(prev => prev === 'appearance' ? 'alphabetical' : 'appearance');
                           }}
-                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
+                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5"
                         >
                           <ArrowUpDown className="w-3 h-3" />
                           {tabSortMode === 'appearance' ? '등장순' : '가나다순'}
@@ -3965,12 +3965,12 @@ export default function App() {
                               </div>
                             ) : (
                               <div className="flex items-center gap-1 flex-1 overflow-hidden">
-                                <span className="text-[11px] font-bold truncate text-white/80">
+                                <span className="text-[11px] font-bold truncate text-white/90">
                                   {tab.name}
                                 </span>
                                 <button 
                                   onClick={() => { setRenamingTab(tab.id); setNewTabNameInput(tab.name); }}
-                                  className="p-1 text-white/20 hover:text-[#e6005c] transition-colors"
+                                  className="p-1 text-white/30 hover:text-[#e6005c] transition-colors"
                                 >
                                   <Pencil className="w-3 h-3" />
                                 </button>
@@ -3983,7 +3983,7 @@ export default function App() {
                                   setTabSettings(next);
                                   saveToHistory({ tabSettings: next });
                                 }}
-                                className={`w-6 h-6 rounded flex items-center justify-center relative transition-colors ${tab.applyColorToName ? "bg-white/20" : "text-white/40 hover:bg-white/10 hover:text-white"}`}
+                                className={`w-6 h-6 rounded flex items-center justify-center relative transition-colors ${tab.applyColorToName ? "bg-white/20" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
                                 title="이름에 색상 적용"
                               >
                                 <User className="w-3.5 h-3.5 -translate-y-[1px]" style={{ color: tab.applyColorToName ? (tab.textColor || 'white') : 'currentColor' }} />
@@ -4011,7 +4011,7 @@ export default function App() {
                                   setTabSettings(next);
                                   saveToHistory({ tabSettings: next });
                                 }}
-                                className={`w-6 h-6 rounded flex items-center justify-center font-serif font-bold text-[10px] transition-colors ${tab.isBold ? "bg-white/20 text-white" : "text-white/40 hover:bg-white/10 hover:text-white"}`}
+                                className={`w-6 h-6 rounded flex items-center justify-center font-serif font-bold text-[10px] transition-colors ${tab.isBold ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
                                 title="굵게"
                               >
                                 B
@@ -4022,7 +4022,7 @@ export default function App() {
                                   setTabSettings(next);
                                   saveToHistory({ tabSettings: next });
                                 }}
-                                className={`w-6 h-6 rounded flex items-center justify-center font-serif italic text-[11px] transition-colors ${tab.isItalic ? "bg-white/20 text-white" : "text-white/40 hover:bg-white/10 hover:text-white"}`}
+                                className={`w-6 h-6 rounded flex items-center justify-center font-serif italic text-[11px] transition-colors ${tab.isItalic ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
                                 title="이탤릭"
                               >
                                 I
@@ -4042,7 +4042,7 @@ export default function App() {
                                   className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
                                     tab.format === f 
                                       ? 'bg-[#e6005c] text-white shadow-sm' 
-                                      : 'text-white/30 hover:text-white/60'
+                                      : 'text-white/40 hover:text-white/70'
                                   }`}
                                 >
                                   {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
@@ -4083,19 +4083,19 @@ export default function App() {
                             >
                               <div className="flex items-center gap-2 min-w-0">
                                 <FileText className="w-3.5 h-3.5 text-[#e6005c] shrink-0" />
-                                <span className="text-[11px] font-bold text-white/90 truncate">{group.fileName}</span>
-                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/50 font-bold shrink-0">
+                                <span className="text-[11px] font-bold text-white truncate">{group.fileName}</span>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/60 font-bold shrink-0">
                                   {group.tabIds.length}개 탭
                                 </span>
                               </div>
-                              <ChevronDown className={cn("w-4 h-4 text-white/40 transition-transform duration-200", isCollapsed && "-rotate-90")} />
+                              <ChevronDown className={cn("w-4 h-4 text-white/50 transition-transform duration-200", isCollapsed && "-rotate-90")} />
                             </button>
                             {!isCollapsed && (
                               <div className="p-2 space-y-2 bg-black/20 border-t border-white/5">
                                 {group.tabIds.length > 0 ? (
                                   group.tabIds.map(tabId => renderTabCard(tabId))
                                 ) : (
-                                  <p className="text-[10px] text-white/30 text-center py-2">등록된 탭이 없습니다</p>
+                                  <p className="text-[10px] text-white/40 text-center py-2">등록된 탭이 없습니다</p>
                                 )}
                               </div>
                             )}
@@ -4130,12 +4130,13 @@ export default function App() {
               >
                 <Section>
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm relative h-11" ref={narrationDropdownRef}>
-                      <span className="text-[11px] font-bold text-white/70">나레이션 캐릭터</span>
+                    <div className="bg-white/5 border border-white/5 rounded-xl shadow-sm transition-all flex flex-col">
+                      <div className="flex items-center justify-between p-3 relative h-11" ref={narrationDropdownRef}>
+                        <span className="text-[11px] font-bold text-white/80">나레이션 캐릭터</span>
                       <div className="relative">
                         <button
                           onClick={() => setIsNarrationDropdownOpen(!isNarrationDropdownOpen)}
-                          className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/80 px-2 py-1 outline-none hover:border-white/20 transition-colors"
+                          className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/90 px-2 py-1 outline-none hover:border-white/20 transition-colors"
                         >
                           <span className="max-w-[100px] truncate">{narrationCharacter ? charSettings[narrationCharacter]?.name || narrationCharacter : '선택 안 함'}</span>
                           <ChevronDown className="w-3 h-3 opacity-50" />
@@ -4152,7 +4153,7 @@ export default function App() {
                                 }}
                                 className={cn(
                                   "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
-                                  !narrationCharacter ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
+                                  !narrationCharacter ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
                                 )}
                               >
                                 선택 안 함
@@ -4170,7 +4171,7 @@ export default function App() {
                                     }}
                                     className={cn(
                                       "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
-                                      narrationCharacter === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
+                                      narrationCharacter === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
                                     )}
                                   >
                                     {char.name}
@@ -4184,44 +4185,44 @@ export default function App() {
                     </div>
 
                     {narrationCharacter && (
-                      <>
-                        <div className="flex flex-col gap-2 mt-2 p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm">
-                          <span className="text-[11px] font-bold text-white/70">나레이션 출력 디자인</span>
-                          <div className="flex bg-black/20 border border-white/5 rounded-lg p-1 gap-1">
+                      <div className="flex flex-col border-t border-white/5">
+                        <div className="flex items-center justify-between p-3 h-11 relative">
+                          <span className="text-[11px] font-bold text-white/80 shrink-0">나레이션 출력 디자인</span>
+                          <div className="flex bg-black/20 border border-white/5 rounded-lg p-0.5 gap-0.5 ml-2">
                             <button
                               onClick={() => { setNarrationFormat('style1'); saveToHistory({ narrationFormat: 'style1' }); }}
-                              className={`flex-1 py-1.5 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                              className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
                                 narrationFormat === 'style1'
                                   ? 'bg-[#e6005c] text-white shadow-sm'
-                                  : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                                  : 'text-white/50 hover:text-white/80 hover:bg-white/5'
                               }`}
                             >
-                              스타일 1 (기본)
+                              기본
                             </button>
                             <button
                               onClick={() => { setNarrationFormat('style2'); saveToHistory({ narrationFormat: 'style2' }); }}
-                              className={`flex-1 py-1.5 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                              className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
                                 narrationFormat === 'style2'
                                   ? 'bg-[#e6005c] text-white shadow-sm'
-                                  : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                                  : 'text-white/50 hover:text-white/80 hover:bg-white/5'
                               }`}
                             >
-                              스타일 2 (이탤릭)
+                              이탤릭
                             </button>
                             <button
                               onClick={() => { setNarrationFormat('style3'); saveToHistory({ narrationFormat: 'style3' }); }}
-                              className={`flex-1 py-1.5 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                              className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
                                 narrationFormat === 'style3'
                                   ? 'bg-[#e6005c] text-white shadow-sm'
-                                  : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                                  : 'text-white/50 hover:text-white/80 hover:bg-white/5'
                               }`}
                             >
-                              스타일 3 (단락)
+                              단락
                             </button>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11">
-                          <span className="text-[11px] font-bold text-white/70">나레이션 문단 자동 나누기</span>
+                        <div className="flex items-center justify-between p-3 h-11 border-t border-white/5">
+                          <span className="text-[11px] font-bold text-white/80">나레이션 문단 자동 나누기</span>
                           <Toggle 
                             enabled={enableSentenceSpacing} 
                             onChange={(val) => {
@@ -4230,8 +4231,8 @@ export default function App() {
                             }} 
                           />
                         </div>
-                        <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 mt-2">
-                          <span className="text-[11px] font-bold text-white/70">비밀탭에도 적용</span>
+                        <div className="flex items-center justify-between p-3 h-11 border-t border-white/5">
+                          <span className="text-[11px] font-bold text-white/80">비밀탭에도 적용</span>
                           <Toggle 
                             enabled={enableSecretNarration} 
                             onChange={(val) => {
@@ -4240,10 +4241,11 @@ export default function App() {
                             }} 
                           />
                         </div>
-                      </>
+                      </div>
                     )}
+                    </div>
                     <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/70">스탠딩 숨김</span>
+                      <span className="text-[11px] font-bold text-white/80">스탠딩 숨김</span>
                       <Toggle 
                         enabled={hideAllAvatars} 
                         onChange={(val) => {
@@ -4253,7 +4255,7 @@ export default function App() {
                       />
                     </div>
                     <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/70">얼굴 위주 크롭 (상단 1:1)</span>
+                      <span className="text-[11px] font-bold text-white/80">얼굴 위주 크롭 (상단 1:1)</span>
                       <Toggle 
                         enabled={cropFaceTop} 
                         onChange={(val) => {
@@ -4282,18 +4284,18 @@ export default function App() {
                       onClick={() => setIsLibraryAccordionOpen(!isLibraryAccordionOpen)}
                       className="w-full flex items-center justify-between p-3 outline-none hover:bg-white/5 transition-colors"
                     >
-                      <span className="text-[11px] font-bold text-white/70">로컬 스토리지에서 불러오기</span>
+                      <span className="text-[11px] font-bold text-white/80">로컬 스토리지에서 불러오기</span>
                         <ChevronDown className={cn("w-4 h-4 opacity-50 transition-transform", isLibraryAccordionOpen && "rotate-180")} />
                       </button>
                       {isLibraryAccordionOpen && (
                         <div className="border-t border-white/5 bg-black/20 flex flex-col rounded-b-xl">
                           <div className="flex items-center justify-between p-2 pb-2 border-b border-white/5">
                               <div className="flex items-center gap-2 px-1 text-[9px]">
-                                  <button onClick={() => setLibrarySortMode('newest')} className={cn("transition-colors", librarySortMode === 'newest' ? "text-white font-bold" : "text-white/40 hover:text-white")}>최신순</button>
-                                  <span className="text-white/20">|</span>
-                                  <button onClick={() => setLibrarySortMode('oldest')} className={cn("transition-colors", librarySortMode === 'oldest' ? "text-white font-bold" : "text-white/40 hover:text-white")}>오래된순</button>
-                                  <span className="text-white/20">|</span>
-                                  <button onClick={() => setLibrarySortMode('alphabetical')} className={cn("transition-colors", librarySortMode === 'alphabetical' ? "text-white font-bold" : "text-white/40 hover:text-white")}>가나다순</button>
+                                  <button onClick={() => setLibrarySortMode('newest')} className={cn("transition-colors", librarySortMode === 'newest' ? "text-white font-bold" : "text-white/50 hover:text-white")}>최신순</button>
+                                  <span className="text-white/30">|</span>
+                                  <button onClick={() => setLibrarySortMode('oldest')} className={cn("transition-colors", librarySortMode === 'oldest' ? "text-white font-bold" : "text-white/50 hover:text-white")}>오래된순</button>
+                                  <span className="text-white/30">|</span>
+                                  <button onClick={() => setLibrarySortMode('alphabetical')} className={cn("transition-colors", librarySortMode === 'alphabetical' ? "text-white font-bold" : "text-white/50 hover:text-white")}>가나다순</button>
                               </div>
                               <button
                                   onClick={() => {
@@ -4301,7 +4303,7 @@ export default function App() {
                                       if (isLibraryEditMode) setRenamingLibraryId(null);
                                   }}
                                   className={cn("flex items-center gap-1.5 px-2 py-1 rounded-md text-[9px] font-bold transition-all border border-white/5", 
-                                      isLibraryEditMode ? "bg-white/20 text-white" : "bg-white/5 hover:bg-white/10 text-white/40 hover:text-white")}
+                                      isLibraryEditMode ? "bg-white/20 text-white" : "bg-white/5 hover:bg-white/10 text-white/50 hover:text-white")}
                               >
                                   <Pencil className="w-3 h-3" />
                                   {isLibraryEditMode ? "수정 완료" : "수정"}
@@ -4373,7 +4375,7 @@ export default function App() {
                                                       <img key={i} src={c.imageUrl} className={cn("object-cover rounded-md", thumbSizeClass)} alt="" referrerPolicy="no-referrer" />
                                                     ) : (
                                                       <div key={i} className={cn("bg-black/20 flex items-center justify-center shrink-0 rounded-md", thumbSizeClass)}>
-                                                        <User className={cn("text-white/20", userIconSize)} />
+                                                        <User className={cn("text-white/30", userIconSize)} />
                                                       </div>
                                                     )
                                                 ))}
@@ -4385,7 +4387,7 @@ export default function App() {
                                           {lib.characters[0]?.imageUrl ? (
                                               <img src={lib.characters[0].imageUrl} className="w-full h-full object-cover rounded-lg" alt="" referrerPolicy="no-referrer" />
                                             ) : (
-                                              <User className="w-4 h-4 text-white/20" />
+                                              <User className="w-4 h-4 text-white/30" />
                                           )}
                                         </div>
                                       </Tooltip>
@@ -4411,15 +4413,15 @@ export default function App() {
                                           />
                                         ) : (
                                           <div className="flex items-end gap-2 w-full h-[18px]">
-                                            <div className="text-[11px] font-bold text-white/90 truncate leading-tight flex-1">{lib.name}</div>
-                                            {dateStr && <span className="text-[9px] text-white/30 shrink-0 font-normal mb-[1px]">{dateStr}</span>}
+                                            <div className="text-[11px] font-bold text-white truncate leading-tight flex-1">{lib.name}</div>
+                                            {dateStr && <span className="text-[9px] text-white/40 shrink-0 font-normal mb-[1px]">{dateStr}</span>}
                                           </div>
                                         )}
                                         <div className="text-[9px] mt-1.5 leading-[1.3] w-full flex flex-wrap gap-y-1">
                                           {lib.characters.map((c, idx) => (
                                             <span key={idx} className="char-unit inline-flex items-center mr-[7px]">
                                               <span className="inline-block w-1.5 h-1.5 rounded-full mr-[3px] shrink-0" style={{ backgroundColor: c.color || '#ffffff' }} />
-                                              <span className="text-white/60">{c.name}</span>
+                                              <span className="text-white/70">{c.name}</span>
                                             </span>
                                           ))}
                                         </div>
@@ -4448,7 +4450,7 @@ export default function App() {
                                                 }}
                                                 className="w-[26px] h-[26px] flex items-center justify-center rounded-md bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
                                               >
-                                                <Pencil className="w-3 h-3 text-white/60" />
+                                                <Pencil className="w-3 h-3 text-white/70" />
                                               </button>
                                             )}
                                             <button
@@ -4487,7 +4489,7 @@ export default function App() {
                                                 className={`shrink-0 flex items-center justify-center outline-none relative z-10 w-7 h-7 rounded-md transition-colors border ${
                                                   openLibraryDropdownId === lib.id 
                                                     ? 'bg-[#e6005c]/20 border-[#e6005c]/30 text-[#e6005c]' 
-                                                    : 'bg-white/5 hover:bg-white/10 border-white/5 text-white/60'
+                                                    : 'bg-white/5 hover:bg-white/10 border-white/5 text-white/70'
                                                 }`}
                                                 title="개별 캐릭터 적용"
                                               >
@@ -4526,14 +4528,14 @@ export default function App() {
                                                           setOpenLibraryDropdownId(null);
                                                           setHoverLibraryDropdownId(null);
                                                         }}
-                                                        className="relative w-full text-left pl-4 pr-3 py-2 text-[11px] rounded-lg transition-colors text-white/60 hover:bg-white/5 hover:text-white flex items-center gap-2 outline-none group overflow-hidden"
+                                                        className="relative w-full text-left pl-4 pr-3 py-2 text-[11px] rounded-lg transition-colors text-white/70 hover:bg-white/5 hover:text-white flex items-center gap-2 outline-none group overflow-hidden"
                                                       >
                                                         <div className="absolute left-0 top-0 bottom-0 w-[6px]" style={{ backgroundColor: c.color || '#fff' }} />
                                                         <div className="w-[28px] h-[28px] rounded-md overflow-hidden bg-black/40 border border-white/5 shrink-0 flex items-center justify-center z-10">
                                                           {c.imageUrl ? (
                                                             <img src={c.imageUrl} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
                                                           ) : (
-                                                            <User className="w-4 h-4 text-white/20" />
+                                                            <User className="w-4 h-4 text-white/30" />
                                                           )}
                                                         </div>
                                                         <span className="truncate flex-1 font-medium group-hover:text-white transition-colors z-10 relative">{c.name}</span>
@@ -4550,7 +4552,7 @@ export default function App() {
                                   );
                                 })
                               ) : (
-                                <div className="text-center py-4 text-white/30 text-[10px]">등록된 캐릭터가 없습니다.</div>
+                                <div className="text-center py-4 text-white/40 text-[10px]">등록된 캐릭터가 없습니다.</div>
                               );
                             })()}
                           </div>
@@ -4558,13 +4560,13 @@ export default function App() {
                           <div className="p-2 border-t border-white/5">
                             <button
                               onClick={handleAddToLibrary}
-                              className="w-full flex flex-col items-center justify-center p-3 border border-dashed border-white/20 rounded-xl hover:border-white/40 hover:bg-[#e6005c]/10 transition-colors text-white/60 hover:text-white group"
+                              className="w-full flex flex-col items-center justify-center p-3 border border-dashed border-white/20 rounded-xl hover:border-white/40 hover:bg-[#e6005c]/10 transition-colors text-white/70 hover:text-white group"
                             >
                               <div className="flex items-center gap-2 font-bold text-[11px] mb-1 group-hover:text-[#e6005c] transition-colors">
                                 <Plus className="w-3.5 h-3.5" />
                                 현재 설정을 등록
                               </div>
-                              <span className="text-[9px] text-white/40 text-center max-w-[90%]">
+                              <span className="text-[9px] text-white/50 text-center max-w-[90%]">
                                 토글이 켜져 있고, 이미지 URL이 설정된 캐릭터만 등록됩니다.
                               </span>
                             </button>
@@ -4583,7 +4585,7 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => setIsBulkImgurModalOpen(true)}
-                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
+                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5"
                         >
                           <Upload className="w-3 h-3" />
                           이미지 일괄 등록
@@ -4612,7 +4614,7 @@ export default function App() {
                               saveToHistory({ charOrder: newOrder, charSortMode: 'appearance' });
                             }
                           }}
-                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
+                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5"
                         >
                           <ArrowUpDown className="w-3 h-3" />
                           {charSortMode === 'appearance' ? '등장순' : '가나다순'}
@@ -4638,7 +4640,7 @@ export default function App() {
                           }
                         }
                       }}
-                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-[10px] text-white placeholder:text-white/30 outline-none focus:border-[#e6005c] transition-colors"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-[10px] text-white placeholder:text-white/40 outline-none focus:border-[#e6005c] transition-colors"
                     />
                     <button
                       onClick={() => {
@@ -4711,7 +4713,7 @@ export default function App() {
                               <CharacterNameWithTooltip name={char.name} />
                               <button 
                                 onClick={() => { setRenamingChar(char.id); setNewNameInput(char.name); }}
-                                className="p-0.5 text-white/20 hover:text-[#e6005c] transition-colors"
+                                className="p-0.5 text-white/30 hover:text-[#e6005c] transition-colors"
                               >
                                 <Pencil className="w-2.5 h-2.5" />
                               </button>
@@ -4745,7 +4747,7 @@ export default function App() {
                             onBlur={() => {
                               saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                             }}
-                            className="flex-1 min-w-0 text-[10px] px-2 h-7 bg-black/20 border border-white/5 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors"
+                            className="flex-1 min-w-0 text-[10px] px-2 h-7 bg-black/20 border border-white/5 rounded-lg outline-none focus:border-[#e6005c] text-white/90 transition-colors"
                           />
                           
                           <div 
@@ -4787,19 +4789,19 @@ export default function App() {
                                 >
                                   <div className="flex items-center gap-2 min-w-0">
                                     <FileText className="w-3.5 h-3.5 text-[#e6005c] shrink-0" />
-                                    <span className="text-[11px] font-bold text-white/90 truncate">{group.fileName}</span>
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/50 font-bold shrink-0">
+                                    <span className="text-[11px] font-bold text-white truncate">{group.fileName}</span>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/60 font-bold shrink-0">
                                       {group.charIds.length}명
                                     </span>
                                   </div>
-                                  <ChevronDown className={cn("w-4 h-4 text-white/40 transition-transform duration-200", isCollapsed && "-rotate-90")} />
+                                  <ChevronDown className={cn("w-4 h-4 text-white/50 transition-transform duration-200", isCollapsed && "-rotate-90")} />
                                 </button>
                                 {!isCollapsed && (
                                   <div className="p-2 space-y-2 bg-black/20 border-t border-white/5">
                                     {group.charIds.length > 0 ? (
                                       group.charIds.map(charId => renderCharCard(charId))
                                     ) : (
-                                      <p className="text-[10px] text-white/30 text-center py-2">등록된 캐릭터가 없습니다</p>
+                                      <p className="text-[10px] text-white/40 text-center py-2">등록된 캐릭터가 없습니다</p>
                                     )}
                                   </div>
                                 )}
@@ -4855,7 +4857,7 @@ export default function App() {
                               "h-6 px-2 flex items-center justify-center rounded transition-all",
                               defaultIllAlign === align 
                                 ? "bg-white/10 text-white font-bold shadow-sm" 
-                                : "text-white/30 hover:text-white/60"
+                                : "text-white/40 hover:text-white/70"
                             )}
                             title={align === 'left' ? '왼쪽' : align === 'center' ? '가운데' : '오른쪽'}
                           >
@@ -4892,7 +4894,7 @@ export default function App() {
                       <div className="text-[11px] leading-relaxed w-[260px] text-left break-keep">
                         Imgur 앨범 주소를 입력하고 불러오기를 누르면 이미지 파일들을 한번에 등록할 수 있습니다. (url 형식: https://imgur.com/a/앨범주소)<br/><br/>
                         삽화를 삽입할 땐 손잡이를 잡고 원하는 위치로 드래그하거나, 로그 #를 입력하면 됩니다. 로그 #는 미리보기 탭에서 로그 블럭에 마우스를 올려 확인할 수 있습니다.<br/><br/>
-                        위치 아이콘(<MapPin className="w-3 h-3 inline text-white/50 mb-0.5 mx-0.5"/>)을 누르면 삽화의 위치로 이동할 수 있습니다.<br/><br/>
+                        위치 아이콘(<MapPin className="w-3 h-3 inline text-white/60 mb-0.5 mx-0.5"/>)을 누르면 삽화의 위치로 이동할 수 있습니다.<br/><br/>
                         탭 드롭다운으로 소속된 탭을 바꿀 수 있습니다. (자동: 바로 직전 대사의 탭을 따라감)
                       </div>
                     }
@@ -4904,12 +4906,12 @@ export default function App() {
                             placeholder="Imgur 앨범 주소"
                             value={illBulkUrl}
                             onChange={(e) => setIllBulkUrl(e.target.value)}
-                            className="flex-1 min-w-0 text-[9px] px-2 py-1.5 bg-black/40 border border-white/10 rounded-lg outline-none focus:border-[#e6005c] text-white/80 transition-colors placeholder:text-white/20"
+                            className="flex-1 min-w-0 text-[9px] px-2 py-1.5 bg-black/40 border border-white/10 rounded-lg outline-none focus:border-[#e6005c] text-white/90 transition-colors placeholder:text-white/30"
                           />
                           <button
                             onClick={handleIllBulkFetch}
                             disabled={isIllBulkLoading || !illBulkUrl}
-                            className="px-2.5 py-1.5 bg-[#e6005c] hover:bg-[#ff0066] disabled:bg-white/5 disabled:cursor-not-allowed disabled:text-white/20 text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap active:scale-95 flex items-center gap-1"
+                            className="px-2.5 py-1.5 bg-[#e6005c] hover:bg-[#ff0066] disabled:bg-white/5 disabled:cursor-not-allowed disabled:text-white/30 text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap active:scale-95 flex items-center gap-1"
                           >
                             {isIllBulkLoading ? '불러오는 중...' : '불러오기'}
                           </button>
@@ -4970,7 +4972,7 @@ export default function App() {
 
                                     <div className="flex bg-black/30 border border-white/10 rounded-lg focus-within:border-[#e6005c] transition-colors overflow-hidden h-7">
                                       <button 
-                                        className="px-2 flex items-center justify-center hover:bg-white/10 text-white/40 hover:text-white border-r border-white/10 bg-white/5"
+                                        className="px-2 flex items-center justify-center hover:bg-white/10 text-white/50 hover:text-white border-r border-white/10 bg-white/5"
                                         onClick={() => {
                                           if (ill.afterLogIndex !== null) {
                                             const val = Math.max(1, Math.min(logs.length, ill.afterLogIndex));
@@ -4992,10 +4994,10 @@ export default function App() {
                                           val = Math.max(1, Math.min(logs.length, val));
                                           onUpdateIllustration(ill.id, { afterLogIndex: val - 1 });
                                         }}
-                                        className="bg-transparent text-center text-[10px] text-white/80 outline-none w-10 font-mono font-bold placeholder:text-white/20"
+                                        className="bg-transparent text-center text-[10px] text-white/90 outline-none w-10 font-mono font-bold placeholder:text-white/30"
                                       />
                                       <button 
-                                        className="px-2 flex items-center justify-center hover:bg-white/10 text-white/40 hover:text-white border-l border-white/10 bg-white/5"
+                                        className="px-2 flex items-center justify-center hover:bg-white/10 text-white/50 hover:text-white border-l border-white/10 bg-white/5"
                                         onClick={() => {
                                           if (ill.afterLogIndex !== null) {
                                             const val = Math.max(1, Math.min(logs.length, ill.afterLogIndex + 2));
@@ -5009,7 +5011,7 @@ export default function App() {
                                   </div>
 
                                   <div className="flex items-center gap-1.5 shrink-0">
-                                    <span className="text-[9px] text-white/30 font-bold whitespace-nowrap">탭</span>
+                                    <span className="text-[9px] text-white/40 font-bold whitespace-nowrap">탭</span>
                                     <div className="w-[100px]">
                                       <SearchableSelect 
                                         value={ill.tabOverride || 'auto'}
@@ -5030,7 +5032,7 @@ export default function App() {
 
                                 {/* Line 2: Info Text, Action Buttons */}
                                 <div className="flex items-center justify-between gap-2">
-                                  <div className="flex flex-col gap-0.5 text-[9px] text-white/40 font-medium min-w-0 flex-1" title={`위: ${prevSummary}\n아래: ${nextSummary}`}>
+                                  <div className="flex flex-col gap-0.5 text-[9px] text-white/50 font-medium min-w-0 flex-1" title={`위: ${prevSummary}\n아래: ${nextSummary}`}>
                                     <div className="flex items-center gap-1">
                                       <ArrowUp className="w-2.5 h-2.5 shrink-0" />
                                       <span className="truncate">{prevSummary}</span>
@@ -5044,7 +5046,7 @@ export default function App() {
                                   <div className="flex items-center gap-1 shrink-0">
                                     <button
                                       onClick={() => scrollToIllustrationLog(ill.afterLogIndex ?? 0, targetFileId)}
-                                      className="p-1.5 bg-white/5 hover:bg-[#e6005c]/20 text-white/50 hover:text-[#e6005c] rounded-lg transition-all active:scale-95 shrink-0 flex items-center justify-center"
+                                      className="p-1.5 bg-white/5 hover:bg-[#e6005c]/20 text-white/60 hover:text-[#e6005c] rounded-lg transition-all active:scale-95 shrink-0 flex items-center justify-center"
                                       title="미리보기 위치로 이동"
                                     >
                                       <MapPin className="w-3.5 h-3.5" />
@@ -5052,7 +5054,7 @@ export default function App() {
 
                                     <button
                                       onClick={() => onRemoveIllustration(ill.id)}
-                                      className="p-1.5 bg-white/5 hover:bg-red-500/20 text-white/40 hover:text-red-400 rounded-lg transition-all active:scale-95 shrink-0 flex items-center justify-center"
+                                      className="p-1.5 bg-white/5 hover:bg-red-500/20 text-white/50 hover:text-red-400 rounded-lg transition-all active:scale-95 shrink-0 flex items-center justify-center"
                                       title="삭제"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -5143,7 +5145,7 @@ export default function App() {
                                 className="absolute top-0 right-0 bottom-0 w-4.5 bg-white/5 hover:bg-white/10 border-l border-white/5 flex items-center justify-center cursor-grab active:cursor-grabbing group/handle transition-colors rounded-r-2xl"
                                 title="드래그하여 대사 사이로 삽화 이동"
                               >
-                                <GripVertical className="w-3 h-3 text-white/30 group-hover/handle:text-white/70 transition-colors" />
+                                <GripVertical className="w-3 h-3 text-white/40 group-hover/handle:text-white/80 transition-colors" />
                               </div>
                             </div>
                           );
@@ -5250,7 +5252,7 @@ export default function App() {
                       className={`py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                         theme === 'dark' 
                           ? 'bg-[#e6005c] border-[#e6005c] text-white' 
-                          : 'bg-white/5 border-white/5 text-white/40 hover:border-white/10'
+                          : 'bg-white/5 border-white/5 text-white/50 hover:border-white/10'
                       }`}
                     >
                       다크 모드
@@ -5260,7 +5262,7 @@ export default function App() {
                       className={`py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                         theme === 'light' 
                           ? 'bg-white border-white text-stone-900' 
-                          : 'bg-white/5 border-white/5 text-white/40 hover:border-white/10'
+                          : 'bg-white/5 border-white/5 text-white/50 hover:border-white/10'
                       }`}
                     >
                       화이트 모드
@@ -5272,7 +5274,7 @@ export default function App() {
                   <SectionTitle icon={Eye} title="로그 표시 설정" />
                   <div className="space-y-2">
                     <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/70">로그 구분선 표시</span>
+                      <span className="text-[11px] font-bold text-white/80">로그 구분선 표시</span>
                       <Toggle 
                         enabled={showLogDivider} 
                         onChange={(val) => {
@@ -5282,7 +5284,7 @@ export default function App() {
                       />
                     </div>
                     <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/70">잡담 색상을 회색으로 통일</span>
+                      <span className="text-[11px] font-bold text-white/80">잡담 색상을 회색으로 통일</span>
                       <Toggle 
                         enabled={disableOtherColor} 
                         onChange={(val) => {
@@ -5292,7 +5294,7 @@ export default function App() {
                       />
                     </div>
                     <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/70">스탠딩 배경 숨김</span>
+                      <span className="text-[11px] font-bold text-white/80">스탠딩 배경 숨김</span>
                       <Toggle 
                         enabled={hideEmptyAvatars} 
                         onChange={(val) => {
@@ -5309,7 +5311,7 @@ export default function App() {
                   <div className="relative" ref={fontDropdownRef}>
                     <button
                       onClick={() => setIsFontDropdownOpen(!isFontDropdownOpen)}
-                      className="w-full p-3 bg-white/5 border border-white/5 rounded-xl text-xs font-bold outline-none hover:border-white/20 transition-all flex items-center justify-between text-white/80"
+                      className="w-full p-3 bg-white/5 border border-white/5 rounded-xl text-xs font-bold outline-none hover:border-white/20 transition-all flex items-center justify-between text-white/90"
                     >
                       <span style={{ fontFamily: fonts.find(f => f.name === fontFamily)?.value }}>{fontFamily}</span>
                       <ChevronDown className="w-4 h-4 opacity-50" />
@@ -5329,7 +5331,7 @@ export default function App() {
                               style={{ fontFamily: f.value }}
                               className={cn(
                                 "w-full text-left px-3 py-2 text-xs rounded-lg transition-colors",
-                                fontFamily === f.name ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
+                                fontFamily === f.name ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
                               )}
                             >
                               {f.name}
@@ -5350,7 +5352,7 @@ export default function App() {
                       rightElement={
                         <button
                           onClick={() => setIsAdvancedLayoutOpen(!isAdvancedLayoutOpen)}
-                          className="flex items-center gap-1.5 ml-2 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/40 hover:text-white transition-all border border-white/5"
+                          className="flex items-center gap-1.5 ml-2 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5"
                         >
                           <Settings2 className="w-3 h-3" />
                           {isAdvancedLayoutOpen ? '설정 닫기' : '상세 설정'}
@@ -5367,14 +5369,14 @@ export default function App() {
                             setLineHeight(1.5); setContentPadding(15); setBlockSpacing(-12); setAvatarSizeValue(42); setLetterSpacing(0);
                             saveToHistory({ lineHeight: 1.5, contentPadding: 15, blockSpacing: -12, avatarSizeValue: 42, letterSpacing: 0 });
                           }}
-                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (lineHeight === 1.5 && contentPadding === 15 && blockSpacing === -12 && avatarSizeValue === 42 && letterSpacing === 0) ? "bg-white/15 text-white shadow-sm" : "text-white/30 hover:text-white/60")}
+                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (lineHeight === 1.5 && contentPadding === 15 && blockSpacing === -12 && avatarSizeValue === 42 && letterSpacing === 0) ? "bg-white/15 text-white shadow-sm" : "text-white/40 hover:text-white/70")}
                         >좁게</button>
                         <button 
                           onClick={() => {
                             setTextFontSize(14); setLineHeight(1.6); setLetterSpacing(0); setBlockSpacing(2); setContentPadding(12); setAvatarSizeValue(46);
                             saveToHistory({ textFontSize: 14, lineHeight: 1.6, letterSpacing: 0, blockSpacing: 2, contentPadding: 12, avatarSizeValue: 46 });
                           }}
-                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (textFontSize === 14 && lineHeight === 1.6 && letterSpacing === 0 && blockSpacing === 2 && contentPadding === 12 && avatarSizeValue === 46) ? "bg-white/15 text-white shadow-sm" : "text-white/30 hover:text-white/60")}
+                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (textFontSize === 14 && lineHeight === 1.6 && letterSpacing === 0 && blockSpacing === 2 && contentPadding === 12 && avatarSizeValue === 46) ? "bg-white/15 text-white shadow-sm" : "text-white/40 hover:text-white/70")}
                         >
                           기본
                         </button>
@@ -5383,7 +5385,7 @@ export default function App() {
                             setTextFontSize(14); setLineHeight(2.0); setLetterSpacing(0); setBlockSpacing(6); setContentPadding(20); setAvatarSizeValue(46);
                             saveToHistory({ textFontSize: 14, lineHeight: 2.0, letterSpacing: 0, blockSpacing: 6, contentPadding: 20, avatarSizeValue: 46 });
                           }}
-                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (textFontSize === 14 && lineHeight === 2.0 && letterSpacing === 0 && blockSpacing === 6 && contentPadding === 20 && avatarSizeValue === 46) ? "bg-white/15 text-white shadow-sm" : "text-white/30 hover:text-white/60")}
+                          className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (textFontSize === 14 && lineHeight === 2.0 && letterSpacing === 0 && blockSpacing === 6 && contentPadding === 20 && avatarSizeValue === 46) ? "bg-white/15 text-white shadow-sm" : "text-white/40 hover:text-white/70")}
                         >넓게</button>
                       </div>
                       
@@ -5424,11 +5426,11 @@ export default function App() {
                   <SectionTitle icon={Palette} title="CSS 출력 형식" />
                   
                   <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm relative h-11 mb-2" ref={filterDropdownRef}>
-                    <span className="text-[11px] font-bold text-white/70">로그 필터 컨트롤러</span>
+                    <span className="text-[11px] font-bold text-white/80">로그 필터 컨트롤러</span>
                     <div className="relative">
                       <button
                         onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-                        className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/80 px-2 py-1 outline-none hover:border-white/20 transition-colors"
+                        className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/90 px-2 py-1 outline-none hover:border-white/20 transition-colors"
                       >
                         <span className="max-w-[100px] truncate">
                           {filterBarMode === 'none' ? '사용 안 함' : filterBarMode === 'floating' ? '플로팅 버튼' : '본문 헤더 고정'}
@@ -5453,7 +5455,7 @@ export default function App() {
                                 }}
                                 className={cn(
                                   "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
-                                  filterBarMode === opt.value ? "bg-[#e6005c] text-white font-bold" : "text-white/60 hover:bg-white/5 hover:text-white"
+                                  filterBarMode === opt.value ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
                                 )}
                               >
                                 {opt.label}
@@ -5474,7 +5476,7 @@ export default function App() {
                         className={`w-full py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                           cssFormat === 'internal' 
                             ? 'bg-[#e6005c] border-[#e6005c] text-white' 
-                            : 'bg-white/5 border-white/5 text-white/40 hover:border-white/10'
+                            : 'bg-white/5 border-white/5 text-white/50 hover:border-white/10'
                         }`}
                       >
                         내부 스타일
@@ -5488,7 +5490,7 @@ export default function App() {
                         className={`w-full py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                           cssFormat === 'inline' 
                             ? 'bg-[#e6005c] border-[#e6005c] text-white' 
-                            : 'bg-white/5 border-white/5 text-white/40 hover:border-white/10'
+                            : 'bg-white/5 border-white/5 text-white/50 hover:border-white/10'
                         }`}
                       >
                         인라인 스타일
@@ -5507,7 +5509,7 @@ export default function App() {
             <button 
               onClick={undo}
               disabled={historyIndex <= 0}
-              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white disabled:opacity-10 transition-all text-[9px] font-bold border border-white/5"
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/50 hover:text-white disabled:opacity-10 transition-all text-[9px] font-bold border border-white/5"
               title="되돌리기"
             >
               <Undo2 className="w-3 h-3" />
@@ -5516,7 +5518,7 @@ export default function App() {
             <button 
               onClick={redo}
               disabled={historyIndex >= history.length - 1}
-              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/40 hover:text-white disabled:opacity-10 transition-all text-[9px] font-bold border border-white/5"
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/50 hover:text-white disabled:opacity-10 transition-all text-[9px] font-bold border border-white/5"
               title="다시 실행"
             >
               <Redo2 className="w-3 h-3" />
@@ -5524,7 +5526,7 @@ export default function App() {
             </button>
             <button 
               onClick={resetSettings}
-              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/5 hover:bg-red-500/20 rounded-lg text-white/40 hover:text-red-400 transition-all text-[9px] font-bold border border-white/5"
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/5 hover:bg-red-500/20 rounded-lg text-white/50 hover:text-red-400 transition-all text-[9px] font-bold border border-white/5"
               title="초기화"
             >
               <RotateCcw className="w-3 h-3" />
@@ -5552,23 +5554,23 @@ export default function App() {
                 </button>
                 <span className={cn(
                     "text-[9px] font-bold transition-colors",
-                    rememberSettings ? "text-white/80" : "text-white/30"
+                    rememberSettings ? "text-white/90" : "text-white/40"
                 )}>설정 기억하기</span>
               </label>
               <Tooltip position="top" content={
                 <div className="text-[11px] leading-relaxed w-[220px] text-left">
                   <p className="mb-2">
-                    변경되는 설정을 브라우저에 자동 저장합니다. 모든 데이터는 서버 전송 없이 개인 기기에만 보관됩니다. <span className="text-white/30 text-[9px]">(브라우저 캐시 삭제 시 초기화)</span>
+                    변경되는 설정을 브라우저에 자동 저장합니다. 모든 데이터는 서버 전송 없이 개인 기기에만 보관됩니다. <span className="text-white/40 text-[9px]">(브라우저 캐시 삭제 시 초기화)</span>
                   </p>
                   <p className="text-[#e6005c] font-medium">
                     토글을 끄면 저장된 데이터가 삭제되며, 새로고침 시 기본 설정으로 돌아갑니다.
                   </p>
                 </div>
               }>
-                <HelpCircle className="w-3 h-3 text-white/20 hover:text-white/40 cursor-help transition-colors" />
+                <HelpCircle className="w-3 h-3 text-white/30 hover:text-white/50 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.3em]">v1.10.16</span>
+            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.10.16</span>
           </div>
         </div>
       </aside>
@@ -5598,7 +5600,7 @@ export default function App() {
                   }
                 }}
               >
-                <Search className={cn("shrink-0", isSearchExpanded ? "w-3.5 h-3.5 text-white/50" : "w-3.5 h-3.5 text-white/60 hover:text-white")} />
+                <Search className={cn("shrink-0", isSearchExpanded ? "w-3.5 h-3.5 text-white/60" : "w-3.5 h-3.5 text-white/70 hover:text-white")} />
                 
                 {isSearchExpanded && (
                   <>
@@ -5619,11 +5621,11 @@ export default function App() {
                         }
                       }}
                       placeholder="로그 검색..."
-                      className="bg-transparent border-none outline-none text-xs text-white ml-2 w-full placeholder:text-white/30"
+                      className="bg-transparent border-none outline-none text-xs text-white ml-2 w-full placeholder:text-white/40"
                     />
                     {searchQuery && searchMatchIndices.length > 0 && (
                       <div className="flex items-center gap-1 mr-1">
-                        <span className="text-[10px] text-white/50 whitespace-nowrap">
+                        <span className="text-[10px] text-white/60 whitespace-nowrap">
                           {currentMatchIndex + 1} / {searchMatchIndices.length}
                         </span>
                         <div className="flex items-center">
@@ -5632,7 +5634,7 @@ export default function App() {
                               e.stopPropagation();
                               setCurrentMatchIndex(prev => prev > 0 ? prev - 1 : searchMatchIndices.length - 1);
                             }}
-                            className="p-1 hover:bg-white/20 rounded-md text-white/50 hover:text-white transition-colors"
+                            className="p-1 hover:bg-white/20 rounded-md text-white/60 hover:text-white transition-colors"
                           >
                             <ChevronUp className="w-3 h-3" />
                           </button>
@@ -5641,7 +5643,7 @@ export default function App() {
                               e.stopPropagation();
                               setCurrentMatchIndex(prev => prev < searchMatchIndices.length - 1 ? prev + 1 : 0);
                             }}
-                            className="p-1 hover:bg-white/20 rounded-md text-white/50 hover:text-white transition-colors"
+                            className="p-1 hover:bg-white/20 rounded-md text-white/60 hover:text-white transition-colors"
                           >
                             <ChevronDown className="w-3 h-3" />
                           </button>
@@ -5654,7 +5656,7 @@ export default function App() {
                         setIsSearchExpanded(false); 
                         setSearchQuery(''); 
                       }}
-                      className="shrink-0 ml-1 p-0.5 rounded-full hover:bg-white/20 text-white/50 hover:text-white transition-colors"
+                      className="shrink-0 ml-1 p-0.5 rounded-full hover:bg-white/20 text-white/60 hover:text-white transition-colors"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -5664,8 +5666,8 @@ export default function App() {
             </div>
             
             <div className={cn("hidden xl:block h-4 w-px shrink-0", "bg-white/10")} />
-            <p className={cn("hidden xl:block text-[11px] font-bold truncate", "text-white/30")}>
-              총 <span className={cn("text-white/60", searchQuery && "text-[#e6005c]")}>{searchQuery ? searchMatchIndices.length : logs.length}</span>개의 로그 항목
+            <p className={cn("hidden xl:block text-[11px] font-bold truncate", "text-white/40")}>
+              총 <span className={cn("text-white/70", searchQuery && "text-[#e6005c]")}>{searchQuery ? searchMatchIndices.length : logs.length}</span>개의 로그 항목
             </p>
           </div>
 
@@ -5690,7 +5692,7 @@ export default function App() {
                       }}
                       className={cn(
                         "w-full border rounded-xl px-3 py-2 text-[11px] font-bold outline-none transition-colors",
-                        "bg-black/20 border-[#e6005c] text-white placeholder:text-white/20"
+                        "bg-black/20 border-[#e6005c] text-white placeholder:text-white/30"
                       )}
                       placeholder="제목 입력"
                       autoFocus
@@ -5722,11 +5724,11 @@ export default function App() {
                 >
                   <span className={cn(
                     "text-[11px] font-bold truncate max-w-[100px] xl:max-w-[180px]",
-                    pageTitle ? "text-white" : "text-white/20"
+                    pageTitle ? "text-white" : "text-white/30"
                   )}>
                     {pageTitle || "제목 변경"}
                   </span>
-                  <Pencil className="w-3.5 h-3.5 text-white/20 group-hover:text-white/40 transition-colors shrink-0" />
+                  <Pencil className="w-3.5 h-3.5 text-white/30 group-hover:text-white/50 transition-colors shrink-0" />
                 </div>
               )}
             <div className="relative">
@@ -5734,7 +5736,7 @@ export default function App() {
                 onClick={() => setShowSaveMenu(!showSaveMenu)}
                 className={cn(
                   "flex items-center justify-center gap-2 px-3 xl:px-4 py-2 border rounded-xl transition-all text-[11px] font-bold shrink-0",
-                  "bg-white/5 hover:bg-white/10 border-white/10 text-white/60 hover:text-white"
+                  "bg-white/5 hover:bg-white/10 border-white/10 text-white/70 hover:text-white"
                 )}
                 title="프로젝트 저장"
               >
@@ -5753,7 +5755,7 @@ export default function App() {
                       className="absolute right-0 mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
                     >
                       <div className="space-y-0.5">
-                        <div className="px-3 py-1"><p className="text-[9px] font-bold text-white/30 uppercase tracking-widest">설정 (Settings)</p></div>
+                        <div className="px-3 py-1"><p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">설정 (Settings)</p></div>
                         {[
                           { id: 'tabs', label: '탭' },
                           { id: 'chars', label: '캐릭터' },
@@ -5778,7 +5780,7 @@ export default function App() {
                       </div>
 
                       <div className="space-y-0.5 mt-2">
-                        <div className="px-3 py-1"><p className="text-[9px] font-bold text-white/30 uppercase tracking-widest">편집 (Edits)</p></div>
+                        <div className="px-3 py-1"><p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">편집 (Edits)</p></div>
                         {[
                           { id: 'splits', label: '섹션 이름 및 분할 위치' },
                           { id: 'images', label: '이미지 삽입' },
@@ -5843,7 +5845,7 @@ export default function App() {
                             <FileText className="w-4 h-4 text-[#e6005c] shrink-0" />
                             <div>
                               <p className="text-[11px] font-bold text-white">연속 파일 (전체 로그 통합)</p>
-                              <p className="text-[9px] text-white/40">목록 순서대로 모든 로그를 하나의 파일로 내보냅니다.</p>
+                              <p className="text-[9px] text-white/50">목록 순서대로 모든 로그를 하나의 파일로 내보냅니다.</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 pt-1">
@@ -5851,7 +5853,7 @@ export default function App() {
                               onClick={() => { copyToClipboard(getCombinedHtmlString()); setShowDownloadMenu(false); }}
                               className="flex-1 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5"
                             >
-                              <Copy className="w-3 h-3 text-white/80" /> 연속 파일 복사
+                              <Copy className="w-3 h-3 text-white/90" /> 연속 파일 복사
                             </button>
                             <button 
                               onClick={() => { downloadCombinedHtml(); setShowDownloadMenu(false); }}
@@ -5875,7 +5877,7 @@ export default function App() {
                       <div className="h-px bg-white/5" />
 
                       <div className="px-1">
-                        <p className="text-[9px] font-bold text-white/30 uppercase tracking-widest">탭별 / 섹션별 내보내기</p>
+                        <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">탭별 / 섹션별 내보내기</p>
                       </div>
 
                       <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-2 pr-0.5">
@@ -5913,14 +5915,14 @@ export default function App() {
                                   {fSections.map((s, sIdx) => (
                                     <div key={sIdx} className="flex items-center justify-between py-0.5 px-1 hover:bg-white/5 rounded transition-colors">
                                       <div className="flex items-center gap-1 min-w-0">
-                                        <span className="text-[9px] font-bold text-white/30 shrink-0">ㄴ</span>
-                                        <span className="text-[10px] font-medium text-white/80 truncate max-w-[90px]">{s.name}</span>
-                                        <span className="text-[8px] text-white/30 shrink-0">({s.startBlock}~{s.endBlock})</span>
+                                        <span className="text-[9px] font-bold text-white/40 shrink-0">ㄴ</span>
+                                        <span className="text-[10px] font-medium text-white/90 truncate max-w-[90px]">{s.name}</span>
+                                        <span className="text-[8px] text-white/40 shrink-0">({s.startBlock}~{s.endBlock})</span>
                                       </div>
                                       <div className="flex items-center gap-1 shrink-0">
                                         <button
                                           onClick={() => { copyToClipboard(getHtmlStringForFile(f, s.id)); setShowDownloadMenu(false); }}
-                                          className="p-1 text-white/30 hover:text-white transition-colors"
+                                          className="p-1 text-white/40 hover:text-white transition-colors"
                                           title="섹션 복사"
                                         >
                                           <Copy className="w-3 h-3" />
@@ -5966,7 +5968,7 @@ export default function App() {
                     "group relative flex items-center gap-1 px-2.5 h-7 rounded-t-md text-xs font-bold transition-all cursor-pointer select-none shrink-0 max-w-[240px]",
                     isActive
                       ? "bg-[#1f1f1f] text-white border-t-2 border-t-[#e6005c] border-x border-x-white/10"
-                      : "bg-white/[0.02] text-white/40 hover:bg-white/[0.05] hover:text-white/80 border-t-2 border-t-transparent"
+                      : "bg-white/[0.02] text-white/50 hover:bg-white/[0.05] hover:text-white/90 border-t-2 border-t-transparent"
                   )}
                 >
                   {isEditing ? (
@@ -5995,7 +5997,7 @@ export default function App() {
                         }}
                         className={cn(
                           "p-0.5 rounded hover:bg-white/10 transition-colors ml-0.5",
-                          isActive ? "text-white/40 hover:text-white" : "opacity-0 group-hover:opacity-100 text-white/30 hover:text-white"
+                          isActive ? "text-white/50 hover:text-white" : "opacity-0 group-hover:opacity-100 text-white/40 hover:text-white"
                         )}
                         title="제목 수정"
                       >
@@ -6010,7 +6012,7 @@ export default function App() {
                           }}
                           className={cn(
                             "p-0.5 rounded hover:bg-white/10 transition-colors ml-0.5",
-                            isActive ? "text-white/40 hover:text-white" : "opacity-0 group-hover:opacity-100 text-white/30 hover:text-white"
+                            isActive ? "text-white/50 hover:text-white" : "opacity-0 group-hover:opacity-100 text-white/40 hover:text-white"
                           )}
                           title="탭 닫기"
                         >
@@ -6025,7 +6027,7 @@ export default function App() {
 
             <button
               onClick={() => additionalFileInputRef.current?.click()}
-              className="p-1 text-white/30 hover:text-white hover:bg-white/5 rounded transition-colors shrink-0 ml-1"
+              className="p-1 text-white/40 hover:text-white hover:bg-white/5 rounded transition-colors shrink-0 ml-1"
               title="새 파일 추가"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -6073,7 +6075,7 @@ export default function App() {
                       </div>
                       <div className={cn(
                         "text-[10px] font-bold mb-1 ml-4",
-                        theme === 'dark' ? "text-white/40" : "text-stone-400"
+                        theme === 'dark' ? "text-white/50" : "text-stone-400"
                       )}>
                         {`1 - ${splitPointsArray.length > 0 ? splitPointsArray[0] + 1 : mergedLogs.length}번 블록`}
                       </div>
@@ -6277,7 +6279,7 @@ export default function App() {
                           <div className="bg-[#1a1a1a] p-2 rounded-2xl border border-white/20 shadow-2xl flex flex-col items-center justify-center max-w-[200px]">
                             <img src={hoverImgUrl} alt="" referrerPolicy="no-referrer" className="w-auto h-auto min-w-[80px] min-h-[80px] max-w-[180px] max-h-[180px] object-contain rounded-xl block bg-black/40" />
                             {hoverImgLabel && (
-                              <div className="text-[10px] font-bold text-white/70 text-center mt-1.5 truncate w-full px-1">
+                              <div className="text-[10px] font-bold text-white/80 text-center mt-1.5 truncate w-full px-1">
                                 {hoverImgLabel}
                               </div>
                             )}
@@ -6373,11 +6375,11 @@ export default function App() {
                 <div className="text-center space-y-2">
                   <p className={cn(
                     "text-2xl font-bold tracking-tight",
-                    theme === 'dark' ? "text-white/40" : "text-stone-900/40"
+                    theme === 'dark' ? "text-white/50" : "text-stone-900/40"
                   )}>로그 파일을 기다리고 있어요</p>
                   <p className={cn(
                     "text-sm font-medium",
-                    theme === 'dark' ? "text-white/20" : "text-stone-900/40"
+                    theme === 'dark' ? "text-white/30" : "text-stone-900/40"
                   )}>CCFOLIA에서 추출한 HTML 파일을 업로드하여 시작하세요</p>
                 </div>
                 <label 
@@ -6412,17 +6414,17 @@ export default function App() {
                   className="mb-3 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[350px] w-56 transform origin-bottom-left"
                 >
                   <div className="px-3 border-b border-white/10 bg-white/5 flex items-center justify-center shrink-0" style={{ height: '26px' }}>
-                    <h3 className="text-[10px] font-bold text-white/60 uppercase tracking-widest text-center m-0 leading-none">섹션 이동</h3>
+                    <h3 className="text-[10px] font-bold text-white/70 uppercase tracking-widest text-center m-0 leading-none">섹션 이동</h3>
                   </div>
                   <div className="overflow-y-auto custom-scrollbar flex-1 p-2 space-y-1">
                     {sectionsList.map((sec) => (
                       <button
                         key={sec.id}
                         onClick={() => scrollToSection(sec.targetOriginalIndex, sec.id)}
-                        className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[12px] font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                        className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-[12px] font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors"
                       >
                         <span className="truncate pr-2">{sec.name}</span>
-                        <span className="text-[10px] font-mono text-white/30 whitespace-nowrap">{sec.startBlock}~{sec.endBlock}</span>
+                        <span className="text-[10px] font-mono text-white/40 whitespace-nowrap">{sec.startBlock}~{sec.endBlock}</span>
                       </button>
                     ))}
                   </div>
@@ -6430,7 +6432,7 @@ export default function App() {
               )}
             </AnimatePresence>
             <div 
-              className="bg-[#242424] border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-[#333333] transition-colors shadow-lg cursor-pointer shrink-0"
+              className="bg-[#242424] border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-[#333333] transition-colors shadow-lg cursor-pointer shrink-0"
               style={{ width: '50px', height: '50px', borderRadius: '50%' }}
             >
               <List className="w-6 h-6" />
@@ -6446,7 +6448,7 @@ export default function App() {
           onClick={() => setMobileTab('settings')} 
           className={cn(
             "flex-1 flex flex-col items-center justify-center gap-1 transition-colors",
-            mobileTab === 'settings' ? "text-[#e6005c]" : "text-white/40 hover:text-white/60"
+            mobileTab === 'settings' ? "text-[#e6005c]" : "text-white/50 hover:text-white/70"
           )}
         >
           <Settings className="w-5 h-5" />
@@ -6456,7 +6458,7 @@ export default function App() {
           onClick={() => setMobileTab('preview')} 
           className={cn(
             "flex-1 flex flex-col items-center justify-center gap-1 transition-colors",
-            mobileTab === 'preview' ? "text-[#e6005c]" : "text-white/40 hover:text-white/60"
+            mobileTab === 'preview' ? "text-[#e6005c]" : "text-white/50 hover:text-white/70"
           )}
         >
           <Eye className="w-5 h-5" />
@@ -6474,13 +6476,13 @@ export default function App() {
                 </h2>
                 <button 
                   onClick={() => setIsBulkImgurModalOpen(false)}
-                  className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white outline-none"
+                  className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/60 hover:text-white outline-none"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
               {bulkImages.length === 0 && !isBulkImgurLoading && (
-                <p className="text-[11px] text-white/50 leading-relaxed">
+                <p className="text-[11px] text-white/60 leading-relaxed">
                   Imgur 앨범 링크를 입력하면 앨범 내의 이미지들을 한 번에 불러옵니다.<br />
                   이미지 파일 이름에 캐릭터 이름이 포함되어 있을 경우 자동으로 매칭됩니다.
                 </p>
@@ -6496,7 +6498,7 @@ export default function App() {
                   placeholder="예: https://imgur.com/a/앨범주소"
                   value={bulkImgurUrl}
                   onChange={(e) => setBulkImgurUrl(e.target.value)}
-                  className="flex-1 text-[10px] px-3 py-2 bg-black/20 border border-white/10 rounded-xl outline-none focus:border-[#e6005c] text-white/80 transition-colors"
+                  className="flex-1 text-[10px] px-3 py-2 bg-black/20 border border-white/10 rounded-xl outline-none focus:border-[#e6005c] text-white/90 transition-colors"
                 />
                 <button
                   onClick={handleBulkImgurFetch}
@@ -6513,7 +6515,7 @@ export default function App() {
                     /* 1단계: 캐릭터 선별 작업 */
                     <div className="flex flex-col gap-2">
                       <div className="flex items-center justify-between px-1">
-                        <span className="text-[10px] text-white/40">{bulkImages.length}개 로드됨</span>
+                        <span className="text-[10px] text-white/50">{bulkImages.length}개 로드됨</span>
                       </div>
                       <div className="bg-black/20 border border-white/10 rounded-xl max-h-[50vh] overflow-y-auto custom-scrollbar p-2 flex flex-col gap-1.5">
                         {bulkImages.map((img, idx) => (
@@ -6523,7 +6525,7 @@ export default function App() {
                             </div>
                             <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
                               <div className="text-[11px] font-bold text-white truncate">{img.fileName}</div>
-                              <div className="text-[9px] text-white/30 truncate">{img.url}</div>
+                              <div className="text-[9px] text-white/40 truncate">{img.url}</div>
                             </div>
                             <div className="shrink-0 w-44 flex flex-col justify-center">
                               <SearchableSelect 
@@ -6540,7 +6542,7 @@ export default function App() {
                     /* 2단계: 삽화 선별 작업 */
                     <div className="flex flex-col gap-2">
                       <div className="flex justify-between items-center px-1">
-                        <span className="text-[10px] font-bold text-white/40">
+                        <span className="text-[10px] font-bold text-white/50">
                           미지정 {bulkImages.filter(img => !bulkImageMapping[img.url]).length}개 중 {bulkImages.filter(img => !bulkImageMapping[img.url] && bulkSelectedIllustrations[img.url]).length}개 선택됨
                         </span>
                         <div className="flex gap-2">
@@ -6553,11 +6555,11 @@ export default function App() {
                               });
                               setBulkSelectedIllustrations(next);
                             }}
-                            className="text-[10px] font-bold text-white/50 hover:text-white transition-colors"
+                            className="text-[10px] font-bold text-white/60 hover:text-white transition-colors"
                           >
                             전체 선택
                           </button>
-                          <span className="text-white/20 text-[10px]">|</span>
+                          <span className="text-white/30 text-[10px]">|</span>
                           <button
                             type="button"
                             onClick={() => {
@@ -6567,7 +6569,7 @@ export default function App() {
                               });
                               setBulkSelectedIllustrations(next);
                             }}
-                            className="text-[10px] font-bold text-white/50 hover:text-white transition-colors"
+                            className="text-[10px] font-bold text-white/60 hover:text-white transition-colors"
                           >
                             선택 해제
                           </button>
@@ -6576,9 +6578,9 @@ export default function App() {
                       
                       {bulkImages.filter(img => !bulkImageMapping[img.url]).length === 0 ? (
                         <div className="bg-black/20 border border-white/10 rounded-xl p-8 flex flex-col items-center justify-center text-center gap-2">
-                          <ImageIcon className="w-8 h-8 text-white/20" />
-                          <p className="text-[11px] text-white/50">모든 이미지가 캐릭터에 매칭되었습니다.</p>
-                          <p className="text-[9px] text-white/30">캐릭터로 선택되지 않은 이미지가 있을 때만 삽화로 지정할 수 있습니다.</p>
+                          <ImageIcon className="w-8 h-8 text-white/30" />
+                          <p className="text-[11px] text-white/60">모든 이미지가 캐릭터에 매칭되었습니다.</p>
+                          <p className="text-[9px] text-white/40">캐릭터로 선택되지 않은 이미지가 있을 때만 삽화로 지정할 수 있습니다.</p>
                         </div>
                       ) : (
                         <div className="bg-black/20 border border-white/10 rounded-xl p-3 max-h-[50vh] overflow-y-auto custom-scrollbar">
@@ -6632,7 +6634,7 @@ export default function App() {
             <div className="px-5 py-4 border-t border-white/5 bg-black/20 flex justify-between items-center gap-2">
               <button 
                 onClick={() => setIsBulkImgurModalOpen(false)}
-                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white/60 hover:text-white hover:bg-white/5 transition-colors outline-none"
+                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white/70 hover:text-white hover:bg-white/5 transition-colors outline-none"
               >
                 취소
               </button>
@@ -6687,7 +6689,7 @@ export default function App() {
               </div>
               <button 
                 onClick={() => setIsIllBulkModalOpen(false)}
-                className="text-white/40 hover:text-white text-xs transition-colors p-1"
+                className="text-white/50 hover:text-white text-xs transition-colors p-1"
               >
                 ✕
               </button>
@@ -6697,7 +6699,7 @@ export default function App() {
               {illBulkImages.length > 0 ? (
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-between items-center px-1">
-                    <span className="text-[10px] font-bold text-white/40">
+                    <span className="text-[10px] font-bold text-white/50">
                       총 {illBulkImages.length}개 이미지 중 {Object.values(selectedIllBulkImages).filter(Boolean).length}개 선택됨
                     </span>
                     <div className="flex gap-2">
@@ -6708,11 +6710,11 @@ export default function App() {
                           illBulkImages.forEach(img => { next[img.url] = true; });
                           setSelectedIllBulkImages(next);
                         }}
-                        className="text-[10px] font-bold text-white/50 hover:text-white transition-colors"
+                        className="text-[10px] font-bold text-white/60 hover:text-white transition-colors"
                       >
                         전체 선택
                       </button>
-                      <span className="text-white/20 text-[10px]">|</span>
+                      <span className="text-white/30 text-[10px]">|</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -6720,7 +6722,7 @@ export default function App() {
                           illBulkImages.forEach(img => { next[img.url] = false; });
                           setSelectedIllBulkImages(next);
                         }}
-                        className="text-[10px] font-bold text-white/50 hover:text-white transition-colors"
+                        className="text-[10px] font-bold text-white/60 hover:text-white transition-colors"
                       >
                         선택 해제
                       </button>
@@ -6767,7 +6769,7 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div className="text-center py-20 text-white/20 flex flex-col items-center justify-center gap-2">
+                <div className="text-center py-20 text-white/30 flex flex-col items-center justify-center gap-2">
                   <ImageIcon className="w-10 h-10 opacity-10" />
                   <p className="text-[11px] font-medium">불러온 이미지가 없습니다.</p>
                 </div>
@@ -6777,14 +6779,14 @@ export default function App() {
             <div className="px-5 py-4 border-t border-white/5 bg-black/20 flex justify-end gap-2">
               <button 
                 onClick={() => setIsIllBulkModalOpen(false)}
-                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white/60 hover:text-white hover:bg-white/5 transition-colors outline-none"
+                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white/70 hover:text-white hover:bg-white/5 transition-colors outline-none"
               >
                 취소
               </button>
               <button 
                 onClick={applyIllBulkImages}
                 disabled={illBulkImages.length === 0 || !Object.values(selectedIllBulkImages).some(Boolean)}
-                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white bg-[#e6005c] hover:bg-[#ff0066] disabled:bg-white/5 disabled:text-white/20 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(230,0,92,0.3)] disabled:shadow-none transition-all outline-none"
+                className="px-4 py-2 rounded-lg text-[11px] font-bold text-white bg-[#e6005c] hover:bg-[#ff0066] disabled:bg-white/5 disabled:text-white/30 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(230,0,92,0.3)] disabled:shadow-none transition-all outline-none"
               >
                 확인 및 적용
               </button>

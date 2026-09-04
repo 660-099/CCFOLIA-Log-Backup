@@ -28,7 +28,7 @@ export const SectionNameEditor = ({ initialName, defaultName, onSave }: { initia
           }}
           autoFocus
           placeholder={defaultName}
-          className="bg-black/20 border border-white/20 rounded px-2 py-0.5 text-xs font-bold text-white outline-none placeholder:text-white/30 flex-1 min-w-0"
+          className="bg-black/20 border border-white/20 rounded px-2 py-0.5 text-xs font-bold text-white outline-none placeholder:text-white/40 flex-1 min-w-0"
         />
         <button 
           onClick={() => {
@@ -53,7 +53,7 @@ export const SectionNameEditor = ({ initialName, defaultName, onSave }: { initia
       }}
       title="클릭하여 이름 수정"
     >
-      {initialName || <span className="text-white/30">{defaultName}</span>}
+      {initialName || <span className="text-white/40">{defaultName}</span>}
     </div>
   );
 };
