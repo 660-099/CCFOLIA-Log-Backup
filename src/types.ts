@@ -1,3 +1,10 @@
+export interface CharImage {
+  id: string;
+  url: string;
+  name?: string;
+  isRepresentative?: boolean;
+}
+
 export type TabFormat = 'main' | 'other' | 'info' | 'secret';
 
 export interface LogEntry {
@@ -10,6 +17,7 @@ export interface LogEntry {
   content: string;
   isCommand: boolean;
   isContinuation?: boolean;
+  overrideImageId?: string;
   isHiddenContent?: boolean;
   sectionId?: string;
 
@@ -38,6 +46,7 @@ export interface CharSetting {
   color: string;
   imageUrl: string;
   imageName?: string;
+  images?: CharImage[];
   visible: boolean;
 }
 
@@ -60,6 +69,7 @@ export interface CharacterLibraryItem {
     name: string;
     color: string;
     imageUrl: string;
+    images?: CharImage[];
   }[];
 }
 

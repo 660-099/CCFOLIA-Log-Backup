@@ -58,3 +58,22 @@ export function extractOldFormat(blocks: Record<string, InsertedBlock[]>) {
 
   return { insertedImages, splitPoints, sectionNames };
 }
+
+export function migrateCharSettings(charSettings: Record<string, any>) {
+  const migrated: Record<string, any> = {};
+  for (const key in charSettings) {
+    const char = { ...charSettings[key] };
+    if (!char.images) {
+      char.images = [];
+      if (char.imageUrl) {
+        char.images.push({
+          id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          url: char.imageUrl,
+          isRepresentative: true
+        });
+      }
+    }
+    migrated[key] = char;
+  }
+  return migrated;
+}

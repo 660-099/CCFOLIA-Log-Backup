@@ -85,6 +85,7 @@ export const LogItem = React.memo(({
   mergedLogsCount,
   isPrevNarration,
   isNextNarration,
+  onAvatarClick,
   editingLogId = null,
   setEditingLogId
 }: any) => {
@@ -107,7 +108,7 @@ export const LogItem = React.memo(({
   }
   
   const tabSet = tabSettings[log.tabId];
-  const char = charSettings[log.charId] || { id: log.charId, name: log.name, color: log.color, visible: true, imageUrl: '' };
+  const char = charSettings[log.charId] || { id: log.charId, name: log.name, color: log.color, visible: true, imageUrl: '', images: [] };
 
   const isEditing = editingLogId === log.id;
   const isAnyEditing = editingLogId !== null;
@@ -643,7 +644,13 @@ export const LogItem = React.memo(({
   const otherContentColor = tabTextColor || (theme === 'dark' ? '#AAAAAA' : '#777777');
   const contentWeight = tabSet?.isBold ? 'bold' : 'normal';
   const contentFontStyle = tabSet?.isItalic ? 'italic' : 'normal';
-  const img = char.imageUrl;
+  
+  let img = char.imageUrl;
+  if (log.overrideImageId && char.images) {
+    const matchedOverride = char.images.find((i: any) => i.id === log.overrideImageId);
+    if (matchedOverride) img = matchedOverride.url;
+  }
+
   const isSecret = format === 'secret';
   const tabColor = tabSet?.color || '#ffd400';
   const isNarration = log.charId === narrationCharacter && (format === 'main' || (enableSecretNarration && format === 'secret'));
@@ -1070,6 +1077,7 @@ export const LogItem = React.memo(({
             </button>
           </div>
         )}
+        {renderBlocks(insertedBlocks, stableId)}
       </div>
     );
   }
@@ -1696,7 +1704,7 @@ export const LogItem = React.memo(({
                 {safeHtmlContentPieces.map((piece, pIdx) => (
                   <React.Fragment key={`${log.id}-narration-s2-${pIdx}`}>
                     {pIdx > 0 && <div style={{ marginTop: '0.8em' }}></div>}
-                    <div dangerouslySetInnerHTML={{ __html: piece }} style={{ color: contentColor, fontSize: `${scaledTextFontSize}px`, fontWeight: tabSet?.isBold !== undefined ? contentWeight : 'bold', fontStyle: contentFontStyle, whiteSpace: 'pre-wrap', wordBreak: 'keep-all', overflowWrap: 'break-word' }} />
+                    <div dangerouslySetInnerHTML={{ __html: piece }} style={{ color: contentColor, fontSize: `${scaledTextFontSize}px`, fontWeight: 'bold', fontStyle: 'normal', whiteSpace: 'pre-wrap', wordBreak: 'keep-all', overflowWrap: 'break-word' }} />
                   </React.Fragment>
                 ))}
               </div>
@@ -1712,8 +1720,8 @@ export const LogItem = React.memo(({
               lineHeight: lineHeight,
               fontSize: `${scaledTextFontSize}px`,
               letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px`,
-              fontWeight: tabSet?.isBold !== undefined ? contentWeight : 'bold',
-              fontStyle: tabSet?.isItalic !== undefined ? contentFontStyle : (narrationFormat === 'style2' ? 'italic' : 'normal'),
+              fontWeight: 'bold',
+              fontStyle: narrationFormat === 'style2' ? 'italic' : 'normal',
               background: isSecret ? getSecretBg(tabColor) : 'transparent',
               borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
               marginTop: isSecret ? (hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px')) : '0',
@@ -1807,7 +1815,16 @@ export const LogItem = React.memo(({
                   {log.isContinuation ? (
                     <div style={{ width: `${avatarSize}px`, flexShrink: 0 }} />
                   ) : (
-                    <LogAvatar img={img} theme={theme} avatarSize={avatarSize} hideEmptyAvatars={hideEmptyAvatars} cropFaceTop={cropFaceTop} />
+                    <div 
+                      onClick={(e) => {
+                        if (onAvatarClick && char.images && char.images.length > 0) {
+                          onAvatarClick(log.id, char.id, e.currentTarget.getBoundingClientRect(), originalLogIndex);
+                        }
+                      }}
+                      className={cn(char.images && char.images.length > 0 && "cursor-pointer transition-transform active:scale-95")}
+                    >
+                      <LogAvatar img={img} theme={theme} avatarSize={avatarSize} hideEmptyAvatars={hideEmptyAvatars} cropFaceTop={cropFaceTop} />
+                    </div>
                   )}
                   <div style={{ flex: 1, minWidth: 0, lineHeight: lineHeight, letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px` }}>
                     {!log.isContinuation && (

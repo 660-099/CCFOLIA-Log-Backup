@@ -8,10 +8,10 @@ export const getDemoData = () => {
   };
 
   const chars: Record<string, CharSetting> = {
-    'char_gm': { id: 'char_gm', name: 'GM', color: '#888888', imageUrl: '', visible: true },
-    'char_a': { id: 'char_a', name: '캐릭터A', color: '#ff6b6b', imageUrl: 'https://i.imgur.com/LcJuLoU.png', visible: true },
-    'char_b': { id: 'char_b', name: '캐릭터B', color: '#4dabf7', imageUrl: 'https://i.imgur.com/Ihna3F9.png', visible: true },
-    'char_info': { id: 'char_info', name: '정보', color: '#ffd43b', imageUrl: '', visible: true },
+    'char_gm': { id: 'char_gm', name: 'GM', color: '#888888', imageUrl: '', images: [], visible: true },
+    'char_a': { id: 'char_a', name: '캐릭터A', color: '#ff6b6b', imageUrl: 'https://i.imgur.com/LcJuLoU.png', images: [{id: 'demo_img_1', url: 'https://i.imgur.com/LcJuLoU.png', isRepresentative: true}], visible: true },
+    'char_b': { id: 'char_b', name: '캐릭터B', color: '#4dabf7', imageUrl: 'https://i.imgur.com/Ihna3F9.png', images: [{id: 'demo_img_2', url: 'https://i.imgur.com/Ihna3F9.png', isRepresentative: true}], visible: true },
+    'char_info': { id: 'char_info', name: '정보', color: '#ffd43b', imageUrl: '', images: [], visible: true },
   };
 
   const logs: LogEntry[] = [

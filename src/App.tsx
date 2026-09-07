@@ -71,10 +71,14 @@ import { clsx, type ClassValue } from 'clsx';
 import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem, Illustration, LogFile } from './types';
 import { parseLogFile } from './parser';
 import { cn, r, rgbToHex, getFileNameFromUrl } from './utils';
-import { extractOldFormat, InsertedBlock, migrateToInsertedBlocks } from './utils/migration';
+import { compare, applyPatch } from 'fast-json-patch';
+import { extractOldFormat, InsertedBlock, migrateCharSettings, migrateToInsertedBlocks } from './utils/migration';
 import { getDemoData } from './utils/demoData';
 import { Toggle } from './components/Toggle';
 import { LogItem } from './components/LogItem';
+import { CharImagePanelPopup } from './components/CharImagePanelPopup';
+import { AvatarImagePopup } from './components/AvatarImagePopup';
+import { BulkImageAllocatorModal } from './components/BulkImageAllocatorModal';
 import { SearchableSelect } from './components/SearchableSelect';
 import { SectionNameEditor } from './components/SectionNameEditor';
 import { CharacterNameWithTooltip, ColorPickerPopup } from './components/ColorPickerPopup';
@@ -212,7 +216,7 @@ const NumberAdjuster = ({
         <div className="flex items-center gap-1">
           <div className="flex items-center gap-1.5 bg-black/20 rounded-md p-0.5 border border-white/5">
             <button 
-              onClick={() => { const v = Number(Math.max(min, value - step).toFixed(1)); onChange(v); if (onSave) onSave(v); }} 
+              onClick={(e) => { const v = Number(Math.max(min, value - step).toFixed(1)); onChange(v); if (onSave) onSave(v); }} 
               className="p-1 hover:bg-white/10 rounded text-white/50 hover:text-white transition-colors outline-none"
             >
               <ChevronDown className="w-3 h-3" />
@@ -234,7 +238,7 @@ const NumberAdjuster = ({
               />
             ) : (
               <span 
-                onClick={() => { setIsEditing(true); setTempVal(value.toString()); }} 
+                onClick={(e) => { setIsEditing(true); setTempVal(value.toString()); }} 
                 className="text-[10px] font-bold py-0.5 cursor-pointer flex items-center justify-center hover:bg-white/5 rounded min-w-[28px] text-center shrink-0"
                 style={{ color: highlightColor }}
               >
@@ -243,7 +247,7 @@ const NumberAdjuster = ({
             )}
             
             <button 
-              onClick={() => { const v = Number(Math.min(max, value + step).toFixed(1)); onChange(v); if (onSave) onSave(v); }} 
+              onClick={(e) => { const v = Number(Math.min(max, value + step).toFixed(1)); onChange(v); if (onSave) onSave(v); }} 
               className="p-1 hover:bg-white/10 rounded text-white/50 hover:text-white transition-colors outline-none"
             >
               <ChevronUp className="w-3 h-3" />
@@ -251,7 +255,7 @@ const NumberAdjuster = ({
           </div>
           {highlightDefault !== null && !hideReset && (
             <button 
-              onClick={() => { onChange(highlightDefault); if (onSave) onSave(highlightDefault); }}
+              onClick={(e) => { onChange(highlightDefault); if (onSave) onSave(highlightDefault); }}
               disabled={!isChanged}
               className={cn("p-1 rounded transition-colors outline-none shrink-0", isChanged ? "text-white/70 hover:text-white hover:bg-white/10" : "text-white/30")}
               title="기본값으로 초기화"
@@ -550,7 +554,7 @@ const SizeControl = ({ value, onChange }: { value: string; onChange: (val: strin
               <button
                 key={preset}
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
                   onChange(preset);
                   setIsOpen(false);
                 }}
@@ -599,6 +603,7 @@ const SizeControl = ({ value, onChange }: { value: string; onChange: (val: strin
 
 export default function App() {
   const [isBulkImgurModalOpen, setIsBulkImgurModalOpen] = useState(false);
+  const [isBulkAllocatorOpen, setIsBulkAllocatorOpen] = useState(false);
   const [bulkImgurUrl, setBulkImgurUrl] = useState('');
   const [isBulkImgurLoading, setIsBulkImgurLoading] = useState(false);
   const [bulkImages, setBulkImages] = useState<{ url: string; fileName: string; ext: string }[]>([]);
@@ -862,6 +867,10 @@ export default function App() {
   const [newTabNameInput, setNewTabNameInput] = useState('');
   const [newCharName, setNewCharName] = useState('');
   const [activeColorPicker, setActiveColorPicker] = useState<string | null>(null);
+  const [pinnedCharPanel, setPinnedCharPanel] = useState<string | null>(null);
+  const [panelTriggerRect, setPanelTriggerRect] = useState<DOMRect | null>(null);
+  const panelHoverTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [avatarPopupInfo, setAvatarPopupInfo] = useState<{ logId: string; charId: string; triggerRect: DOMRect; logIndex: number } | null>(null);
   const [colorPickerRect, setColorPickerRect] = useState<DOMRect | null>(null);
   const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'illustrations' | 'settings'>('files');
   const [isBulkSettingsExpanded, setIsBulkSettingsExpanded] = useState(false);
@@ -1062,6 +1071,10 @@ export default function App() {
   // History for Undo/Redo
   const [history, setHistory] = useState<any[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const currentHistoryStateRef = useRef<any>(null);
+  const historyRef = useRef<any[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const MAX_HISTORY = 300;
 
   // Inject fonts into document head
   useEffect(() => {
@@ -1095,6 +1108,73 @@ export default function App() {
     document.getElementsByTagName('head')[0].appendChild(favicon);
   }, []);
 
+        const applyBulkAllocations = (allocations: Record<string, string[]>, reps: Record<string, string>) => {
+    const nextChars = { ...charSettings };
+    let newIllustrations: string[] = [];
+    
+    Object.entries(allocations).forEach(([charId, urls]) => {
+      if (charId === 'ILLUSTRATIONS') {
+        newIllustrations = urls;
+        return;
+      }
+      
+      if (!nextChars[charId]) return;
+
+      const char = { ...nextChars[charId] };
+      const currentImages = char.images ? [...char.images] : [];
+      
+      urls.forEach(url => {
+        if (!currentImages.some(img => img.url === url)) {
+          currentImages.push({
+            id: 'img_' + Math.random().toString(36).substring(2, 9),
+            url: url,
+            name: 'Image ' + (currentImages.length + 1)
+          });
+        }
+      });
+      
+      if (reps[charId]) {
+        currentImages.forEach(img => img.isRepresentative = false);
+        const repImg = currentImages.find(img => img.url === reps[charId]);
+        if (repImg) repImg.isRepresentative = true;
+        char.imageUrl = reps[charId];
+      } else if (!char.imageUrl && currentImages.length > 0) {
+         currentImages[0].isRepresentative = true;
+         char.imageUrl = currentImages[0].url;
+      }
+      
+      char.images = currentImages;
+      nextChars[charId] = char;
+    });
+    
+    let nextLogs = [...logs];
+    if (newIllustrations.length > 0) {
+      newIllustrations.forEach(url => {
+        nextLogs.push({
+          id: 'ill_' + Math.random().toString(36).substring(2, 9),
+          type: 'illustration',
+          content: url,
+          charId: '',
+          name: '',
+          color: '',
+          isCommand: false,
+          isBgmBlock: false,
+          isIllustration: true,
+          tabId: tabOrder[0] || ''
+        });
+      });
+    }
+
+    setCharSettings(nextChars);
+    if (newIllustrations.length > 0) {
+      setLogs(nextLogs);
+      saveToHistory({ charSettings: nextChars, logs: nextLogs });
+    } else {
+      saveToHistory({ charSettings: nextChars });
+    }
+    
+    setIsBulkAllocatorOpen(false);
+  };
   const handleBulkImgurFetch = async () => {
     if (!bulkImgurUrl) return;
     
@@ -1319,6 +1399,72 @@ export default function App() {
     setIsIllBulkModalOpen(false);
   };
 
+  // 다중 이미지 관련 상태 관리 함수 (1단계)
+  const addCharacterImage = (charId: string, url: string) => {
+    let next = { ...charSettings };
+    const char = next[charId];
+    if (char) {
+      const newImage = {
+        id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        url,
+        isRepresentative: !char.images || char.images.length === 0
+      };
+      char.images = [...(char.images || []), newImage];
+      if (newImage.isRepresentative) {
+        char.imageUrl = url;
+      }
+      setCharSettings(next);
+      saveToHistory({ charSettings: next });
+    }
+  };
+
+  const updateCharacterImage = (charId: string, imageId: string, newUrl: string) => {
+    let next = { ...charSettings };
+    const char = next[charId];
+    if (char && char.images) {
+      char.images = char.images.map(img => img.id === imageId ? { ...img, url: newUrl } : img);
+      const rep = char.images.find(img => img.isRepresentative);
+      if (rep && rep.id === imageId) {
+        char.imageUrl = newUrl;
+      }
+      setCharSettings(next);
+      // saveToHistory is triggered onBlur instead to avoid spam
+    }
+  };
+
+  const removeCharacterImage = (charId: string, imageId: string) => {
+    let next = { ...charSettings };
+    const char = next[charId];
+    if (char && char.images) {
+      char.images = char.images.filter((img: any) => img.id !== imageId);
+      if (!char.images.some((img: any) => img.isRepresentative) && char.images.length > 0) {
+        char.images[0].isRepresentative = true;
+        char.imageUrl = char.images[0].url;
+      } else if (char.images.length === 0) {
+        char.imageUrl = '';
+      }
+      setCharSettings(next);
+      saveToHistory({ charSettings: next });
+    }
+  };
+
+  const setRepresentativeImage = (charId: string, imageId: string) => {
+    let next = { ...charSettings };
+    const char = next[charId];
+    if (char && char.images) {
+      char.images = char.images.map((img: any) => ({
+        ...img,
+        isRepresentative: img.id === imageId
+      }));
+      const rep = char.images.find((img: any) => img.isRepresentative);
+      if (rep) {
+        char.imageUrl = rep.url;
+      }
+      setCharSettings(next);
+      saveToHistory({ charSettings: next });
+    }
+  };
+
   const saveToHistory = (state: any) => {
     const fullState = {
       charSettings,
@@ -1354,26 +1500,77 @@ export default function App() {
       illustrations,
       ...state
     };
-    const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(fullState);
-    if (newHistory.length > 15) newHistory.shift();
-    setHistory(newHistory);
+    
+    // JSON 직렬화를 통해 참조를 끊고 순수 데이터만 추출 (diff를 위함)
+    const clonedState = JSON.parse(JSON.stringify(fullState));
+
+    if (historyRef.current.length === 0 || !currentHistoryStateRef.current) {
+      currentHistoryStateRef.current = clonedState;
+      const initialHistory = [{ type: 'base', state: clonedState }];
+      historyRef.current = initialHistory;
+      historyIndexRef.current = 0;
+      setHistory(initialHistory);
+      setHistoryIndex(0);
+      return;
+    }
+
+    const forward = compare(currentHistoryStateRef.current, clonedState);
+    const reverse = compare(clonedState, currentHistoryStateRef.current);
+
+    // 변경사항이 없으면 저장하지 않음
+    if (forward.length === 0) return;
+
+    currentHistoryStateRef.current = clonedState;
+
+    let newHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
+    newHistory.push({ type: 'patch', forward, reverse });
+    
+    if (newHistory.length > MAX_HISTORY) {
+      // 0번(base)에 1번(patch)를 병합하여 base를 업데이트하고 1번은 제거
+      const baseStep = newHistory[0];
+      const patchStep = newHistory[1];
+      const newBaseState = JSON.parse(JSON.stringify(baseStep.state));
+      applyPatch(newBaseState, patchStep.forward);
+      
+      newHistory[0] = { type: 'base', state: newBaseState };
+      newHistory.splice(1, 1);
+    }
+    
+    historyRef.current = newHistory;
+    historyIndexRef.current = newHistory.length - 1;
+    
+    setHistory([...newHistory]);
     setHistoryIndex(newHistory.length - 1);
   };
 
   const undo = () => {
-    if (historyIndex > 0) {
-      const prevState = history[historyIndex - 1];
-      applyState(prevState);
-      setHistoryIndex(historyIndex - 1);
+    const currentIndex = historyIndexRef.current;
+    if (currentIndex > 0) {
+      const step = historyRef.current[currentIndex];
+      if (step.type === 'patch') {
+        const prevState = JSON.parse(JSON.stringify(currentHistoryStateRef.current));
+        applyPatch(prevState, step.reverse);
+        currentHistoryStateRef.current = prevState;
+        applyState(prevState);
+      }
+      historyIndexRef.current = currentIndex - 1;
+      setHistoryIndex(currentIndex - 1);
     }
   };
 
   const redo = () => {
-    if (historyIndex < history.length - 1) {
-      const nextState = history[historyIndex + 1];
-      applyState(nextState);
-      setHistoryIndex(historyIndex + 1);
+    const currentIndex = historyIndexRef.current;
+    if (currentIndex < historyRef.current.length - 1) {
+      const nextIdx = currentIndex + 1;
+      const step = historyRef.current[nextIdx];
+      if (step.type === 'patch') {
+        const nextState = JSON.parse(JSON.stringify(currentHistoryStateRef.current));
+        applyPatch(nextState, step.forward);
+        currentHistoryStateRef.current = nextState;
+        applyState(nextState);
+      }
+      historyIndexRef.current = nextIdx;
+      setHistoryIndex(nextIdx);
     }
   };
 
@@ -1715,7 +1912,7 @@ export default function App() {
           }
 
           if (!mergedChars[canonicalCharId]) {
-            const fileCharObj = fileItem.newChars[log.charId] || { id: canonicalCharId, name: charName, color: log.color || '#ffffff', imageUrl: '', visible: true };
+            const fileCharObj = fileItem.newChars[log.charId] || { id: canonicalCharId, name: charName, color: log.color || '#ffffff', imageUrl: '', images: [], visible: true };
             mergedChars[canonicalCharId] = { ...fileCharObj, id: canonicalCharId, name: charName };
           }
         }
@@ -1915,7 +2112,7 @@ export default function App() {
         }
       }
 
-      if (json.charSettings) setCharSettings(json.charSettings);
+      if (json.charSettings) setCharSettings(migrateCharSettings(json.charSettings));
       if (json.charOrder) setCharOrder(json.charOrder);
       if (json.tabSettings) setTabSettings(json.tabSettings);
       if (json.tabOrder) setTabOrder(json.tabOrder);
@@ -1983,7 +2180,7 @@ export default function App() {
 
   const exportProject = () => {
     const data: any = { 
-      version: '1.10.16',
+      version: '1.10.17',
       files,
       activeFileId,
       originalFileName,
@@ -2780,8 +2977,7 @@ export default function App() {
       id: newId,
       name: newName,
       color: '#9E9E9E',
-      visible: true,
-      imageUrl: ''
+      visible: true, imageUrl: '', images: []
     };
     const nextCharSettings = { ...charSettings, [newId]: newChar };
     const nextCharOrder = [newId, ...charOrder];
@@ -2852,6 +3048,42 @@ export default function App() {
       saveToHistory({ logs: next });
     }
   }, [logs, saveToHistory]);
+
+
+  const onAvatarClick = useCallback((logId: string, charId: string, rect: DOMRect, logIndex: number) => {
+    setAvatarPopupInfo({ logId, charId, triggerRect: rect, logIndex });
+  }, []);
+
+  const handleOverrideImage = useCallback((logId: string, imageId: string) => {
+    setLogs(prev => {
+      const next = prev.map(log => log.id === logId ? { ...log, overrideImageId: imageId } : log);
+      saveToHistory({ logs: next });
+      return next;
+    });
+    setAvatarPopupInfo(null);
+  }, [saveToHistory]);
+
+  const handleBatchOverrideImage = useCallback((charId: string, imageId: string, startNum: number, endNum: number) => {
+    setLogs(prev => {
+      let changed = false;
+      const next = prev.map((log, index) => {
+        // original index is index + 1 for user (1-based)
+        const currentNum = index + 1;
+        if (currentNum >= startNum && currentNum <= endNum && log.charId === charId && !log.isCommand && !log.isBgmBlock) {
+          if (log.overrideImageId !== imageId) {
+            changed = true;
+            return { ...log, overrideImageId: imageId };
+          }
+        }
+        return log;
+      });
+      if (changed) {
+        saveToHistory({ logs: next });
+      }
+      return next;
+    });
+    setAvatarPopupInfo(null);
+  }, [saveToHistory]);
 
   const onBatchUpdateLog = useCallback((id: string, updates: { content?: string; charId?: string; tabId?: string; bgmData?: any }) => {
     const newChar = updates.charId ? charSettings[updates.charId] : null;
@@ -3731,7 +3963,7 @@ export default function App() {
                     }
                   />
                   <div 
-                    onClick={() => {
+                    onClick={(e) => {
                       if (logs.length > 0) styleInputRef.current?.click();
                     }}
                     className={cn(
@@ -3800,7 +4032,7 @@ export default function App() {
                         {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
                           <button
                             key={f}
-                            onClick={() => {
+                            onClick={(e) => {
                               const next = new Set(showTabNames);
                               if (next.has(f)) next.delete(f);
                               else next.add(f);
@@ -3830,7 +4062,7 @@ export default function App() {
                         {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
                           <button
                             key={f}
-                            onClick={() => {
+                            onClick={(e) => {
                               const next = new Set(mergeTabs);
                               if (next.has(f)) next.delete(f);
                               else next.add(f);
@@ -3862,7 +4094,7 @@ export default function App() {
                             <button
                               key={f}
                               disabled={isDisabled}
-                              onClick={() => {
+                              onClick={(e) => {
                                 const next = new Set(mergeTabStyles);
                                 if (next.has(f)) next.delete(f);
                                 else next.add(f);
@@ -3901,7 +4133,7 @@ export default function App() {
                           무작위 색상 지정
                         </button>
                         <button 
-                          onClick={() => {
+                          onClick={(e) => {
                             setTabSortMode(prev => prev === 'appearance' ? 'alphabetical' : 'appearance');
                           }}
                           className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5"
@@ -3969,7 +4201,7 @@ export default function App() {
                                   {tab.name}
                                 </span>
                                 <button 
-                                  onClick={() => { setRenamingTab(tab.id); setNewTabNameInput(tab.name); }}
+                                  onClick={(e) => { setRenamingTab(tab.id); setNewTabNameInput(tab.name); }}
                                   className="p-1 text-white/30 hover:text-[#e6005c] transition-colors"
                                 >
                                   <Pencil className="w-3 h-3" />
@@ -3978,7 +4210,7 @@ export default function App() {
                             )}
                             <div className="flex items-center bg-black/20 rounded-md border border-white/5 p-0.5 ml-1">
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
                                   const next = { ...tabSettings, [tab.id]: { ...tab, applyColorToName: !tab.applyColorToName } };
                                   setTabSettings(next);
                                   saveToHistory({ tabSettings: next });
@@ -4006,7 +4238,7 @@ export default function App() {
                                 <div className="absolute bottom-1 left-1.5 right-1.5 h-[2px] rounded-full" style={{ backgroundColor: tab.textColor || 'white' }} />
                               </button>
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
                                   const next = { ...tabSettings, [tab.id]: { ...tab, isBold: !tab.isBold } };
                                   setTabSettings(next);
                                   saveToHistory({ tabSettings: next });
@@ -4017,7 +4249,7 @@ export default function App() {
                                 B
                               </button>
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
                                   const next = { ...tabSettings, [tab.id]: { ...tab, isItalic: !tab.isItalic } };
                                   setTabSettings(next);
                                   saveToHistory({ tabSettings: next });
@@ -4034,7 +4266,7 @@ export default function App() {
                               {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
                                 <button
                                   key={f}
-                                  onClick={() => {
+                                  onClick={(e) => {
                                     const next = { ...tabSettings, [tab.id]: { ...tab, format: f } };
                                     setTabSettings(next);
                                     saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
@@ -4146,7 +4378,7 @@ export default function App() {
                           <div className="absolute right-0 top-full mt-1 w-40 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
                             <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-1">
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
                                   setNarrationCharacter(null);
                                   saveToHistory({ narrationCharacter: null });
                                   setIsNarrationDropdownOpen(false);
@@ -4164,7 +4396,7 @@ export default function App() {
                                 return (
                                   <button
                                     key={charId}
-                                    onClick={() => {
+                                    onClick={(e) => {
                                       setNarrationCharacter(charId);
                                       saveToHistory({ narrationCharacter: charId });
                                       setIsNarrationDropdownOpen(false);
@@ -4190,7 +4422,7 @@ export default function App() {
                           <span className="text-[11px] font-bold text-white/80 shrink-0">나레이션 출력 디자인</span>
                           <div className="flex bg-black/20 border border-white/5 rounded-lg p-0.5 gap-0.5 ml-2">
                             <button
-                              onClick={() => { setNarrationFormat('style1'); saveToHistory({ narrationFormat: 'style1' }); }}
+                              onClick={(e) => { setNarrationFormat('style1'); saveToHistory({ narrationFormat: 'style1' }); }}
                               className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
                                 narrationFormat === 'style1'
                                   ? 'bg-[#e6005c] text-white shadow-sm'
@@ -4200,7 +4432,7 @@ export default function App() {
                               기본
                             </button>
                             <button
-                              onClick={() => { setNarrationFormat('style2'); saveToHistory({ narrationFormat: 'style2' }); }}
+                              onClick={(e) => { setNarrationFormat('style2'); saveToHistory({ narrationFormat: 'style2' }); }}
                               className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
                                 narrationFormat === 'style2'
                                   ? 'bg-[#e6005c] text-white shadow-sm'
@@ -4210,7 +4442,7 @@ export default function App() {
                               이탤릭
                             </button>
                             <button
-                              onClick={() => { setNarrationFormat('style3'); saveToHistory({ narrationFormat: 'style3' }); }}
+                              onClick={(e) => { setNarrationFormat('style3'); saveToHistory({ narrationFormat: 'style3' }); }}
                               className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
                                 narrationFormat === 'style3'
                                   ? 'bg-[#e6005c] text-white shadow-sm'
@@ -4244,26 +4476,7 @@ export default function App() {
                       </div>
                     )}
                     </div>
-                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/80">스탠딩 숨김</span>
-                      <Toggle 
-                        enabled={hideAllAvatars} 
-                        onChange={(val) => {
-                          setHideAllAvatars(val);
-                          saveToHistory({ hideAllAvatars: val });
-                        }} 
-                      />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
-                      <span className="text-[11px] font-bold text-white/80">얼굴 위주 크롭 (상단 1:1)</span>
-                      <Toggle 
-                        enabled={cropFaceTop} 
-                        onChange={(val) => {
-                          setCropFaceTop(val);
-                          saveToHistory({ cropFaceTop: val });
-                        }} 
-                      />
-                    </div>
+                    
                   </div>
                 </Section>
 
@@ -4298,7 +4511,7 @@ export default function App() {
                                   <button onClick={() => setLibrarySortMode('alphabetical')} className={cn("transition-colors", librarySortMode === 'alphabetical' ? "text-white font-bold" : "text-white/50 hover:text-white")}>가나다순</button>
                               </div>
                               <button
-                                  onClick={() => {
+                                  onClick={(e) => {
                                       setIsLibraryEditMode(!isLibraryEditMode);
                                       if (isLibraryEditMode) setRenamingLibraryId(null);
                                   }}
@@ -4584,14 +4797,14 @@ export default function App() {
                     rightElement={
                       <div className="flex items-center gap-2">
                         <button 
-                          onClick={() => setIsBulkImgurModalOpen(true)}
+                          onClick={() => setIsBulkAllocatorOpen(true)}
                           className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5"
                         >
                           <Upload className="w-3 h-3" />
                           이미지 일괄 등록
                         </button>
                         <button 
-                          onClick={() => {
+                          onClick={(e) => {
                             if (charSortMode === 'appearance') {
                               setCharSortMode('alphabetical');
                             } else {
@@ -4643,7 +4856,7 @@ export default function App() {
                       className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-[10px] text-white placeholder:text-white/40 outline-none focus:border-[#e6005c] transition-colors"
                     />
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
                         if (newCharName.trim()) {
                           addCustomCharacter(newCharName);
                           setNewCharName('');
@@ -4712,7 +4925,7 @@ export default function App() {
                             <div className="flex items-center gap-1 w-24 shrink-0 overflow-visible relative h-7">
                               <CharacterNameWithTooltip name={char.name} />
                               <button 
-                                onClick={() => { setRenamingChar(char.id); setNewNameInput(char.name); }}
+                                onClick={(e) => { setRenamingChar(char.id); setNewNameInput(char.name); }}
                                 className="p-0.5 text-white/30 hover:text-[#e6005c] transition-colors"
                               >
                                 <Pencil className="w-2.5 h-2.5" />
@@ -4751,24 +4964,55 @@ export default function App() {
                           />
                           
                           <div 
-                            className="group/charimg relative w-7 h-7 rounded-lg bg-black/20 border border-white/5 shrink-0 flex items-center justify-center ml-auto"
+                            className="group/charimg relative w-7 h-7 rounded-lg bg-black/20 border border-white/5 shrink-0 flex items-center justify-center ml-auto cursor-pointer"
                             onMouseEnter={(e) => {
-                              const rect = e.currentTarget.getBoundingClientRect();
-                              setHoverImgRect(rect);
-                              setHoverImgUrl(char.imageUrl);
-                              setHoverImgLabel(char.imageName || null);
+                              if (panelHoverTimeout.current) clearTimeout(panelHoverTimeout.current);
+                              if (pinnedCharPanel !== char.id) {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setPanelTriggerRect(rect);
+                                setActiveColorPicker(char.id + '_panel');
+                              }
                             }}
                             onMouseLeave={() => {
-                              setHoverImgRect(null);
-                              setHoverImgUrl(null);
-                              setHoverImgLabel(null);
+                              if (pinnedCharPanel !== char.id) {
+                                panelHoverTimeout.current = setTimeout(() => {
+                                  setActiveColorPicker(null);
+                                  setPanelTriggerRect(null);
+                                }, 150);
+                              }
+                            }}
+                            onClick={(e) => {
+                              if (pinnedCharPanel === char.id) {
+                                setPinnedCharPanel(null);
+                                // Don't close on click because we are still hovering
+                              } else {
+                                setPinnedCharPanel(char.id);
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setPanelTriggerRect(rect);
+                                setActiveColorPicker(char.id + '_panel');
+                              }
                             }}
                           >
                             {char.imageUrl ? (
-                              <img src={char.imageUrl} alt="" referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain rounded-lg" />
+                              <img src={char.imageUrl} alt="" referrerPolicy="no-referrer" className="max-w-full max-h-full object-cover rounded-lg" />
                             ) : (
                               <ImageIcon className="w-3.5 h-3.5 text-white/10" />
                             )}
+                            
+                            {/* 뱃지 */}
+                            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border border-[#222] flex items-center justify-center bg-[#333] shadow-sm z-10 transition-colors"
+                              style={{ 
+                                backgroundColor: char.images && char.images.length > 1 ? '#e6005c' : '#333'
+                              }}
+                            >
+                              {char.images && char.images.length > 1 ? (
+                                <span className="text-[7px] font-bold text-white leading-none">
+                                  {char.images.length}
+                                </span>
+                              ) : (
+                                <span className="text-[8px] font-bold text-white/50 leading-none pb-[1px]">+</span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -4973,7 +5217,7 @@ export default function App() {
                                     <div className="flex bg-black/30 border border-white/10 rounded-lg focus-within:border-[#e6005c] transition-colors overflow-hidden h-7">
                                       <button 
                                         className="px-2 flex items-center justify-center hover:bg-white/10 text-white/50 hover:text-white border-r border-white/10 bg-white/5"
-                                        onClick={() => {
+                                        onClick={(e) => {
                                           if (ill.afterLogIndex !== null) {
                                             const val = Math.max(1, Math.min(logs.length, ill.afterLogIndex));
                                             onUpdateIllustration(ill.id, { afterLogIndex: val - 1 });
@@ -4998,7 +5242,7 @@ export default function App() {
                                       />
                                       <button 
                                         className="px-2 flex items-center justify-center hover:bg-white/10 text-white/50 hover:text-white border-l border-white/10 bg-white/5"
-                                        onClick={() => {
+                                        onClick={(e) => {
                                           if (ill.afterLogIndex !== null) {
                                             const val = Math.max(1, Math.min(logs.length, ill.afterLogIndex + 2));
                                             onUpdateIllustration(ill.id, { afterLogIndex: val - 1 });
@@ -5211,14 +5455,14 @@ export default function App() {
                         {theme === 'dark' ? (
                           <>
                             <button 
-                              onClick={() => { setDarkBgColor('#212121'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor: '#212121', lightBgColor, disableOtherColor }); }}
+                              onClick={(e) => { setDarkBgColor('#212121'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor: '#212121', lightBgColor, disableOtherColor }); }}
                               className={cn("w-[22px] h-[22px] rounded border transition-colors relative flex items-center justify-center", darkBgColor === '#212121' ? "border-[#e6005c] ring-1 ring-[#e6005c]" : "border-white/20 hover:border-white/40")}
                               style={{ backgroundColor: '#212121' }}
                             >
                               {darkBgColor === '#212121' && <div className="w-1.5 h-1.5 rounded-full bg-[#e6005c]" />}
                             </button>
                             <button 
-                              onClick={() => { setDarkBgColor('#121212'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor: '#121212', lightBgColor, disableOtherColor }); }}
+                              onClick={(e) => { setDarkBgColor('#121212'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor: '#121212', lightBgColor, disableOtherColor }); }}
                               className={cn("w-[22px] h-[22px] rounded border transition-colors relative flex items-center justify-center", darkBgColor === '#121212' ? "border-[#e6005c] ring-1 ring-[#e6005c]" : "border-white/20 hover:border-white/40")}
                               style={{ backgroundColor: '#121212' }}
                             >
@@ -5228,14 +5472,14 @@ export default function App() {
                         ) : (
                           <>
                             <button 
-                              onClick={() => { setLightBgColor('#ffffff'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor: '#ffffff', disableOtherColor }); }}
+                              onClick={(e) => { setLightBgColor('#ffffff'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor: '#ffffff', disableOtherColor }); }}
                               className={cn("w-[22px] h-[22px] rounded border transition-colors shadow-sm relative flex items-center justify-center", lightBgColor === '#ffffff' ? "border-[#e6005c] ring-1 ring-[#e6005c]" : "border-black/10 hover:border-black/30")}
                               style={{ backgroundColor: '#ffffff' }}
                             >
                               {lightBgColor === '#ffffff' && <div className="w-1.5 h-1.5 rounded-full bg-[#e6005c]" />}
                             </button>
                             <button 
-                              onClick={() => { setLightBgColor('#f8f9fa'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor: '#f8f9fa', disableOtherColor }); }}
+                              onClick={(e) => { setLightBgColor('#f8f9fa'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor: '#f8f9fa', disableOtherColor }); }}
                               className={cn("w-[22px] h-[22px] rounded border transition-colors shadow-sm relative flex items-center justify-center", lightBgColor === '#f8f9fa' ? "border-[#e6005c] ring-1 ring-[#e6005c]" : "border-black/10 hover:border-black/30")}
                               style={{ backgroundColor: '#f8f9fa' }}
                             >
@@ -5248,7 +5492,7 @@ export default function App() {
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <button 
-                      onClick={() => { setTheme('dark'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme: 'dark', darkBgColor, lightBgColor, disableOtherColor }); }}
+                      onClick={(e) => { setTheme('dark'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme: 'dark', darkBgColor, lightBgColor, disableOtherColor }); }}
                       className={`py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                         theme === 'dark' 
                           ? 'bg-[#e6005c] border-[#e6005c] text-white' 
@@ -5258,7 +5502,7 @@ export default function App() {
                       다크 모드
                     </button>
                     <button 
-                      onClick={() => { setTheme('light'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme: 'light', darkBgColor, lightBgColor, disableOtherColor }); }}
+                      onClick={(e) => { setTheme('light'); saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme: 'light', darkBgColor, lightBgColor, disableOtherColor }); }}
                       className={`py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                         theme === 'light' 
                           ? 'bg-white border-white text-stone-900' 
@@ -5293,7 +5537,27 @@ export default function App() {
                         }} 
                       />
                     </div>
+                                        <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
+                      <span className="text-[11px] font-bold text-white/80">스탠딩 숨김</span>
+                      <Toggle 
+                        enabled={hideAllAvatars} 
+                        onChange={(val) => {
+                          setHideAllAvatars(val);
+                          saveToHistory({ hideAllAvatars: val });
+                        }} 
+                      />
+                    </div>
                     <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
+                      <span className="text-[11px] font-bold text-white/80">얼굴 위주 크롭 (상단 1:1)</span>
+                      <Toggle 
+                        enabled={cropFaceTop} 
+                        onChange={(val) => {
+                          setCropFaceTop(val);
+                          saveToHistory({ cropFaceTop: val });
+                        }} 
+                      />
+                    </div>
+<div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm h-11 relative">
                       <span className="text-[11px] font-bold text-white/80">스탠딩 배경 숨김</span>
                       <Toggle 
                         enabled={hideEmptyAvatars} 
@@ -5323,7 +5587,7 @@ export default function App() {
                           {fonts.map(f => (
                             <button
                               key={f.name}
-                              onClick={() => {
+                              onClick={(e) => {
                                 setFontFamily(f.name);
                                 saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily: f.name, theme, disableOtherColor });
                                 setIsFontDropdownOpen(false);
@@ -5365,14 +5629,14 @@ export default function App() {
                     <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200 mt-2">
                       <div className="flex items-center bg-black/20 p-0.5 rounded-lg border border-white/5 gap-0.75 shrink-0">
                         <button 
-                          onClick={() => {
+                          onClick={(e) => {
                             setLineHeight(1.5); setContentPadding(15); setBlockSpacing(-12); setAvatarSizeValue(42); setLetterSpacing(0);
                             saveToHistory({ lineHeight: 1.5, contentPadding: 15, blockSpacing: -12, avatarSizeValue: 42, letterSpacing: 0 });
                           }}
                           className={cn("flex-1 py-1 text-[9px] font-bold rounded-md transition-all", (lineHeight === 1.5 && contentPadding === 15 && blockSpacing === -12 && avatarSizeValue === 42 && letterSpacing === 0) ? "bg-white/15 text-white shadow-sm" : "text-white/40 hover:text-white/70")}
                         >좁게</button>
                         <button 
-                          onClick={() => {
+                          onClick={(e) => {
                             setTextFontSize(14); setLineHeight(1.6); setLetterSpacing(0); setBlockSpacing(2); setContentPadding(12); setAvatarSizeValue(46);
                             saveToHistory({ textFontSize: 14, lineHeight: 1.6, letterSpacing: 0, blockSpacing: 2, contentPadding: 12, avatarSizeValue: 46 });
                           }}
@@ -5381,7 +5645,7 @@ export default function App() {
                           기본
                         </button>
                         <button 
-                          onClick={() => {
+                          onClick={(e) => {
                             setTextFontSize(14); setLineHeight(2.0); setLetterSpacing(0); setBlockSpacing(6); setContentPadding(20); setAvatarSizeValue(46);
                             saveToHistory({ textFontSize: 14, lineHeight: 2.0, letterSpacing: 0, blockSpacing: 6, contentPadding: 20, avatarSizeValue: 46 });
                           }}
@@ -5448,7 +5712,7 @@ export default function App() {
                             ] as const).map(opt => (
                               <button
                                 key={opt.value}
-                                onClick={() => {
+                                onClick={(e) => {
                                   setFilterBarMode(opt.value);
                                   saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, darkBgColor, lightBgColor, disableOtherColor, filterBarMode: opt.value });
                                   setIsFilterDropdownOpen(false);
@@ -5472,7 +5736,7 @@ export default function App() {
                       <>스타일 코드를 상단에 배치해 코드 단축 <span className="text-[#e6005c] font-medium">(권장)</span></>
                     }>
                       <button 
-                        onClick={() => { setCssFormat('internal'); saveToHistory({ charSettings, tabSettings, cssFormat: 'internal', fontSize, fontFamily, theme, disableOtherColor }); }}
+                        onClick={(e) => { setCssFormat('internal'); saveToHistory({ charSettings, tabSettings, cssFormat: 'internal', fontSize, fontFamily, theme, disableOtherColor }); }}
                         className={`w-full py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                           cssFormat === 'internal' 
                             ? 'bg-[#e6005c] border-[#e6005c] text-white' 
@@ -5486,7 +5750,7 @@ export default function App() {
                       <>티스토리 기본 스킨/모바일 모드 사용 시 권장</>
                     }>
                       <button 
-                        onClick={() => { setCssFormat('inline'); saveToHistory({ charSettings, tabSettings, cssFormat: 'inline', fontSize, fontFamily, theme, disableOtherColor }); }}
+                        onClick={(e) => { setCssFormat('inline'); saveToHistory({ charSettings, tabSettings, cssFormat: 'inline', fontSize, fontFamily, theme, disableOtherColor }); }}
                         className={`w-full py-2 px-3 rounded-xl border-2 transition-all text-[11px] font-bold ${
                           cssFormat === 'inline' 
                             ? 'bg-[#e6005c] border-[#e6005c] text-white' 
@@ -5570,7 +5834,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/30 hover:text-white/50 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.10.16</span>
+            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.10.17</span>
           </div>
         </div>
       </aside>
@@ -5593,7 +5857,7 @@ export default function App() {
                     ? "w-[240px] px-3 py-1.5 bg-white/5 border-white/10" 
                     : "w-8 h-8 bg-white/5 hover:bg-white/10 border-white/10 cursor-pointer justify-center"
                 )}
-                onClick={() => {
+                onClick={(e) => {
                   if (!isSearchExpanded) {
                     setIsSearchExpanded(true);
                     setTimeout(() => searchInputRef.current?.focus(), 50);
@@ -5704,7 +5968,7 @@ export default function App() {
                   </div>
                   <button
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
+                    onClick={(e) => {
                       setPageTitle(tempTitle);
                       saveToHistory({ pageTitle: tempTitle });
                       setIsTitleEditing(false);
@@ -5716,7 +5980,7 @@ export default function App() {
                 </div>
               ) : (
                 <div 
-                  onClick={() => {
+                  onClick={(e) => {
                     setIsTitleEditing(true);
                     setTempTitle(pageTitle);
                   }}
@@ -5807,7 +6071,7 @@ export default function App() {
                       <div className="h-px bg-white/5 my-2" />
                       
                       <button 
-                        onClick={() => { exportProject(); setShowSaveMenu(false); }}
+                        onClick={(e) => { exportProject(); setShowSaveMenu(false); }}
                         className="w-full flex items-center justify-center gap-2 p-2.5 bg-[#e6005c] hover:bg-[#ff0066] rounded-xl text-white transition-all text-[11px] font-bold shadow-lg shadow-pink-500/20 mt-1"
                       >
                         <FileJson className="w-3.5 h-3.5" />
@@ -5850,13 +6114,13 @@ export default function App() {
                           </div>
                           <div className="flex items-center gap-1.5 pt-1">
                             <button 
-                              onClick={() => { copyToClipboard(getCombinedHtmlString()); setShowDownloadMenu(false); }}
+                              onClick={(e) => { copyToClipboard(getCombinedHtmlString()); setShowDownloadMenu(false); }}
                               className="flex-1 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5"
                             >
                               <Copy className="w-3 h-3 text-white/90" /> 연속 파일 복사
                             </button>
                             <button 
-                              onClick={() => { downloadCombinedHtml(); setShowDownloadMenu(false); }}
+                              onClick={(e) => { downloadCombinedHtml(); setShowDownloadMenu(false); }}
                               className="flex-1 py-1.5 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
                             >
                               <Download className="w-3 h-3 text-white" /> 연속 파일 저장
@@ -5866,7 +6130,7 @@ export default function App() {
                       ) : (
                         <div className="bg-[#e6005c]/10 border border-[#e6005c]/30 rounded-xl p-2.5 space-y-1.5">
                           <button 
-                            onClick={() => { downloadAllZip(); setShowDownloadMenu(false); }}
+                            onClick={(e) => { downloadAllZip(); setShowDownloadMenu(false); }}
                             className="w-full py-1.5 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
                           >
                             <Archive className="w-3 h-3 text-white" /> 모든 파일 ZIP 저장
@@ -5877,7 +6141,7 @@ export default function App() {
                       <div className="h-px bg-white/5" />
 
                       <div className="px-1">
-                        <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">탭별 / 섹션별 내보내기</p>
+                        <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">섹션별 내보내기</p>
                       </div>
 
                       <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-2 pr-0.5">
@@ -5893,14 +6157,14 @@ export default function App() {
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
                                   <button
-                                    onClick={() => { copyToClipboard(getHtmlStringForFile(f)); setShowDownloadMenu(false); }}
+                                    onClick={(e) => { copyToClipboard(getHtmlStringForFile(f)); setShowDownloadMenu(false); }}
                                     className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[9px] font-bold transition-colors flex items-center gap-1"
                                     title="파일 전체 복사"
                                   >
                                     <Copy className="w-2.5 h-2.5" /> 복사
                                   </button>
                                   <button
-                                    onClick={() => { downloadHtmlForFile(f); setShowDownloadMenu(false); }}
+                                    onClick={(e) => { downloadHtmlForFile(f); setShowDownloadMenu(false); }}
                                     className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded text-[9px] font-bold transition-colors flex items-center gap-1"
                                     title="파일 전체 저장"
                                   >
@@ -5921,14 +6185,14 @@ export default function App() {
                                       </div>
                                       <div className="flex items-center gap-1 shrink-0">
                                         <button
-                                          onClick={() => { copyToClipboard(getHtmlStringForFile(f, s.id)); setShowDownloadMenu(false); }}
+                                          onClick={(e) => { copyToClipboard(getHtmlStringForFile(f, s.id)); setShowDownloadMenu(false); }}
                                           className="p-1 text-white/40 hover:text-white transition-colors"
                                           title="섹션 복사"
                                         >
                                           <Copy className="w-3 h-3" />
                                         </button>
                                         <button
-                                          onClick={() => { downloadHtmlForFile(f, s); setShowDownloadMenu(false); }}
+                                          onClick={(e) => { downloadHtmlForFile(f, s); setShowDownloadMenu(false); }}
                                           className="p-1 text-emerald-400/60 hover:text-emerald-300 transition-colors"
                                           title="섹션 저장"
                                         >
@@ -5961,7 +6225,7 @@ export default function App() {
               return (
                 <div
                   key={f.id}
-                  onClick={() => {
+                  onClick={(e) => {
                     if (!isEditing) setActiveFileId(f.id);
                   }}
                   className={cn(
@@ -6242,6 +6506,7 @@ export default function App() {
                               isPrevSameTab={isPrevSameTab}
                               isNextSameTab={isNextSameTab}
                               isNextContinuation={idx < mergedLogs.length - 1 && mergedLogs[idx + 1].isContinuation}
+                              onAvatarClick={onAvatarClick}
                               isPrevBlock={idx > 0 && !!insertedBlocks[mergedLogs[idx - 1].id.startsWith('merged:') ? mergedLogs[idx - 1].id.split(',').pop()! : mergedLogs[idx - 1].id]?.length}
                               isPrevNarration={isPrevNarration}
                               isNextNarration={isNextNarration}
@@ -6270,7 +6535,7 @@ export default function App() {
 
                       return (
                         <div 
-                          className="fixed z-[9999] pointer-events-none"
+                          className="fixed z-[99999] pointer-events-none"
                           style={{
                             left: `${leftPos}px`,
                             top: `${topPos}px`,
@@ -6548,7 +6813,7 @@ export default function App() {
                         <div className="flex gap-2">
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={(e) => {
                               const next: Record<string, boolean> = { ...bulkSelectedIllustrations };
                               bulkImages.filter(img => !bulkImageMapping[img.url]).forEach(img => {
                                 next[img.url] = true;
@@ -6562,7 +6827,7 @@ export default function App() {
                           <span className="text-white/30 text-[10px]">|</span>
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={(e) => {
                               const next: Record<string, boolean> = { ...bulkSelectedIllustrations };
                               bulkImages.filter(img => !bulkImageMapping[img.url]).forEach(img => {
                                 next[img.url] = false;
@@ -6593,7 +6858,7 @@ export default function App() {
                                 return (
                                   <div
                                     key={idx}
-                                    onClick={() => {
+                                    onClick={(e) => {
                                       setBulkSelectedIllustrations(prev => ({
                                         ...prev,
                                         [img.url]: !prev[img.url]
@@ -6642,7 +6907,7 @@ export default function App() {
               <div className="flex gap-2">
                 {bulkImportStep === 1 ? (
                   <button 
-                    onClick={() => {
+                    onClick={(e) => {
                       const nextSelected = { ...bulkSelectedIllustrations };
                       bulkImages.forEach(img => {
                         if (!bulkImageMapping[img.url] && nextSelected[img.url] === undefined) {
@@ -6705,7 +6970,7 @@ export default function App() {
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
                           const next: Record<string, boolean> = {};
                           illBulkImages.forEach(img => { next[img.url] = true; });
                           setSelectedIllBulkImages(next);
@@ -6717,7 +6982,7 @@ export default function App() {
                       <span className="text-white/30 text-[10px]">|</span>
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
                           const next: Record<string, boolean> = {};
                           illBulkImages.forEach(img => { next[img.url] = false; });
                           setSelectedIllBulkImages(next);
@@ -6736,7 +7001,7 @@ export default function App() {
                         return (
                           <div
                             key={idx}
-                            onClick={() => {
+                            onClick={(e) => {
                               setSelectedIllBulkImages(prev => ({
                                 ...prev,
                                 [img.url]: !prev[img.url]
@@ -6794,6 +7059,83 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* Avatar Image Popup */}
+      {avatarPopupInfo && (() => {
+        const char = charSettings[avatarPopupInfo.charId];
+        if (!char || !char.images || char.images.length === 0) return null;
+        
+        return (
+          <AvatarImagePopup
+            charId={char.id}
+            charName={char.name}
+            color={char.color || '#ffffff'}
+            images={char.images}
+            triggerRect={avatarPopupInfo.triggerRect}
+            onClose={() => setAvatarPopupInfo(null)}
+            onSelectSingle={(imageId) => handleOverrideImage(avatarPopupInfo.logId, imageId)}
+            onSelectBatch={(imageId, start, end) => handleBatchOverrideImage(avatarPopupInfo.charId, imageId, start, end)}
+            defaultStartIdx={avatarPopupInfo.logIndex + 1}
+            defaultEndIdx={logs.length}
+          />
+        );
+      })()}
+
+      <BulkImageAllocatorModal
+        isOpen={isBulkAllocatorOpen}
+        onClose={() => setIsBulkAllocatorOpen(false)}
+        charSettings={charSettings}
+        onSave={applyBulkAllocations}
+      />
+
+            {/* Character Image Panel Popup */}
+      {(activeColorPicker?.endsWith('_panel') || pinnedCharPanel) && panelTriggerRect && (() => {
+        const charId = pinnedCharPanel || activeColorPicker?.replace('_panel', '');
+        const char = charId ? charSettings[charId] : null;
+        if (!char) return null;
+        
+        return (
+          <CharImagePanelPopup
+            charName={char.name}
+            images={char.images || []}
+            color={char.color || '#ffffff'}
+            triggerRect={panelTriggerRect}
+            isPinned={pinnedCharPanel === charId}
+            onMouseEnter={() => {
+              if (panelHoverTimeout.current) clearTimeout(panelHoverTimeout.current);
+            }}
+            onMouseLeave={() => {
+              if (pinnedCharPanel !== charId) {
+                panelHoverTimeout.current = setTimeout(() => {
+                  setActiveColorPicker(null);
+                  setPanelTriggerRect(null);
+                }, 150);
+              }
+            }}
+            onThumbnailHover={(url, rect) => {
+              setHoverImgUrl(url);
+              setHoverImgRect(rect);
+              setHoverImgLabel(char.name + ' 스탠딩');
+            }}
+            onTogglePin={() => {
+              if (pinnedCharPanel === charId) {
+                setPinnedCharPanel(null);
+              } else {
+                setPinnedCharPanel(charId);
+              }
+            }}
+            onClose={() => {
+              if (pinnedCharPanel !== charId) {
+                setActiveColorPicker(null);
+                setPanelTriggerRect(null);
+              }
+            }}
+            onAddImage={(url) => addCharacterImage(charId, url)}
+            onRemoveImage={(id) => removeCharacterImage(charId, id)}
+            onSetRepresentative={(id) => setRepresentativeImage(charId, id)}
+          />
+        );
+      })()}
+
       <Analytics />
     </div>
     </SettingsProvider>

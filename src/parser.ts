@@ -106,7 +106,7 @@ export const parseLogFile = async (file: File) => {
     });
 
     if (!newChars[charId]) {
-      newChars[charId] = { id: charId, name, color, imageUrl: '', visible: true };
+      newChars[charId] = { id: charId, name, color, imageUrl: '', images: [], visible: true };
       newCharOrder.push(charId);
     } else {
       newChars[charId].color = color; // keep last color, or maybe we shouldn't overwrite?
