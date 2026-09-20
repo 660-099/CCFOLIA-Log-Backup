@@ -97,6 +97,6 @@ export interface LogFile {
   id: string;
   name: string;
   logs: LogEntry[];
-  insertedBlocks?: Record<number | string, { type: 'split' | 'image'; name?: string; src?: string }>;
+  insertedBlocks?: Record<string, any[]>;
 }
 

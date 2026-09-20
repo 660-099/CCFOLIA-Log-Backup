@@ -63,7 +63,7 @@ export function migrateCharSettings(charSettings: Record<string, any>) {
   const migrated: Record<string, any> = {};
   for (const key in charSettings) {
     const char = { ...charSettings[key] };
-    if (!char.images) {
+    if (!char.images || char.images.length === 0) {
       char.images = [];
       if (char.imageUrl) {
         char.images.push({
@@ -72,7 +72,16 @@ export function migrateCharSettings(charSettings: Record<string, any>) {
           isRepresentative: true
         });
       }
+    } else {
+      // make sure at least one is representative if not set
+      if (!char.images.find((i: any) => i.isRepresentative)) {
+         char.images[0].isRepresentative = true;
+      }
     }
+    
+    // ensure color
+    if (!char.color) char.color = '#ffffff';
+    
     migrated[key] = char;
   }
   return migrated;

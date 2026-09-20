@@ -40,9 +40,13 @@ export const generateFinalHtmlStr = (
   cropFaceTop: boolean,
   hideAllAvatars: boolean,
   narrationCharacter: string | null,
+  narrationCharacter2: string | null,
   enableSentenceSpacing: boolean,
+  enableSentenceSpacing2: boolean,
   enableSecretNarration: boolean,
+  enableSecretNarration2: boolean,
   narrationFormat: 'style1' | 'style2' | 'style3',
+  narrationFormat2: 'style1' | 'style2' | 'style3',
   insertedBlocks: Record<string, any[]>,
   mergeTabs: Set<string>,
   mergeTabStyles: Set<string>,
@@ -57,8 +61,25 @@ export const generateFinalHtmlStr = (
   avatarSizeValue: number = 46,
   showLogDivider: boolean = false,
   illustrations: Illustration[] = [],
-  originalLogs: LogEntry[] = []
+  originalLogs: LogEntry[] = [],
+  exportMode: 'html' | 'blog' = 'html'
 ) => {
+  const getNarrationFormat = (formatVal: 'main' | 'secret', charId?: string) => {
+    if (formatVal === 'main') {
+      if (narrationCharacter && charId === narrationCharacter) return narrationFormat;
+      if (narrationCharacter2 && charId === narrationCharacter2) return narrationFormat2;
+      return narrationFormat;
+    }
+    return narrationFormat2;
+  };
+
+  const getEnableSentenceSpacing = (charId?: string) => { if (charId === narrationCharacter2) return enableSentenceSpacing2; return enableSentenceSpacing; };
+  const getEnableSecretNarration = (charId?: string) => {
+    if (narrationCharacter && charId === narrationCharacter) return enableSecretNarration;
+    if (narrationCharacter2 && charId === narrationCharacter2) return enableSecretNarration2;
+    return enableSecretNarration;
+  };
+
   const isDark = theme === 'dark';
   const cleanStyle = (styleStr: string) => {
     if (!styleStr) return '';
@@ -141,7 +162,7 @@ export const generateFinalHtmlStr = (
       return forceClass ? ` class="${forceClass}"` : '';
     }
     const isMainTab = (tabSettings[logEntry.tabId]?.format || 'main') === 'main';
-    const isNarrationCharacterTag = logEntry.charId === narrationCharacter;
+    const isNarrationCharacterTag = logEntry.charId === narrationCharacter || logEntry.charId === narrationCharacter2;
     const isCommandFlag = logEntry.isCommand;
 
     let attrs = ` d-t="${shortenId(logEntry.tabId)}" d-c="${shortenId(logEntry.charId)}"`;
@@ -176,12 +197,12 @@ export const generateFinalHtmlStr = (
     ).join('');
     
     let charsArray = Array.from(activeChars.values());
-    if (narrationCharacter) {
+    if (narrationCharacter || narrationCharacter2) {
       charsArray = [
         {
           id: '__NARRATION__',
           name: '나레이션',
-          color: charSettings[narrationCharacter]?.color || '#000000'
+          color: charSettings[narrationCharacter || narrationCharacter2 || '']?.color || '#000000'
         },
         ...charsArray
       ];
@@ -370,6 +391,8 @@ export const generateFinalHtmlStr = (
     .s-p-ob { margin-top: 0.8em; }
   `;
 
+  const activeAvatars = new Map<string, string>();
+  const isInline = cssFormat === 'inline';
   const activeCharColors = new Map<string, string>();
   filteredLogs.forEach(log => {
     const cid = shortenId(log.charId);
@@ -378,15 +401,38 @@ export const generateFinalHtmlStr = (
       if (charColor) {
         activeCharColors.set(cid, charColor);
       }
+      
+      let imgUrl = charSettings[log.charId]?.imageUrl;
+      let overrideId = log.overrideImageId ? shortenId(log.overrideImageId) : 'def';
+      if (log.overrideImageId && charSettings[log.charId]?.images) {
+          const oImg = charSettings[log.charId].images.find(i => i.id === log.overrideImageId);
+          if (oImg && oImg.url) imgUrl = oImg.url;
+      }
+      
+      if (imgUrl && !hideAllAvatars && !hideEmptyAvatars) {
+         // If hideEmptyAvatars is true, we might still need it if it exists.
+      }
+      if (imgUrl) {
+         activeAvatars.set(`av-${cid}-${overrideId}`, imgUrl);
+      }
     }
   });
 
-  const dynamicColorsCss = Array.from(activeCharColors.entries())
+  let dynamicColorsCss = Array.from(activeCharColors.entries())
     .map(([cid, color]) => `.${cid} { color: ${color} !important; }`)
     .join('\n');
 
+  if (!isInline) {
+    if (activeAvatars.size > 0) {
+      dynamicColorsCss += `\n[class*="av-"] { background-size: cover; background-position: ${cropFaceTop ? 'top' : 'center'}; }`;
+      dynamicColorsCss += '\n' + Array.from(activeAvatars.entries())
+        .map(([cls, url]) => `.${cls} { background-image: url('${url}'); }`)
+        .join('\n');
+    }
+  }
+
   let computedNameWidth = 120;
-  if ((hideAllAvatars || narrationFormat === 'style3') && typeof document !== 'undefined') {
+  if ((hideAllAvatars || (narrationFormat === 'style3' || narrationFormat2 === 'style3')) && typeof document !== 'undefined') {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (ctx) {
@@ -396,8 +442,8 @@ export const generateFinalHtmlStr = (
       let mw = 0;
       for (const log of filteredLogs) {
         if (!log.isContinuation) {
-          const isNarration = log.charId === narrationCharacter;
-          if (hideAllAvatars || (isNarration && narrationFormat === 'style3')) {
+          const isNarration = (log.charId === narrationCharacter || log.charId === narrationCharacter2);
+          if (hideAllAvatars || (isNarration && (narrationFormat === 'style3' || narrationFormat2 === 'style3'))) {
             const w = ctx.measureText(log.name + ':').width;
             if (w > mw) mw = w;
           }
@@ -412,7 +458,8 @@ export const generateFinalHtmlStr = (
     ${filterBarCSS}
     ${textResetCSS}
     ${dynamicColorsCss}
-    .c-mc { background-color: ${bgColor}; margin: 0; padding: 0; }
+    ${exportMode === 'html' ? `body { background-color: ${bgColor}; margin: 0; padding: 0; }` : ''}
+    ${exportMode === 'blog' ? `.c-mc { background-color: ${bgColor}; margin: 0; padding: 0; }` : ''}
     .c-ct * { box-sizing: border-box; min-width: 0; }
     .c-ct { 
       width: 100%; max-width: 800px; margin: 0 auto; 
@@ -473,15 +520,15 @@ export const generateFinalHtmlStr = (
     }
     .c-tx { font-family: 'NanumGothicCodingLigature', monospace; color: ${textColor}; font-weight: bold; line-height: 1.6; }
 
-    .n-r { text-align: ${'center'}; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: ${narrationFormat === 'style2' ? 'italic' : 'normal'}; }
-    .n-sr { text-align: ${'center'}; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; font-style: ${narrationFormat === 'style2' ? 'italic' : 'normal'}; padding: ${s(2)}px ${paddingHorizontal}px; margin-bottom: 0px; }
+    .n-r { text-align: ${'center'}; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; }
+    .n-sr { text-align: ${'center'}; color: ${textColor}; line-height: ${lineHeight}; font-size: ${r(textFontSize)}px; font-weight: bold; padding: ${s(2)}px ${paddingHorizontal}px; margin-bottom: 0px; }
 
     .c-dv { display: flex; align-items: center; justify-content: stretch; pointer-events: none; margin-left: 0; margin-right: 0; padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px; }
     .c-dv-ib { margin-left: ${paddingHorizontal}px; margin-right: ${paddingHorizontal}px; padding-left: ${paddingHorizontal}px; padding-right: ${paddingHorizontal}px; }
     .c-dv-in { width: 100%; border-bottom: 1px solid; }
   `;
 
-  const isInline = cssFormat === 'inline';
+
   let html = '';
 
   const firstVisible = mergedLogs.find(l => {
@@ -519,7 +566,7 @@ export const generateFinalHtmlStr = (
         html += `<div class="c-e" style="${cleanStyle(`display:flex;justify-content:${justify};margin:10px ${s(15.6)}px`)}">
           <img src="${url}" style="${cleanStyle(`${widthStyle}border-radius:8px;display:block`)}" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
         </div>`;
-      } else if (block.type === 'bgm' && isValidBgm(block)) {
+      } else if (block.type === 'bgm' && isValidBgm(block) && exportMode !== 'html') {
         const bgmTitle = block.title || '🎧 BGM';
         const parsed = parseYoutubeUrl(block.url, block.useTimestamp);
         const videoId = block.videoId || parsed.videoId || '';
@@ -544,6 +591,7 @@ export const generateFinalHtmlStr = (
     if (log.isUnplaced) return; // Skip unplaced illustrations
 
     if (log.isBgmBlock) {
+      if (exportMode === 'html') return; // Absolutely no BGM trace in HTML export
       const bgmLogEntry: any = {
         id: log.id,
         isBgmBlock: true,
@@ -564,18 +612,12 @@ export const generateFinalHtmlStr = (
       return;
     }
 
-    if (log.isBgmBlock) {
-      finalLogsSequence.push({ ...log, sectionId: log.sectionId });
-      prevLogForContinuation = log;
-      return;
-    }
-
     if (log.isIllustration) {
       let resolvedTabId = log.tabOverride;
       if (resolvedTabId === 'auto' || !resolvedTabId || !tabSettings[resolvedTabId]) {
         let prevTabId = null;
         for (let i = idx - 1; i >= 0; i--) {
-          if (originalLogs[i] && !originalLogs[i].isIllustration) {
+          if (originalLogs[i] && !originalLogs[i].isIllustration && !originalLogs[i].isBgmBlock) {
             const tabId = originalLogs[i].tabId;
             if (tabSettings[tabId] && tabSettings[tabId].visible !== false) {
               prevTabId = tabId;
@@ -588,7 +630,7 @@ export const generateFinalHtmlStr = (
         } else {
           let nextTabId = null;
           for (let i = idx + 1; i < originalLogs.length; i++) {
-            if (originalLogs[i] && !originalLogs[i].isIllustration) {
+            if (originalLogs[i] && !originalLogs[i].isIllustration && !originalLogs[i].isBgmBlock) {
               const tabId = originalLogs[i].tabId;
               if (tabSettings[tabId] && tabSettings[tabId].visible !== false) {
                 nextTabId = tabId;
@@ -644,7 +686,7 @@ export const generateFinalHtmlStr = (
       const format = tabSet?.format || 'main';
       const stableId = mappedLog.id.startsWith('merged:') ? mappedLog.id.split(',').pop()! : mappedLog.id;
       const prevStableId = prevLogForContinuation && !prevLogForContinuation.isIllustration ? (prevLogForContinuation.id.startsWith('merged:') ? prevLogForContinuation.id.split(',').pop()! : prevLogForContinuation.id) : '';
-      const prevHasBlock = prevLogForContinuation && !prevLogForContinuation.isIllustration && !!insertedBlocks[prevStableId]?.length;
+      const prevHasBlock = prevLogForContinuation && !prevLogForContinuation.isIllustration && !!(insertedBlocks[prevStableId] || []).filter(b => b.type === 'split' || (b.type === 'image' && isValidUrl(b.url)) || (b.type === 'bgm' && isValidBgm(b) && exportMode !== 'html')).length;
 
       let isContinuation = false;
       if (prevLogForContinuation && !prevLogForContinuation.isIllustration) {
@@ -728,7 +770,7 @@ export const generateFinalHtmlStr = (
     const currentBlocks = (insertedBlocks[stableId] || []).filter(b => 
       b.type === 'split' || 
       (b.type === 'image' && isValidUrl(b.url)) ||
-      (b.type === 'bgm' && isValidBgm(b))
+      (b.type === 'bgm' && isValidBgm(b) && exportMode !== 'html')
     );
     
     if (log.isContinuation && chunks.length > 0 && !log.isHiddenContent) {
@@ -760,7 +802,7 @@ export const generateFinalHtmlStr = (
       }
       const tabSet = tabSettings[l.tabId];
       const formatVal = tabSet?.format || 'main';
-      if (l.charId === narrationCharacter && formatVal === 'main') {
+      if ((l.charId === narrationCharacter || l.charId === narrationCharacter2) && formatVal === 'main') {
         return 'narration';
       }
       return formatVal;
@@ -846,7 +888,7 @@ export const generateFinalHtmlStr = (
       }
       const tabSet = tabSettings[l.tabId];
       const formatVal = tabSet?.format || 'main';
-      if (l.charId === narrationCharacter && formatVal === 'main') {
+      if ((l.charId === narrationCharacter || l.charId === narrationCharacter2) && formatVal === 'main') {
         return 'narration';
       }
       return formatVal;
@@ -871,6 +913,7 @@ export const generateFinalHtmlStr = (
     const nextVisibleChunk = nextVisibleChunkIdx < chunks.length ? chunks[nextVisibleChunkIdx] : null;
 
     if (log.isBgmBlock) {
+      if (exportMode === 'html') return;
       const bgmData = log.bgmData || {};
       const parsed = parseYoutubeUrl(bgmData.url, bgmData.useTimestamp);
       const videoId = bgmData.videoId || parsed.videoId;
@@ -908,7 +951,23 @@ export const generateFinalHtmlStr = (
     const char = charSettings[log.charId];
     const color = char?.color || log.color;
     const otherNameColor = disableOtherColor ? otherTextColor : color;
-    const img = char?.imageUrl;
+    let img = char?.imageUrl;
+    let avatarClass = '';
+    const cid = shortenId(log.charId);
+    let overrideId = log.overrideImageId ? shortenId(log.overrideImageId) : 'def';
+    
+    if (log.overrideImageId && char?.images) {
+      const oImg = char.images.find(i => i.id === log.overrideImageId);
+      if (oImg && oImg.url) {
+         img = oImg.url;
+      }
+    }
+    
+    
+    
+    if (img) {
+      avatarClass = `av-${cid}-${overrideId}`;
+    }
     const hideAvatar = hideEmptyAvatars;
 
     const prevChunk = chunkIdx > 0 ? chunks[chunkIdx - 1] : null;
@@ -932,9 +991,9 @@ export const generateFinalHtmlStr = (
     const isSectionEndOuter = !nextVisibleChunk || isNextSameTab === false || hasBlockAfter;
     const mergeWithNextOuter = shouldMergeStyle && isNextSameTab && !isSectionEndOuter;
 
-    const isNarration = log.charId === narrationCharacter && (format === 'main' || (enableSecretNarration && format === 'secret'));
-    const isPrevNarration = prevVisibleChunk ? (!hasBlockBefore && prevVisibleChunk.logs[0].charId === narrationCharacter && ((tabSettings[prevVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' || (enableSecretNarration && tabSettings[prevVisibleChunk.logs[0].tabId]?.format === 'secret'))) : false;
-    const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && nextVisibleChunk.logs[0].charId === narrationCharacter && ((tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' || (enableSecretNarration && tabSettings[nextVisibleChunk.logs[0].tabId]?.format === 'secret'))) : false;
+    const isNarration = (log.charId === narrationCharacter || log.charId === narrationCharacter2) && (format === 'main' || (getEnableSecretNarration(log.charId) && format === 'secret'));
+    const isPrevNarration = prevVisibleChunk ? (!hasBlockBefore && (prevVisibleChunk.logs[0].charId === narrationCharacter || prevVisibleChunk.logs[0].charId === narrationCharacter2) && ((tabSettings[prevVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' || (getEnableSecretNarration(prevVisibleChunk.logs[0].charId) && tabSettings[prevVisibleChunk.logs[0].tabId]?.format === 'secret'))) : false;
+    const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && (nextVisibleChunk.logs[0].charId === narrationCharacter || nextVisibleChunk.logs[0].charId === narrationCharacter2) && ((tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' || (getEnableSecretNarration(nextVisibleChunk.logs[0].charId) && tabSettings[nextVisibleChunk.logs[0].tabId]?.format === 'secret'))) : false;
 
     // Calculate divider presence and visual properties early
     const hasDividerBelow = nextVisibleChunk ? getHasDividerBetween(chunk, nextVisibleChunk) : false;
@@ -951,7 +1010,7 @@ export const generateFinalHtmlStr = (
       } else {
         const tabSetVal = tabSettings[prevLogObj.tabId];
         const formatVal = tabSetVal?.format || 'main';
-        if (prevLogObj.charId === narrationCharacter && formatVal === 'main') {
+        if ((prevLogObj.charId === narrationCharacter || prevLogObj.charId === narrationCharacter2) && formatVal === 'main') {
           prevFormat = 'narration';
         } else {
           prevFormat = formatVal;
@@ -969,7 +1028,7 @@ export const generateFinalHtmlStr = (
       } else {
         const tabSetVal = tabSettings[nextLogObj.tabId];
         const formatVal = tabSetVal?.format || 'main';
-        if (nextLogObj.charId === narrationCharacter && formatVal === 'main') {
+        if ((nextLogObj.charId === narrationCharacter || nextLogObj.charId === narrationCharacter2) && formatVal === 'main') {
           nextFormat = 'narration';
         } else {
           nextFormat = formatVal;
@@ -978,6 +1037,7 @@ export const generateFinalHtmlStr = (
     }
 
     if (log.isBgmBlock) {
+      if (exportMode === 'html') return;
       if (!isHidden) {
         const bgmData = log.bgmData || {};
         
@@ -1109,7 +1169,7 @@ export const generateFinalHtmlStr = (
     let dividerHtml = '';
     if (hasDividerBelow) {
       const isMainTab = format === 'main' ? 'true' : 'false';
-      const isNarrationCharacterTag = log.charId === narrationCharacter ? 'true' : 'false';
+      const isNarrationCharacterTag = (log.charId === narrationCharacter || log.charId === narrationCharacter2) ? 'true' : 'false';
       const isCommandFlag = log.isCommand ? 'true' : 'false';
       
       let divAttrs = '';
@@ -1197,7 +1257,7 @@ export const generateFinalHtmlStr = (
           blocksAfterHtml += `<div${imgAttrs} style="${cleanStyle(`display:flex;justify-content:${justify};margin:10px ${s(15.6)}px`)}">
             <img src="${block.url}" style="${cleanStyle(`${widthStyle}border-radius:8px;display:block`)}" referrerPolicy="no-referrer" onerror="this.style.display='none'" />
           </div>`;
-        } else if (block.type === 'bgm' && isValidBgm(block)) {
+        } else if (block.type === 'bgm' && isValidBgm(block) && exportMode !== 'html') {
           const bgmTitle = block.title || '🎧 BGM';
           const parsed = parseYoutubeUrl(block.url, block.useTimestamp);
           const videoId = block.videoId || parsed.videoId || '';
@@ -1229,7 +1289,7 @@ export const generateFinalHtmlStr = (
       }
       
       let textPieces = [content];
-      if (isNarration && enableSentenceSpacing) {
+      if (isNarration && getEnableSentenceSpacing(l.charId) && !l.isCommand) {
         textPieces = splitNarration(content);
       }
       
@@ -1318,7 +1378,7 @@ export const generateFinalHtmlStr = (
 
       const fullFilterAttrs = getFilterAttrs(log);
         
-      if (isNarration && narrationFormat === 'style3') {
+      if (isNarration && (narrationFormat === 'style3' || narrationFormat2 === 'style3')) {
         html += `<div${fullFilterAttrs} style="position:relative;margin-bottom:${itemMarginBottom};margin-top:${itemMarginTop};">`;
         const wrapperStyle = `display:flex;gap:16px;padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;align-items:flex-start;`;
         const flatPieces = finalHtmlContentPieces.flat();
@@ -1354,7 +1414,7 @@ export const generateFinalHtmlStr = (
         const flatPieces = finalHtmlContentPieces.flat();
         html += flatPieces.map((piece, pIdx) => {
           const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
-          return `${prefix}<div style="white-space:pre-wrap;word-break:break-all;"><b>${narrationFormat === 'style2' ? `<i>${piece}</i>` : piece}</b></div>`;
+          return `${prefix}<div style="white-space:pre-wrap;word-break:break-all;"><b>${getNarrationFormat('main', log.charId) === 'style2' ? `<i>${piece}</i>` : piece}</b></div>`;
         }).join('');
         html += `</div>`;
         if (blocksAfterHtml) {
@@ -1417,7 +1477,7 @@ export const generateFinalHtmlStr = (
           if (isNarration) {
             const wrapperStyle = `padding:${paddingVertical}px ${paddingHorizontal}px;background:${secretBg};border-left:4px solid ${tabColor};margin:${secretMargin};border-radius:${secretRadius};${borderTopStyle}${borderBottomStyle}`;
             const flatPieces = finalHtmlContentPieces.flat();
-            let innerContent = `<div style="${cleanStyle(`text-align:${'center'};font-weight:bold;font-style:${narrationFormat === 'style2' ? 'italic' : 'normal'};color:${textColor};width:100%;`)}">`;
+            let innerContent = `<div style="${cleanStyle(`text-align:${'center'};font-weight:bold;font-style:${getNarrationFormat('main', log.charId) === 'style2' ? 'italic' : 'normal'};color:${textColor};width:100%;`)}">`;
             innerContent += flatPieces.map((piece, pIdx) => {
               const prefix = pIdx > 0 ? `<div style="height:${Math.max(lineHeight * textFontSize, 8)}px;"></div>` : '';
               return `${prefix}<div style="white-space:pre-wrap;word-break:keep-all;overflow-wrap:break-word;">${piece}</div>`;
@@ -1439,9 +1499,7 @@ export const generateFinalHtmlStr = (
             </div>`;
           }
         } else {
-          const avatarHtml = img 
-            ? `<img src="${img}" style="${cleanStyle(avatarStyle)}" />` 
-            : `<div style="${cleanStyle(avatarStyle)}"></div>`;
+          const avatarHtml = img ? `<div class="${avatarClass}" style="${cleanStyle(avatarStyle + (isInline ? `;background-image: url('${img}'); background-size: cover; background-position: ${cropFaceTop ? 'top' : 'center'}` : ''))}"></div>` : `<div style="${cleanStyle(avatarStyle)}"></div>`;
           
           const wrapperStyle = `display:flex;gap:${gapSize}px;padding:${paddingVertical}px ${paddingHorizontal}px;align-items:flex-start;`;
           html += `
@@ -1495,7 +1553,7 @@ export const generateFinalHtmlStr = (
         } else {
           html += `<div class="c-bx" style="display: flex; align-items: center; flex-wrap: wrap;">${nameHtml}<span class="c-tx" style="${marginLeft}">${finalHtmlContent}</span></div>`;
         }
-      } else if (isNarration && narrationFormat === 'style3') {
+      } else if (isNarration && (narrationFormat === 'style3' || narrationFormat2 === 'style3')) {
         const flatPieces = finalHtmlContentPieces.flat();
         let nameHtml = '';
         if (!log.isContinuation) {
@@ -1540,7 +1598,7 @@ export const generateFinalHtmlStr = (
           shouldMergeStyle && tZ ? 'border-top: none;' : ''
         ].filter(Boolean).join(' ');
 
-        if (isNarration && narrationFormat === 'style3') {
+        if (isNarration && (narrationFormat === 'style3' || narrationFormat2 === 'style3')) {
           const flatPieces = finalHtmlContentPieces.flat();
           let nameHtml = '';
           if (!log.isContinuation) {
@@ -1553,7 +1611,7 @@ export const generateFinalHtmlStr = (
         } else if (isNarration) {
           const flatPieces = finalHtmlContentPieces.flat();
           html += `<div class="s-r" style="${st} padding:${paddingVertical}px ${paddingHorizontal}px;">`;
-          html += `<div style="text-align:${'center'};font-weight:bold;font-style:${narrationFormat === 'style2' ? 'italic' : 'normal'};color:${textColor};width:100%;">`;
+          html += `<div style="text-align:${'center'};font-weight:bold;font-style:${getNarrationFormat('main', log.charId) === 'style2' ? 'italic' : 'normal'};color:${textColor};width:100%;">`;
           html += flatPieces.map((piece, pIdx) => {
             const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
             return `${prefix}<div style="white-space: pre-wrap; word-break: keep-all; overflow-wrap: break-word;">${piece}</div>`;
@@ -1562,7 +1620,7 @@ export const generateFinalHtmlStr = (
         } else if (hideAllAvatars) {
           html += `<div class="s-r no-avatar-grid" style="${st}"><span class="m-nm ${charClass}">${log.name}:</span><div class="m-b"><div class="m-c">${finalHtmlContent}</div></div></div>`;
         } else {
-          const avatarHtml = img ? `<img src="${img}" class="m-a"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="m-a"${avSt ? ` style="${avSt}"` : ''}></div>`;
+          const avatarHtml = img ? `<div class="m-a ${avatarClass}" style="${avSt}${avSt && !avSt.endsWith(';') ? ';' : ''}${isInline ? `background-image: url('${img}'); background-size: cover; background-position: ${cropFaceTop ? 'top' : 'center'};` : ''}"></div>` : `<div class="m-a"${avSt ? ` style="${avSt}"` : ''}></div>`;
           html += `<div class="s-r" style="${st}">${avatarHtml}<div class="m-b"><span class="m-nm ${charClass}">${log.name}</span><div class="m-c">${finalHtmlContent}</div></div></div>`;
         }
       } else {
@@ -1570,7 +1628,7 @@ export const generateFinalHtmlStr = (
         if (hideAllAvatars) {
           html += `<div class="m-r no-avatar-grid"><span class="m-nm ${charClass}">${log.name}:</span><div class="m-b"><div class="m-c">${finalHtmlContent}</div></div></div>`;
         } else {
-          const avatarHtml = img ? `<img src="${img}" class="m-a"${avSt ? ` style="${avSt}"` : ''} />` : `<div class="m-a"${avSt ? ` style="${avSt}"` : ''}></div>`;
+          const avatarHtml = img ? `<div class="m-a ${avatarClass}" style="${avSt}${avSt && !avSt.endsWith(';') ? ';' : ''}${isInline ? `background-image: url('${img}'); background-size: cover; background-position: ${cropFaceTop ? 'top' : 'center'};` : ''}"></div>` : `<div class="m-a"${avSt ? ` style="${avSt}"` : ''}></div>`;
           html += `<div class="m-r">${avatarHtml}<div class="m-b"><span class="m-nm ${charClass}">${log.name}</span><div class="m-c">${finalHtmlContent}</div></div></div>`;
         }
       }
@@ -1585,7 +1643,7 @@ export const generateFinalHtmlStr = (
     }
   });
 
-  const hasValidBgm = (originalLogs || []).some((l: any) => l.isBgmBlock || (insertedBlocks[l.id]?.some((b: any) => b.type === 'bgm' && isValidBgm(b))));
+  const hasValidBgm = exportMode !== 'html' && (originalLogs || []).some((l: any) => l.isBgmBlock || (insertedBlocks[l.id]?.some((b: any) => b.type === 'bgm' && isValidBgm(b))));
 
   const bgmPlayerCSS = hasValidBgm ? `
     .bgm-center-wrapper { display: flex; justify-content: center; margin: 16px 0; }
@@ -1853,11 +1911,14 @@ export const generateFinalHtmlStr = (
         .c-ct * { box-sizing: border-box; min-width: 0; }
       </style>` : `<style>${css}\n${bgmPlayerCSS}</style>`}
     </head>
-    <body>
-      <div class="c-mc"${isInline ? ` style="${cleanStyle(`background-color: ${bgColor}; margin: 0; padding: 0`)}"` : ''}>
+    <body${(exportMode === 'html' && isInline) ? ` style="${cleanStyle(`background-color: ${bgColor}; margin: 0; padding: 0`)}"` : ''}>
+      ${exportMode === 'blog' ? `<div class="c-mc"${isInline ? ` style="${cleanStyle(`background-color: ${bgColor}; margin: 0; padding: 0`)}"` : ''}>
         ${filterBarHtml}
         ${isInline ? `<div class="c-ct" style="${cleanStyle(`width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: ${lineHeight}; letter-spacing: ${letterSpacing === 0 ? 'normal' : `${letterSpacing}px`}; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden`)}">\n${html}\n</div>` : `<div class="c-ct">\n${html}\n</div>`}
-      </div>
+      </div>` : `
+        ${filterBarHtml}
+        ${isInline ? `<div class="c-ct" style="${cleanStyle(`width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: ${lineHeight}; letter-spacing: ${letterSpacing === 0 ? 'normal' : `${letterSpacing}px`}; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden`)}">\n${html}\n</div>` : `<div class="c-ct">\n${html}\n</div>`}
+      `}
       ${filterBarScript}
       ${bgmPlayerHtml}
     </body>

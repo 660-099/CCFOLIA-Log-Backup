@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import imgurHandler from "./api/imgur";
+import imageProxyHandler from "./api/imageProxy";
 
 async function startServer() {
   const app = express();
@@ -12,6 +13,7 @@ async function startServer() {
 
   // API 라우트
   app.post("/api/imgur", imgurHandler);
+  app.get("/api/image-proxy", imageProxyHandler);
 
   // Vite 미들웨어 및 SPA 처리
   if (process.env.NODE_ENV !== "production") {

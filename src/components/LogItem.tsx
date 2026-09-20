@@ -92,8 +92,8 @@ export const LogItem = React.memo(({
   const { 
     theme, disableOtherColor, fontSize, textFontSize,
     mergeTabStyles, showTabNames, hideEmptyAvatars, cropFaceTop, hideAllAvatars,
-    narrationCharacter, charSettings: charSettingsFromContext, tabSettings,
-    enableSentenceSpacing, enableSecretNarration, narrationFormat,
+    narrationCharacter, narrationCharacter2, charSettings: charSettingsFromContext, tabSettings,
+    enableSentenceSpacing, enableSentenceSpacing2, enableSecretNarration, enableSecretNarration2, narrationFormat, narrationFormat2,
     lineHeight = 1.6, letterSpacing = 0, blockSpacing = 2, contentPadding = 15.5, avatarSizeValue = 46,
     showLogDivider = false
   } = useSettings();
@@ -650,10 +650,29 @@ export const LogItem = React.memo(({
     const matchedOverride = char.images.find((i: any) => i.id === log.overrideImageId);
     if (matchedOverride) img = matchedOverride.url;
   }
+  
+
 
   const isSecret = format === 'secret';
   const tabColor = tabSet?.color || '#ffd400';
-  const isNarration = log.charId === narrationCharacter && (format === 'main' || (enableSecretNarration && format === 'secret'));
+    const getEnableSecretNarration = (charId: string) => {
+    if (narrationCharacter && charId === narrationCharacter) return enableSecretNarration;
+    if (narrationCharacter2 && charId === narrationCharacter2) return enableSecretNarration2;
+    return enableSecretNarration;
+  };
+  const isNarration = (log.charId === narrationCharacter || log.charId === narrationCharacter2) && (format === 'main' || (getEnableSecretNarration(log.charId) && format === 'secret'));
+
+
+
+  const getEnableSentenceSpacing = (charId: string) => {
+    if (charId === narrationCharacter2) return enableSentenceSpacing2;
+    return enableSentenceSpacing;
+  };
+
+  const getNarrationFormat = (formatVal: 'main' | 'secret') => {
+    if (log.charId === narrationCharacter2) return narrationFormat2;
+    return narrationFormat;
+  };
 
   const narrationMargin = Math.floor(effectiveBlockSpacing * 1.2 + lineHeight * 6);
 
@@ -664,7 +683,7 @@ export const LogItem = React.memo(({
   }
 
   let textPieces = [displayContent];
-  if (isNarration && enableSentenceSpacing) {
+  if (isNarration && getEnableSentenceSpacing(log.charId) && !log.isCommand) {
     textPieces = splitNarration(displayContent);
   }
 
@@ -787,7 +806,7 @@ export const LogItem = React.memo(({
       }
       const tabSet = tabSettings[l.tabId];
       const formatVal = tabSet?.format || 'main';
-      if (l.charId === narrationCharacter && formatVal === 'main') {
+      if ((l.charId === narrationCharacter || l.charId === narrationCharacter2) && formatVal === 'main') {
         return 'narration';
       }
       return formatVal;
@@ -862,11 +881,11 @@ export const LogItem = React.memo(({
 
   const hasDividerBelow = useMemo(() => {
     return getHasDividerBelow(idx);
-  }, [idx, mergedLogsCount, mergedLogs, tabSettings, narrationCharacter, showTabNames, mergeTabStyles, showLogDivider]);
+  }, [idx, mergedLogsCount, mergedLogs, tabSettings, narrationCharacter, narrationCharacter2, showTabNames, mergeTabStyles, showLogDivider]);
 
   const hasDividerAbove = useMemo(() => {
     return idx > 0 ? getHasDividerBelow(idx - 1) : false;
-  }, [idx, mergedLogsCount, mergedLogs, tabSettings, narrationCharacter, showTabNames, mergeTabStyles, showLogDivider]);
+  }, [idx, mergedLogsCount, mergedLogs, tabSettings, narrationCharacter, narrationCharacter2, showTabNames, mergeTabStyles, showLogDivider]);
 
   const prevLog = idx > 0 ? mergedLogs[idx - 1] : null;
   const prevFormat = useMemo(() => {
@@ -874,11 +893,11 @@ export const LogItem = React.memo(({
     if (prevLog.isCommand) return 'command';
     const tabSet = tabSettings[prevLog.tabId];
     const formatVal = tabSet?.format || 'main';
-    if (prevLog.charId === narrationCharacter && formatVal === 'main') {
+    if ((prevLog.charId === narrationCharacter || prevLog.charId === narrationCharacter2) && formatVal === 'main') {
       return 'narration';
     }
     return formatVal;
-  }, [prevLog, tabSettings, narrationCharacter]);
+  }, [prevLog, tabSettings, narrationCharacter, narrationCharacter2]);
 
   const nextLog = idx < mergedLogsCount - 1 ? mergedLogs[idx + 1] : null;
   const nextFormat = useMemo(() => {
@@ -886,11 +905,11 @@ export const LogItem = React.memo(({
     if (nextLog.isCommand) return 'command';
     const tabSet = tabSettings[nextLog.tabId];
     const formatVal = tabSet?.format || 'main';
-    if (nextLog.charId === narrationCharacter && formatVal === 'main') {
+    if ((nextLog.charId === narrationCharacter || nextLog.charId === narrationCharacter2) && formatVal === 'main') {
       return 'narration';
     }
     return formatVal;
-  }, [nextLog, tabSettings, narrationCharacter]);
+  }, [nextLog, tabSettings, narrationCharacter, narrationCharacter2]);
 
   const isSpecialDividerBelow = useMemo(() => {
     if (!nextLog) return false;
@@ -1672,7 +1691,7 @@ export const LogItem = React.memo(({
               {log.name !== 'system' && <span style={{ color, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", fontSize: `${scaledTextFontSize}px` }}>[ <span dangerouslySetInnerHTML={{ __html: safeHtmlName }} /> ]</span>}
               <span style={{ color: theme === 'dark' ? '#FFFFFF' : '#333333', fontSize: `${scaledTextFontSize}px`, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', wordBreak: 'keep-all', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
             </div>
-          ) : (isNarration && narrationFormat === 'style3') ? (
+          ) : (isNarration && getNarrationFormat('main') === 'style3') ? (
             <div key="narration-style2" className={cn(
               log.isContinuation && "pt-1 border-t-0 rounded-t-none",
               isNextContinuation && "pb-1 border-b-0 rounded-b-none"
@@ -1721,7 +1740,7 @@ export const LogItem = React.memo(({
               fontSize: `${scaledTextFontSize}px`,
               letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px`,
               fontWeight: 'bold',
-              fontStyle: narrationFormat === 'style2' ? 'italic' : 'normal',
+              fontStyle: getNarrationFormat('main') === 'style2' ? 'italic' : 'normal',
               background: isSecret ? getSecretBg(tabColor) : 'transparent',
               borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
               marginTop: isSecret ? (hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px')) : '0',

@@ -1,3 +1,4 @@
+import { processImagesForExport } from './utils/imageUtils';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -64,6 +65,9 @@ import {
   Edit2,
   Archive,
 
+  ImagePlus,
+  FileOutput,
+  Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
@@ -72,6 +76,8 @@ import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem, Ill
 import { parseLogFile } from './parser';
 import { cn, r, rgbToHex, getFileNameFromUrl } from './utils';
 import { compare, applyPatch } from 'fast-json-patch';
+import { useAppHistory } from './hooks/useAppHistory';
+
 import { extractOldFormat, InsertedBlock, migrateCharSettings, migrateToInsertedBlocks } from './utils/migration';
 import { getDemoData } from './utils/demoData';
 import { Toggle } from './components/Toggle';
@@ -79,14 +85,22 @@ import { LogItem } from './components/LogItem';
 import { CharImagePanelPopup } from './components/CharImagePanelPopup';
 import { AvatarImagePopup } from './components/AvatarImagePopup';
 import { BulkImageAllocatorModal } from './components/BulkImageAllocatorModal';
+import { JsonImageExtractorModal } from './components/JsonImageExtractorModal';
+
 import { SearchableSelect } from './components/SearchableSelect';
+import { useBulkImageState, useIllustrationBulkState } from './hooks/useBulkStates';
+import { useFileState } from './hooks/useFileState';
+import { useLibraryState } from './hooks/useLibraryState';
+import { useUIState } from './hooks/useUIState';
 import { SectionNameEditor } from './components/SectionNameEditor';
 import { CharacterNameWithTooltip, ColorPickerPopup } from './components/ColorPickerPopup';
 import { generateFinalHtmlStr } from './utils/htmlGenerator';
 import { fonts } from './constants';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useSettingsState } from './hooks/useSettingsState';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { GlobalBgmPlayer } from './components/GlobalBgmPlayer';
+import { inspectUploadedFile, isAppProjectJson } from './utils/fileValidation';
 
 const ENABLE_MULTI_FILE_UI = false;
 
@@ -131,611 +145,129 @@ const migrateIllustrationsToLogs = (logs: LogEntry[], illustrations: Illustratio
   return migratedLogs;
 };
 
-const Section = ({ children, className = '' }: { children: React.ReactNode, className?: string }) => (
-  <div className={cn("space-y-4", className)}>
-    {children}
-  </div>
-);
-
-const MenuHeaderWrapper = ({ 
-  icon: Icon, 
-  title, 
-  tooltip,
-  isSubHeader = false
-}: { 
-  icon?: any, 
-  title: React.ReactNode, 
-  tooltip?: React.ReactNode,
-  isSubHeader?: boolean
-}) => (
-  <div className="flex items-center gap-1.5">
-    {Icon && <Icon className={cn("w-3.5 h-3.5 shrink-0", isSubHeader ? "text-white/50" : "text-white/40")} />}
-    <h2 className={cn("text-[10px] font-bold tracking-tight flex items-center pr-1 m-0 p-0 leading-none", isSubHeader ? "text-white/50" : "text-white/40")}>
-      {title}
-    </h2>
-    {tooltip && (
-      <Tooltip position="right" content={typeof tooltip === 'string' ? <div className="text-[11px] leading-relaxed w-[180px] text-center">{tooltip}</div> : tooltip}>
-        <HelpCircle className="w-3.5 h-3.5 text-white/40 hover:text-white/70 cursor-help transition-colors shrink-0" />
-      </Tooltip>
-    )}
-  </div>
-);
-
-const SectionTitle = ({ icon: Icon, title, rightElement, tooltip }: { icon?: any, title: React.ReactNode, rightElement?: React.ReactNode, tooltip?: React.ReactNode }) => (
-  <div className="flex items-center justify-between min-h-[20px]">
-    <MenuHeaderWrapper icon={Icon} title={title} tooltip={tooltip} />
-    {rightElement && <div className="flex items-center gap-1.5">{rightElement}</div>}
-  </div>
-);
-
-const NumberAdjuster = ({ 
-  label, value, min, max, step, onChange, onSave, unit = "", highlightDefault = null, icon: Icon, hideReset = false, rightElement, tooltip, isSubHeader = true
-}: { 
-  label?: string; value: number; min: number; max: number; step: number; 
-  onChange: (val: number) => void; onSave?: (val: number) => void; unit?: string; highlightDefault?: number | null; icon?: any; hideReset?: boolean; rightElement?: React.ReactNode; tooltip?: React.ReactNode; isSubHeader?: boolean
-}) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [tempVal, setTempVal] = useState(value.toString());
-
-  const handleBlur = () => {
-    let v = parseFloat(tempVal);
-    if (!isNaN(v)) {
-      v = Number(v.toFixed(1));
-      onChange(v);
-      if (onSave) onSave(v);
-      setTempVal(v.toString());
-    } else {
-      setTempVal(value.toString());
-    }
-    setIsEditing(false);
-  };
-
-  const isChanged = highlightDefault !== null && value !== highlightDefault;
-  const highlightColor = isChanged ? '#e6005c' : '#ffffff';
-
-  let trackStyle = {};
-  if (highlightDefault !== null && isChanged) {
-    const defaultPct = ((highlightDefault - min) / (max - min)) * 100;
-    const currentPct = ((value - min) / (max - min)) * 100;
-    const startPct = Math.min(defaultPct, currentPct);
-    const endPct = Math.max(defaultPct, currentPct);
-    
-    trackStyle = {
-      background: `linear-gradient(to right, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.4) ${startPct}%, rgba(230, 0, 92, 0.4) ${startPct}%, rgba(230, 0, 92, 0.4) ${endPct}%, rgba(0, 0, 0, 0.4) ${endPct}%, rgba(0, 0, 0, 0.4) 100%)`
-    };
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between min-h-[20px]">
-        {label ? (
-          <MenuHeaderWrapper icon={Icon} title={label} tooltip={tooltip} isSubHeader={isSubHeader} />
-        ) : (
-          <div /> /* For alignment when there's no label */
-        )}
-        <div className="flex items-center gap-1">
-          <div className="flex items-center gap-1.5 bg-black/20 rounded-md p-0.5 border border-white/5">
-            <button 
-              onClick={(e) => { const v = Number(Math.max(min, value - step).toFixed(1)); onChange(v); if (onSave) onSave(v); }} 
-              className="p-1 hover:bg-white/10 rounded text-white/50 hover:text-white transition-colors outline-none"
-            >
-              <ChevronDown className="w-3 h-3" />
-            </button>
-            
-            {isEditing ? (
-              <input 
-                type="text" 
-                autoFocus 
-                value={tempVal} 
-                onChange={e => setTempVal(e.target.value)}
-                onBlur={handleBlur}
-                onKeyDown={e => {
-                  if (e.nativeEvent.isComposing) return;
-                  if(e.key === 'Enter') e.currentTarget.blur();
-                }}
-                className="w-9 text-center text-[10px] font-bold py-0.5 bg-black/40 border border-white/20 rounded outline-none"
-                style={{ color: highlightColor }}
-              />
-            ) : (
-              <span 
-                onClick={(e) => { setIsEditing(true); setTempVal(value.toString()); }} 
-                className="text-[10px] font-bold py-0.5 cursor-pointer flex items-center justify-center hover:bg-white/5 rounded min-w-[28px] text-center shrink-0"
-                style={{ color: highlightColor }}
-              >
-                {value > 0 && label === '자간' ? `+${value}` : value}{unit}
-              </span>
-            )}
-            
-            <button 
-              onClick={(e) => { const v = Number(Math.min(max, value + step).toFixed(1)); onChange(v); if (onSave) onSave(v); }} 
-              className="p-1 hover:bg-white/10 rounded text-white/50 hover:text-white transition-colors outline-none"
-            >
-              <ChevronUp className="w-3 h-3" />
-            </button>
-          </div>
-          {highlightDefault !== null && !hideReset && (
-            <button 
-              onClick={(e) => { onChange(highlightDefault); if (onSave) onSave(highlightDefault); }}
-              disabled={!isChanged}
-              className={cn("p-1 rounded transition-colors outline-none shrink-0", isChanged ? "text-white/70 hover:text-white hover:bg-white/10" : "text-white/30")}
-              title="기본값으로 초기화"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-          )}
-          {rightElement}
-        </div>
-      </div>
-      <div className="relative flex items-center h-2 group">
-        <input 
-          type="range" min={min} max={max} step={step} value={value} 
-          onChange={(e) => onChange(Number(parseFloat(e.target.value).toFixed(1)))}
-          onMouseUp={(e) => { if (onSave) onSave(Number(parseFloat(e.currentTarget.value).toFixed(1))); }}
-          onTouchEnd={(e) => { if (onSave) onSave(Number(parseFloat(e.currentTarget.value).toFixed(1))); }}
-          onKeyUp={(e) => { if (onSave) onSave(Number(parseFloat(e.currentTarget.value).toFixed(1))); }}
-          className={cn("w-full h-1 bg-black/40 rounded-lg appearance-none cursor-pointer relative z-10 focus:outline-none focus:ring-0", 
-            isChanged ? "accent-[#e6005c]" : "accent-white/70"
-          )}
-          style={trackStyle}
-        />
-      </div>
-    </div>
-  );
-};
-
-const Tooltip = ({ 
-  children, 
-  content, 
-  position = 'top',
-  className,
-  unstyled = false
-}: { 
-  children: React.ReactNode; 
-  content: React.ReactNode; 
-  position?: 'top' | 'right' | 'bottom' | 'left';
-  className?: string;
-  unstyled?: boolean;
-}) => {
-  const [isVisible, setIsVisible] = useState(false);
-  const [coords, setCoords] = useState({ top: 0, left: 0, opacity: 0 });
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const tooltipRef = useRef<HTMLDivElement>(null);
-
-  const updatePosition = useCallback(() => {
-    if (!triggerRef.current || !tooltipRef.current) return;
-    const triggerRect = triggerRef.current.getBoundingClientRect();
-    const tooltipRect = tooltipRef.current.getBoundingClientRect();
-
-    let top = 0;
-    let left = 0;
-    const margin = 8;
-
-    let finalPosition = position;
-
-    // Flip logic
-    if (position === 'top' && triggerRect.top - tooltipRect.height - margin < 0) finalPosition = 'bottom';
-    if (position === 'bottom' && triggerRect.bottom + tooltipRect.height + margin > window.innerHeight) finalPosition = 'top';
-    if (position === 'left' && triggerRect.left - tooltipRect.width - margin < 0) finalPosition = 'right';
-    if (position === 'right' && triggerRect.right + tooltipRect.width + margin > window.innerWidth) finalPosition = 'left';
-
-    switch (finalPosition) {
-      case 'top':
-        top = triggerRect.top - tooltipRect.height - margin;
-        left = triggerRect.left + (triggerRect.width / 2) - (tooltipRect.width / 2);
-        break;
-      case 'bottom':
-        top = triggerRect.bottom + margin;
-        left = triggerRect.left + (triggerRect.width / 2) - (tooltipRect.width / 2);
-        break;
-      case 'left':
-        top = triggerRect.top + (triggerRect.height / 2) - (tooltipRect.height / 2);
-        left = triggerRect.left - tooltipRect.width - margin;
-        break;
-      case 'right':
-        top = triggerRect.top + (triggerRect.height / 2) - (tooltipRect.height / 2);
-        left = triggerRect.right + margin;
-        break;
-    }
-
-    if (left < margin) left = margin;
-    else if (left + tooltipRect.width > window.innerWidth - margin) {
-      left = window.innerWidth - tooltipRect.width - margin;
-    }
-    
-    if (top < margin) top = margin;
-    else if (top + tooltipRect.height > window.innerHeight - margin) {
-      top = window.innerHeight - tooltipRect.height - margin;
-    }
-
-    setCoords({ top, left, opacity: 1 });
-  }, [position]);
-
-  useEffect(() => {
-    if (isVisible) {
-      const timer = setTimeout(() => {
-        updatePosition();
-      }, 0);
-      window.addEventListener('scroll', updatePosition, true);
-      window.addEventListener('resize', updatePosition);
-      return () => {
-        clearTimeout(timer);
-        window.removeEventListener('scroll', updatePosition, true);
-        window.removeEventListener('resize', updatePosition);
-      };
-    } else {
-      setCoords(prev => ({ ...prev, opacity: 0 }));
-    }
-  }, [isVisible, updatePosition]);
-
-  return (
-    <>
-      <div 
-        ref={triggerRef}
-        onMouseEnter={() => setIsVisible(true)}
-        onFocus={() => setIsVisible(true)}
-        onMouseLeave={() => setIsVisible(false)}
-        onBlur={() => setIsVisible(false)}
-        className={cn("inline-flex", !unstyled && "cursor-help")}
-      >
-        {children}
-      </div>
-      {isVisible && createPortal(
-        <div 
-          ref={tooltipRef}
-          style={{ 
-            top: coords.top, 
-            left: coords.left, 
-            opacity: coords.opacity,
-            transition: 'opacity 0.2s',
-            visibility: coords.opacity === 0 ? 'hidden' : 'visible'
-          }}
-          className={unstyled ? `fixed z-[9999] pointer-events-none ${className || ''}` : cn("fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-xl p-3 text-[11px] leading-relaxed text-white/70 shadow-2xl pointer-events-none w-max max-w-xs font-normal text-left break-keep", className)}
-        >
-          {content}
-        </div>,
-        document.body
-      )}
-    </>
-  );
-};
-
-const PortalDropdown = ({ isOpen, onClose, triggerRef, children, position = 'bottom-right' }: { isOpen: boolean, onClose: () => void, triggerRef: React.RefObject<HTMLElement>, children: React.ReactNode, position?: 'bottom-right' | 'right' }) => {
-  const [coords, setCoords] = useState({ top: 0, left: 0 });
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const [isCalculated, setIsCalculated] = useState(false);
-
-  const updatePosition = useCallback(() => {
-    if (!triggerRef.current || !dropdownRef.current) return;
-    const triggerRect = triggerRef.current.getBoundingClientRect();
-    const dropdownRect = dropdownRef.current.getBoundingClientRect();
-    
-    let top = triggerRect.top;
-    let left = triggerRect.right + 4;
-
-    if (position === 'bottom-right') {
-      top = triggerRect.bottom + 4;
-      if (top + dropdownRect.height > window.innerHeight - 10) {
-        top = triggerRect.top - dropdownRect.height - 4;
-      }
-      left = triggerRect.right - dropdownRect.width;
-    } else if (position === 'right') {
-      top = triggerRect.top;
-      if (top + dropdownRect.height > window.innerHeight - 10) {
-        top = window.innerHeight - dropdownRect.height - 10;
-      }
-      if (left + dropdownRect.width > window.innerWidth - 10) {
-        left = triggerRect.left - dropdownRect.width - 4;
-      }
-    }
-
-    setCoords({
-      top,
-      left
-    });
-    setIsCalculated(true);
-  }, [triggerRef, position]);
-
-  useEffect(() => {
-    if (isOpen) {
-      updatePosition();
-      const timer = setTimeout(updatePosition, 0);
-      window.addEventListener('resize', updatePosition);
-      window.addEventListener('scroll', updatePosition, true);
-      return () => {
-        clearTimeout(timer);
-        window.removeEventListener('resize', updatePosition);
-        window.removeEventListener('scroll', updatePosition, true);
-      };
-    } else {
-      setIsCalculated(false);
-    }
-  }, [isOpen, updatePosition]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleOutsideClick = (e: MouseEvent) => {
-      // Find the library dropdown ref element by looking through the path
-      const target = e.target as Node;
-      if (
-        dropdownRef.current && !dropdownRef.current.contains(target) &&
-        triggerRef.current && !triggerRef.current.contains(target)
-      ) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [isOpen, onClose, triggerRef]);
-
-  // Instead of completely unmounting, we keep it mounted but hidden initially, 
-  // or return null only when isOpen is entirely false and animation not needed.
-  if (!isOpen) return null;
-
-  return createPortal(
-    <div
-      ref={dropdownRef}
-      style={{ 
-        top: coords.top, 
-        left: coords.left,
-        visibility: isCalculated ? 'visible' : 'hidden',
-        opacity: isCalculated ? 1 : 0
-      }}
-      className="fixed z-[9999]"
-      onClick={e => e.stopPropagation()}
-    >
-      {children}
-    </div>,
-    document.body
-  );
-};
-
-const SizeControl = ({ value, onChange }: { value: string; onChange: (val: string) => void }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  const numericMatch = (value || '100%').match(/^(\d+)(%|px)$/);
-  const numVal = numericMatch ? numericMatch[1] : (value || '100').replace(/\D/g, '') || '100';
-  const unitVal = (value || '%').includes('px') ? 'px' : '%';
-
-  const presets = unitVal === '%' ? ['100%', '80%', '50%'] : ['400px', '300px', '200px'];
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleUnitChange = (newUnit: '%' | 'px') => {
-    if (newUnit === unitVal) return;
-    if (newUnit === '%') {
-      const num = Number(numVal);
-      const nextNum = num > 100 ? 100 : num;
-      onChange(`${nextNum}%`);
-    } else {
-      const num = Number(numVal);
-      const nextNum = num <= 100 ? (num === 100 ? 400 : num * 4) : num;
-      onChange(`${nextNum}px`);
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-1.5">
-      {/* Combobox: Input + Dropdown Arrow */}
-      <div ref={ref} className="relative flex items-center bg-black/20 rounded-lg h-7 border border-white/10 focus-within:border-[#e6005c] transition-colors">
-        <input
-          type="text"
-          value={numVal}
-          onChange={(e) => {
-            const raw = e.target.value.replace(/\D/g, '');
-            onChange(raw ? `${raw}${unitVal}` : `100${unitVal}`);
-          }}
-          onFocus={() => setIsOpen(true)}
-          className="w-12 h-full text-center text-[10px] font-mono font-bold bg-transparent border-none outline-none text-white px-1 placeholder:text-white/40"
-          placeholder="100"
-        />
-        <button
-          type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className="h-full px-1.5 flex items-center justify-center text-white/50 hover:text-white border-l border-white/5 transition-colors"
-          title="프리셋 목록"
-        >
-          <ChevronDown className="w-3 h-3" />
-        </button>
-
-        {isOpen && (
-          <div className="absolute top-full left-0 mt-1 w-24 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
-            <div className="px-2 py-0.5 text-[8px] font-bold text-white/40 uppercase tracking-wider">프리셋</div>
-            {presets.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={(e) => {
-                  onChange(preset);
-                  setIsOpen(false);
-                }}
-                className={cn(
-                  "w-full text-left px-2.5 py-1 text-[10px] font-mono font-bold hover:bg-white/10 transition-colors flex items-center justify-between",
-                  value === preset ? "text-[#e6005c] bg-white/5" : "text-white/90"
-                )}
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Dropdown 우측 단위 선택 버튼 (% / px) */}
-      <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 h-7 items-center">
-        <button
-          type="button"
-          onClick={() => handleUnitChange('%')}
-          className={cn(
-            "h-6 px-2 text-[9px] font-mono font-bold rounded transition-all flex items-center justify-center",
-            unitVal === '%' 
-              ? "bg-white/10 text-white font-bold shadow-sm" 
-              : "text-white/40 hover:text-white/70"
-          )}
-        >
-          %
-        </button>
-        <button
-          type="button"
-          onClick={() => handleUnitChange('px')}
-          className={cn(
-            "h-6 px-2 text-[9px] font-mono font-bold rounded transition-all flex items-center justify-center",
-            unitVal === 'px' 
-              ? "bg-white/10 text-white font-bold shadow-sm" 
-              : "text-white/40 hover:text-white/70"
-          )}
-        >
-          px
-        </button>
-      </div>
-    </div>
-  );
-};
-
+import { Section, MenuHeaderWrapper, SectionTitle, NumberAdjuster, Tooltip, PortalDropdown, SizeControl } from './components/ui/LayoutPrimitives';
 export default function App() {
-  const [isBulkImgurModalOpen, setIsBulkImgurModalOpen] = useState(false);
-  const [isBulkAllocatorOpen, setIsBulkAllocatorOpen] = useState(false);
-  const [bulkImgurUrl, setBulkImgurUrl] = useState('');
-  const [isBulkImgurLoading, setIsBulkImgurLoading] = useState(false);
-  const [bulkImages, setBulkImages] = useState<{ url: string; fileName: string; ext: string }[]>([]);
-  const [bulkImageMapping, setBulkImageMapping] = useState<Record<string, string>>({});
-  const [bulkImageTypeMapping, setBulkImageTypeMapping] = useState<Record<string, 'character' | 'illustration' | 'none'>>({});
-  const [bulkImportStep, setBulkImportStep] = useState<1 | 2>(1);
-  const [bulkSelectedIllustrations, setBulkSelectedIllustrations] = useState<Record<string, boolean>>({});
-  const [isDraggingFile, setIsDraggingFile] = useState(false);
-  const [isDraggingIllustration, setIsDraggingIllustration] = useState(false);
-  const [isTitleEditing, setIsTitleEditing] = useState(false);
-  const [pageTitle, setPageTitle] = useState('');
-  const [tempTitle, setTempTitle] = useState('');
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
-  const [isMovingBlock, setIsMovingBlock] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const [isTocHovered, setIsTocHovered] = useState(false);
 
-  // Sync tempTitle when pageTitle changes (e.g. from history)
-  useEffect(() => {
-    setTempTitle(pageTitle);
-  }, [pageTitle]);
 
-  // Reset bulk Imgur registration popup states when closed
-  useEffect(() => {
-    if (!isBulkImgurModalOpen) {
-      setBulkImgurUrl('');
-      setBulkImages([]);
-      setBulkImageMapping({});
-      setBulkImageTypeMapping({});
-      setBulkImportStep(1);
-      setBulkSelectedIllustrations({});
-    }
-  }, [isBulkImgurModalOpen]);
 
-  // Illustrations Bulk Import Modal States
-  const [isIllBulkModalOpen, setIsIllBulkModalOpen] = useState(false);
-  const [illBulkUrl, setIllBulkUrl] = useState('');
-  const [isIllBulkLoading, setIsIllBulkLoading] = useState(false);
-  const [illBulkImages, setIllBulkImages] = useState<{ url: string; fileName: string; ext: string }[]>([]);
-  const [selectedIllBulkImages, setSelectedIllBulkImages] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    if (!isIllBulkModalOpen) {
-      setIllBulkUrl('');
-      setIllBulkImages([]);
-      setSelectedIllBulkImages({});
-    }
-  }, [isIllBulkModalOpen]);
 
-  const [files, setFiles] = useState<LogFile[]>([]);
-  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const {
+    rememberSettings, setRememberSettings,
+    cssFormat, setCssFormat,
+    fontSize, setFontSize,
+    textFontSize, setTextFontSize,
+    lineHeight, setLineHeight,
+    letterSpacing, setLetterSpacing,
+    blockSpacing, setBlockSpacing,
+    contentPadding, setContentPadding,
+    avatarSizeValue, setAvatarSizeValue,
+    fontFamily, setFontFamily,
+    theme, setTheme,
+    darkBgColor, setDarkBgColor,
+    lightBgColor, setLightBgColor,
+    disableOtherColor, setDisableOtherColor,
+    filterBarMode, setFilterBarMode,
+    defaultIllWidth, setDefaultIllWidth,
+    defaultIllAlign, setDefaultIllAlign,
+    saveOptions, setSaveOptions,
+    librarySortMode, setLibrarySortMode,
+    mergeTabs, setMergeTabs,
+    showTabNames, setShowTabNames,
+    mergeTabStyles, setMergeTabStyles,
+    hideEmptyAvatars, setHideEmptyAvatars,
+    cropFaceTop, setCropFaceTop,
+    hideAllAvatars, setHideAllAvatars,
+    enableSentenceSpacing, setEnableSentenceSpacing,
+    enableSentenceSpacing2, setEnableSentenceSpacing2,
+    enableSecretNarration, setEnableSecretNarration,
+    enableSecretNarration2, setEnableSecretNarration2,
+    narrationFormat, setNarrationFormat,
+    narrationFormat2, setNarrationFormat2,
+    showLogDivider, setShowLogDivider,
+    narrationCharacter, setNarrationCharacter,
+    narrationCharacter2, setNarrationCharacter2,
+    exportMode, setExportMode
+  } = useSettingsState();
 
-  const activeFile = useMemo(() => {
-    if (!files || files.length === 0) return null;
-    return files.find(f => f.id === activeFileId) || files[0];
-  }, [files, activeFileId]);
+  const {
+    isAdvancedLayoutOpen, setIsAdvancedLayoutOpen,
+    isEditingFontSize, setIsEditingFontSize,
+    isBulkSettingsExpanded, setIsBulkSettingsExpanded,
+    isNarrationDropdownOpen, setIsNarrationDropdownOpen,
+    isNarrationDropdownOpen2, setIsNarrationDropdownOpen2,
+    isFontDropdownOpen, setIsFontDropdownOpen,
+    isFilterDropdownOpen, setIsFilterDropdownOpen,
+    showSaveMenu, setShowSaveMenu,
+    showDownloadMenu, setShowDownloadMenu,
+    showCopyMenu, setShowCopyMenu,
+    isLibraryAccordionOpen, setIsLibraryAccordionOpen,
+    isLibraryEditMode, setIsLibraryEditMode,
+    showJsonExtractor, setShowJsonExtractor,
+    extractorFile, setExtractorFile,
+    isConverting, setIsConverting,
+    isBulkAllocatorOpen, setIsBulkAllocatorOpen,
+    isDraggingFile, setIsDraggingFile,
+    isDraggingIllustration, setIsDraggingIllustration,
+    isTitleEditing, setIsTitleEditing,
+    pageTitle, setPageTitle,
+    tempTitle, setTempTitle,
+    isSearchExpanded, setIsSearchExpanded,
+    isMovingBlock, setIsMovingBlock,
+    searchQuery, setSearchQuery,
+    searchInputRef,
+    isTocHovered, setIsTocHovered
+  } = useUIState();
+  
+  const {
+    isBulkImgurModalOpen, setIsBulkImgurModalOpen,
+    bulkImgurUrl, setBulkImgurUrl,
+    isBulkImgurLoading, setIsBulkImgurLoading,
+    bulkImages, setBulkImages,
+    bulkImageMapping, setBulkImageMapping,
+    bulkImageTypeMapping, setBulkImageTypeMapping,
+    bulkImportStep, setBulkImportStep,
+    bulkSelectedIllustrations, setBulkSelectedIllustrations
+  } = useBulkImageState();
 
-  const logs = useMemo<LogEntry[]>(() => activeFile ? activeFile.logs : [], [activeFile]);
-  const originalFileName = activeFile ? activeFile.name : '';
+  const {
+    isIllBulkModalOpen, setIsIllBulkModalOpen,
+    illBulkUrl, setIllBulkUrl,
+    isIllBulkLoading, setIsIllBulkLoading,
+    illBulkImages, setIllBulkImages,
+    selectedIllBulkImages, setSelectedIllBulkImages
+  } = useIllustrationBulkState();
 
-  const setLogs = useCallback((newLogs: LogEntry[] | ((prev: LogEntry[]) => LogEntry[])) => {
+  const {
+    files, setFiles,
+    activeFileId, setActiveFileId,
+    activeFile, logs, originalFileName,
+    setLogs, setOriginalFileName
+  } = useFileState();
+
+  const insertedBlocks = useMemo<Record<string, any[]>>(() => (activeFile?.insertedBlocks as any) || {}, [activeFile]);
+  const setInsertedBlocks = useCallback((newBlocks: Record<string, any[]> | ((prev: Record<string, any[]>) => Record<string, any[]>)) => {
     setFiles(prevFiles => {
       if (prevFiles.length === 0) return prevFiles;
       const targetId = activeFileId || prevFiles[0].id;
       return prevFiles.map(f => {
         if (f.id === targetId) {
-          const nextLogs = typeof newLogs === 'function' ? newLogs(f.logs) : newLogs;
-          return { ...f, logs: nextLogs };
+          const nextBlocks = typeof newBlocks === 'function' ? newBlocks((f.insertedBlocks as any) || {}) : newBlocks;
+          return { ...f, insertedBlocks: nextBlocks };
         }
         return f;
       });
     });
-  }, [activeFileId]);
+  }, [activeFileId, setFiles]);
 
-  const setOriginalFileName = useCallback((newName: string) => {
-    setFiles(prevFiles => {
-      if (prevFiles.length === 0) return prevFiles;
-      const targetId = activeFileId || prevFiles[0].id;
-      return prevFiles.map(f => f.id === targetId ? { ...f, name: newName } : f);
-    });
-  }, [activeFileId]);
 
-  const [charSettings, setCharSettings] = useState<Record<string, CharSetting>>({});
-  const [charOrder, setCharOrder] = useState<string[]>([]);
-  const [tabOrder, setTabOrder] = useState<string[]>([]);
-  const [extractedColors, setExtractedColors] = useState<string[]>([]);
-  const [tabSettings, setTabSettings] = useState<Record<string, TabSetting>>({});
-
-  // Keep charOrder and tabOrder synchronized across all uploaded files in sequence
-  useEffect(() => {
-    if (files.length === 0) return;
-
-    const seenChars = new Set<string>();
-    const newCharOrder: string[] = [];
-    const seenTabs = new Set<string>();
-    const newTabOrder: string[] = [];
-
-    files.forEach(file => {
-      file.logs.forEach(log => {
-        if (log.charId && !seenChars.has(log.charId) && charSettings[log.charId]) {
-          seenChars.add(log.charId);
-          newCharOrder.push(log.charId);
-        }
-        if (log.tabId && !seenTabs.has(log.tabId) && tabSettings[log.tabId]) {
-          seenTabs.add(log.tabId);
-          newTabOrder.push(log.tabId);
-        }
-      });
-    });
-
-    Object.keys(charSettings).forEach(id => {
-      if (!seenChars.has(id)) {
-        newCharOrder.push(id);
-      }
-    });
-    Object.keys(tabSettings).forEach(id => {
-      if (!seenTabs.has(id)) {
-        newTabOrder.push(id);
-      }
-    });
-
-    setCharOrder(prev => {
-      if (JSON.stringify(prev) === JSON.stringify(newCharOrder)) return prev;
-      return newCharOrder;
-    });
-
-    setTabOrder(prev => {
-      if (JSON.stringify(prev) === JSON.stringify(newTabOrder)) return prev;
-      return newTabOrder;
-    });
-  }, [files, charSettings, tabSettings]);
+  const {
+    charSettings, setCharSettings,
+    charOrder, setCharOrder,
+    tabOrder, setTabOrder,
+    extractedColors, setExtractedColors,
+    tabSettings, setTabSettings
+  } = useLibraryState(files);
 
   const [collapsedAccordionFiles, setCollapsedAccordionFiles] = useState<Record<string, boolean>>({});
 
@@ -825,42 +357,20 @@ export default function App() {
 
     return groups;
   }, [files, charSettings, charSortMode]);
-
-  const [rememberSettings, setRememberSettings] = useLocalStorage<boolean>('ccfolia_rememberSettings', true);
-
   const illustrations = useMemo<Illustration[]>(() => {
-    return logs
-      .map((log, idx) => ({ log, idx }))
-      .filter(({ log }) => log.isIllustration === true)
-      .map(({ log, idx }) => ({
-        id: log.id,
-        url: log.content,
-        imageName: log.imageName,
-        afterLogIndex: log.isUnplaced ? null : idx,
-        tabOverride: log.tabOverride || 'auto',
-        width: log.width,
-        align: log.align || 'center'
-      }));
+  return logs
+  .map((log, idx) => ({ log, idx }))
+  .filter(({ log }) => log.isIllustration === true)
+  .map(({ log, idx }) => ({
+  id: log.id,
+  url: log.content,
+  imageName: log.imageName,
+  afterLogIndex: log.isUnplaced ? null : idx,
+  tabOverride: log.tabOverride || 'auto',
+  width: log.width,
+  align: log.align || 'center'
+  }));
   }, [logs]);
-  
-  const [cssFormat, setCssFormat] = useLocalStorage<'inline' | 'internal'>('ccfolia_cssFormat', 'internal', undefined, undefined, rememberSettings);
-  const [fontSize, setFontSize] = useLocalStorage<number>('ccfolia_fontSize', 14, undefined, undefined, rememberSettings);
-  const [textFontSize, setTextFontSize] = useLocalStorage<number>('ccfolia_textFontSize', 14, undefined, undefined, rememberSettings);
-  const [lineHeight, setLineHeight] = useLocalStorage<number>('ccfolia_lineHeight', 1.6, undefined, undefined, rememberSettings);
-  const [letterSpacing, setLetterSpacing] = useLocalStorage<number>('ccfolia_letterSpacing', 0, undefined, undefined, rememberSettings);
-  const [blockSpacing, setBlockSpacing] = useLocalStorage<number>('ccfolia_blockSpacing', 2, undefined, undefined, rememberSettings);
-  const [contentPadding, setContentPadding] = useLocalStorage<number>('ccfolia_contentPadding', 12, undefined, undefined, rememberSettings);
-  const [avatarSizeValue, setAvatarSizeValue] = useLocalStorage<number>('ccfolia_avatarSizeValue', 46, undefined, undefined, rememberSettings);
-  const [isAdvancedLayoutOpen, setIsAdvancedLayoutOpen] = useState(false);
-  const [fontFamily, setFontFamily] = useLocalStorage<string>('ccfolia_fontFamily', 'Noto Sans KR', undefined, undefined, rememberSettings);
-  const [theme, setTheme] = useLocalStorage<'dark' | 'light'>('ccfolia_theme', 'dark', undefined, undefined, rememberSettings);
-  const [darkBgColor, setDarkBgColor] = useLocalStorage<string>('ccfolia_darkBgColor', '#212121', undefined, undefined, rememberSettings);
-  const [lightBgColor, setLightBgColor] = useLocalStorage<string>('ccfolia_lightBgColor', '#ffffff', undefined, undefined, rememberSettings);
-  const [disableOtherColor, setDisableOtherColor] = useLocalStorage<boolean>('ccfolia_disableOtherColor', true, undefined, undefined, rememberSettings);
-  const [filterBarMode, setFilterBarMode] = useLocalStorage<'none' | 'floating' | 'fixed'>('ccfolia_filterBarMode', 'none', undefined, undefined, rememberSettings);
-  const [defaultIllWidth, setDefaultIllWidth] = useLocalStorage<string>('ccfolia_defaultIllWidth', '100%', undefined, undefined, rememberSettings);
-  const [defaultIllAlign, setDefaultIllAlign] = useLocalStorage<'left' | 'center' | 'right'>('ccfolia_defaultIllAlign', 'center', undefined, undefined, rememberSettings);
-  const [isEditingFontSize, setIsEditingFontSize] = useState(false);
   const [renamingChar, setRenamingChar] = useState<string | null>(null);
   const [renamingTab, setRenamingTab] = useState<string | null>(null);
   const [newNameInput, setNewNameInput] = useState('');
@@ -873,611 +383,174 @@ export default function App() {
   const [avatarPopupInfo, setAvatarPopupInfo] = useState<{ logId: string; charId: string; triggerRect: DOMRect; logIndex: number } | null>(null);
   const [colorPickerRect, setColorPickerRect] = useState<DOMRect | null>(null);
   const [activeTab, setActiveTab] = useState<'files' | 'tabs' | 'chars' | 'illustrations' | 'settings'>('files');
-  const [isBulkSettingsExpanded, setIsBulkSettingsExpanded] = useState(false);
   const scrollPositions = useRef<Record<string, number>>({});
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
-
-  const [isNarrationDropdownOpen, setIsNarrationDropdownOpen] = useState(false);
+  const narrationDropdownRef2 = useRef<HTMLDivElement>(null);
   const narrationDropdownRef = useRef<HTMLDivElement>(null);
-  const [isFontDropdownOpen, setIsFontDropdownOpen] = useState(false);
   const fontDropdownRef = useRef<HTMLDivElement>(null);
-  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const filterDropdownRef = useRef<HTMLDivElement>(null);
   const [hoverImgRect, setHoverImgRect] = useState<DOMRect | null>(null);
   const [hoverImgUrl, setHoverImgUrl] = useState<string | null>(null);
   const [hoverImgLabel, setHoverImgLabel] = useState<string | null>(null);
-
   const { widthNum, widthUnit } = useMemo(() => {
-    const numericMatch = (defaultIllWidth || '100%').match(/^(\d+)(%|px)$/);
-    if (numericMatch) {
-      return { widthNum: numericMatch[1], widthUnit: numericMatch[2] as '%' | 'px' };
-    }
-    const numPart = (defaultIllWidth || '100').replace(/\D/g, '') || '100';
-    const unitPart = (defaultIllWidth || '%').includes('px') ? 'px' : '%';
-    return { widthNum: numPart, widthUnit: unitPart as '%' | 'px' };
+  const numericMatch = (defaultIllWidth || '100%').match(/^(\d+)(%|px)$/);
+  if (numericMatch) {
+  return { widthNum: numericMatch[1], widthUnit: numericMatch[2] as '%' | 'px' };
+  }
+  const numPart = (defaultIllWidth || '100').replace(/\D/g, '') || '100';
+  const unitPart = (defaultIllWidth || '%').includes('px') ? 'px' : '%';
+  return { widthNum: numPart, widthUnit: unitPart as '%' | 'px' };
   }, [defaultIllWidth]);
-
-  const [showSaveMenu, setShowSaveMenu] = useState(false);
-  const [saveOptions, setSaveOptions] = useLocalStorage<{
-    tabs: boolean;
-    chars: boolean;
-    design: boolean;
-    splits: boolean;
-    images: boolean;
-    edits: boolean;
-  }>('ccfolia_saveOptions', {
-    tabs: true,
-    chars: true,
-    design: true,
-    splits: true,
-    images: true,
-    edits: true
-  }, undefined, undefined, rememberSettings);
-
-  const insertedBlocks = useMemo<Record<string, InsertedBlock[]>>(() => (activeFile?.insertedBlocks as any) || {}, [activeFile]);
-
-  const setInsertedBlocks = useCallback((newBlocks: Record<string, InsertedBlock[]> | ((prev: Record<string, InsertedBlock[]>) => Record<string, InsertedBlock[]>)) => {
-    setFiles(prevFiles => {
-      if (prevFiles.length === 0) return prevFiles;
-      const targetId = activeFileId || prevFiles[0].id;
-      return prevFiles.map(f => {
-        if (f.id === targetId) {
-          const currentBlocks = (f.insertedBlocks as any) || {};
-          const nextBlocks = typeof newBlocks === 'function' ? newBlocks(currentBlocks) : newBlocks;
-          return { ...f, insertedBlocks: nextBlocks };
-        }
-        return f;
-      });
-    });
-  }, [activeFileId]);
-
+  
+  
   const additionalFileInputRef = useRef<HTMLInputElement>(null);
-
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const handleRemoveFile = (fileId: string) => {
     setFiles(prev => {
       const next = prev.filter(f => f.id !== fileId);
-      if (activeFileId === fileId) {
-        if (next.length > 0) setActiveFileId(next[0].id);
-        else setActiveFileId(null);
+      if (next.length === 0) {
+        setActiveFileId(null);
+        setExtractorFile(null);
+        setPageTitle('');
+        setCharSettings({});
+        setTabSettings({});
+        setExtractedColors([]);
+        setCharOrder([]);
+        setTabOrder([]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        if (additionalFileInputRef.current) additionalFileInputRef.current.value = '';
+      } else if (activeFileId === fileId) {
+        setActiveFileId(next[0].id);
       }
       return next;
     });
   };
 
-  const handleRenameFile = (fileId: string, newName: string) => {
-    setFiles(prev => prev.map(f => f.id === fileId ? { ...f, name: newName } : f));
+  const handleClearUploadedFiles = (e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    if (files.length > 0 || logs.length > 0) {
+      if (!confirm('업로드된 로그 파일을 삭제하시겠습니까?')) {
+        return;
+      }
+    }
+    setFiles([]);
+    setActiveFileId(null);
+    setExtractorFile(null);
+    setPageTitle('');
+    setCharSettings({});
+    setTabSettings({});
+    setExtractedColors([]);
+    setCharOrder([]);
+    setTabOrder([]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (additionalFileInputRef.current) additionalFileInputRef.current.value = '';
   };
-
+  const handleRenameFile = (fileId: string, newName: string) => {
+  setFiles(prev => prev.map(f => f.id === fileId ? { ...f, name: newName } : f));
+  };
   const [editingFileId, setEditingFileId] = useState<string | null>(null);
   const [editingFileName, setEditingFileName] = useState<string>('');
   const [draggedFileId, setDraggedFileId] = useState<string | null>(null);
   const [dragOverFileId, setDragOverFileId] = useState<string | null>(null);
-
   const reorderFiles = (sourceId: string, targetId: string) => {
-    setFiles(prev => {
-      const srcIdx = prev.findIndex(f => f.id === sourceId);
-      const targetIdx = prev.findIndex(f => f.id === targetId);
-      if (srcIdx === -1 || targetIdx === -1 || srcIdx === targetIdx) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(srcIdx, 1);
-      next.splice(targetIdx, 0, moved);
-      return next;
-    });
+  setFiles(prev => {
+  const srcIdx = prev.findIndex(f => f.id === sourceId);
+  const targetIdx = prev.findIndex(f => f.id === targetId);
+  if (srcIdx === -1 || targetIdx === -1 || srcIdx === targetIdx) return prev;
+  const next = [...prev];
+  const [moved] = next.splice(srcIdx, 1);
+  next.splice(targetIdx, 0, moved);
+  return next;
+  });
   };
-
   const startRenameFile = (fileId: string, currentName: string) => {
-    setEditingFileId(fileId);
-    setEditingFileName(currentName);
+  setEditingFileId(fileId);
+  setEditingFileName(currentName);
   };
-
   const finishRenameFile = (fileId: string) => {
-    if (editingFileName.trim()) {
-      handleRenameFile(fileId, editingFileName.trim());
-    }
-    setEditingFileId(null);
+  if (editingFileName.trim()) {
+  handleRenameFile(fileId, editingFileName.trim());
+  }
+  setEditingFileId(null);
   };
-
   const [imageInputLoc, setImageInputLoc] = useState<{ logId: string; insertIndex: number } | null>(null);
   const [bgmInputLoc, setBgmInputLoc] = useState<{ logId: string; insertIndex: number } | null>(null);
   const [currentBgmTrack, setCurrentBgmTrack] = useState<{ id: string; title: string; url: string; videoId: string; startTime: number } | null>(null);
   const [isGlobalBgmPlaying, setIsGlobalBgmPlaying] = useState(false);
-
   const { insertedImages, splitPoints: splitPointsArr, sectionNames } = useMemo(() => extractOldFormat(insertedBlocks), [insertedBlocks]);
   const splitPoints = useMemo(() => new Set(splitPointsArr), [splitPointsArr]);
-
-  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
-  const [showCopyMenu, setShowCopyMenu] = useState(false);
   const [initialState, setInitialState] = useState<any>(null);
-  const [isLibraryAccordionOpen, setIsLibraryAccordionOpen] = useState(false);
   const [openLibraryDropdownId, setOpenLibraryDropdownId] = useState<string | null>(null);
   const [hoverLibraryDropdownId, setHoverLibraryDropdownId] = useState<string | null>(null);
-  const [librarySortMode, setLibrarySortMode] = useLocalStorage<'newest' | 'oldest' | 'alphabetical'>('ccfolia_librarySortMode', 'newest', undefined, undefined, rememberSettings);
-  const [isLibraryEditMode, setIsLibraryEditMode] = useState(false);
   const [renamingLibraryId, setRenamingLibraryId] = useState<string | null>(null);
   const [libraryNameInput, setLibraryNameInput] = useState('');
   const libraryDropdownRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (narrationDropdownRef.current && !narrationDropdownRef.current.contains(target)) {
-        setIsNarrationDropdownOpen(false);
-      }
-      if (fontDropdownRef.current && !fontDropdownRef.current.contains(target)) {
-        setIsFontDropdownOpen(false);
-      }
-      if (filterDropdownRef.current && !filterDropdownRef.current.contains(target)) {
-        setIsFilterDropdownOpen(false);
-      }
-      if (libraryDropdownRef.current && !libraryDropdownRef.current.contains(target)) {
-        setOpenLibraryDropdownId(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+  const handleClickOutside = (event: MouseEvent) => {
+  const target = event.target as Node;
+  if (narrationDropdownRef.current && !narrationDropdownRef.current.contains(target)) {
+  setIsNarrationDropdownOpen(false);
+  }
+  if (narrationDropdownRef2.current && !narrationDropdownRef2.current.contains(target)) {
+  setIsNarrationDropdownOpen(false);
+  }
+  if (fontDropdownRef.current && !fontDropdownRef.current.contains(target)) {
+  setIsFontDropdownOpen(false);
+  }
+  if (filterDropdownRef.current && !filterDropdownRef.current.contains(target)) {
+  setIsFilterDropdownOpen(false);
+  }
+  if (libraryDropdownRef.current && !libraryDropdownRef.current.contains(target)) {
+  setOpenLibraryDropdownId(null);
+  }
+  };
+  document.addEventListener('mousedown', handleClickOutside);
+  return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
   const [characterLibrary, setCharacterLibrary] = useState<CharacterLibraryItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('characterLibrary');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+  try {
+  const saved = localStorage.getItem('characterLibrary');
+  return saved ? JSON.parse(saved) : [];
+  } catch {
+  return [];
+  }
   });
-
   useEffect(() => {
-    localStorage.setItem('characterLibrary', JSON.stringify(characterLibrary));
+  localStorage.setItem('characterLibrary', JSON.stringify(characterLibrary));
   }, [characterLibrary]);
   
-  const [mergeTabs, setMergeTabs] = useLocalStorage<Set<TabFormat>>(
-    'ccfolia_mergeTabs',
-    new Set(['main', 'secret', 'other']),
-    (val) => { try { return new Set(JSON.parse(val)); } catch { return new Set(['main', 'secret', 'other']); } },
-    (val) => JSON.stringify(Array.from(val)),
-    rememberSettings
-  );
+  
+  
+  
+  
 
-  const [showTabNames, setShowTabNames] = useLocalStorage<Set<TabFormat>>(
-    'ccfolia_showTabNames',
-    new Set(['secret']),
-    (val) => { try { return new Set(JSON.parse(val)); } catch { return new Set(['secret']); } },
-    (val) => JSON.stringify(Array.from(val)),
-    rememberSettings
-  );
 
-  const [mergeTabStyles, setMergeTabStyles] = useLocalStorage<Set<TabFormat>>(
-    'ccfolia_mergeTabStyles',
-    new Set(['secret']),
-    (val) => { try { return new Set(JSON.parse(val)); } catch { return new Set(['secret']); } },
-    (val) => JSON.stringify(Array.from(val)),
-    rememberSettings
-  );
-
-  const [hideEmptyAvatars, setHideEmptyAvatars] = useLocalStorage<boolean>('ccfolia_hideEmptyAvatars', false, undefined, undefined, rememberSettings);
-  const [cropFaceTop, setCropFaceTop] = useLocalStorage<boolean>('ccfolia_cropFaceTop', false, undefined, undefined, rememberSettings);
-  const [hideAllAvatars, setHideAllAvatars] = useLocalStorage<boolean>('ccfolia_hideAllAvatars', false, undefined, undefined, rememberSettings);
-  const [enableSentenceSpacing, setEnableSentenceSpacing] = useLocalStorage<boolean>('ccfolia_enableSentenceSpacing', false, undefined, undefined, rememberSettings);
-  const [enableSecretNarration, setEnableSecretNarration] = useLocalStorage<boolean>('ccfolia_enableSecretNarration', false, undefined, undefined, rememberSettings);
-  const [narrationFormat, setNarrationFormat] = useLocalStorage<'style1' | 'style2' | 'style3'>('ccfolia_narrationFormat', 'style1', undefined, undefined, rememberSettings);
-  const [narrationCharacter, setNarrationCharacter] = useState<string | null>(null);
-  const [showLogDivider, setShowLogDivider] = useLocalStorage<boolean>('ccfolia_showLogDivider', false, undefined, undefined, rememberSettings);
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [listOffset, setListOffset] = useState(0);
 
-  // History for Undo/Redo
-  const [history, setHistory] = useState<any[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const currentHistoryStateRef = useRef<any>(null);
-  const historyRef = useRef<any[]>([]);
-  const historyIndexRef = useRef<number>(-1);
-  const MAX_HISTORY = 300;
-
-  // Inject fonts into document head
-  useEffect(() => {
-    const styleId = 'global-fonts-import';
-    let styleEl = document.getElementById(styleId);
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = styleId;
-      document.head.appendChild(styleEl);
-    }
-    const fontImports = fonts.map(f => f.import).filter(Boolean).join('\n');
-    styleEl.innerHTML = fontImports;
-  }, []);
-
-  // Favicon
-  useEffect(() => {
-    const favicon = document.querySelector("link[rel*='icon']") || document.createElement('link');
-    (favicon as HTMLLinkElement).rel = 'shortcut icon';
-    (favicon as HTMLLinkElement).type = 'image/svg+xml';
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-        <circle cx="50" cy="50" r="50" fill="#e6005c" />
-        <path d="M36 25h24l10 10v34c0 3.3-2.7 6-6 6H36c-3.3 0-6-2.7-6-6V31c0-3.3 2.7-6 6-6z" fill="white" />
-        <path d="M60 25v10h10" fill="none" stroke="#e6005c" stroke-width="2" />
-        <rect x="35" y="43" width="20" height="4" rx="1" fill="#e6005c" />
-        <rect x="35" y="53" width="30" height="4" rx="1" fill="#e6005c" />
-        <rect x="35" y="63" width="30" height="4" rx="1" fill="#e6005c" />
-      </svg>
-    `.trim();
-    (favicon as HTMLLinkElement).href = `data:image/svg+xml;base64,${btoa(svg)}`;
-    document.getElementsByTagName('head')[0].appendChild(favicon);
-  }, []);
-
-        const applyBulkAllocations = (allocations: Record<string, string[]>, reps: Record<string, string>) => {
-    const nextChars = { ...charSettings };
-    let newIllustrations: string[] = [];
-    
-    Object.entries(allocations).forEach(([charId, urls]) => {
-      if (charId === 'ILLUSTRATIONS') {
-        newIllustrations = urls;
-        return;
-      }
-      
-      if (!nextChars[charId]) return;
-
-      const char = { ...nextChars[charId] };
-      const currentImages = char.images ? [...char.images] : [];
-      
-      urls.forEach(url => {
-        if (!currentImages.some(img => img.url === url)) {
-          currentImages.push({
-            id: 'img_' + Math.random().toString(36).substring(2, 9),
-            url: url,
-            name: 'Image ' + (currentImages.length + 1)
-          });
-        }
-      });
-      
-      if (reps[charId]) {
-        currentImages.forEach(img => img.isRepresentative = false);
-        const repImg = currentImages.find(img => img.url === reps[charId]);
-        if (repImg) repImg.isRepresentative = true;
-        char.imageUrl = reps[charId];
-      } else if (!char.imageUrl && currentImages.length > 0) {
-         currentImages[0].isRepresentative = true;
-         char.imageUrl = currentImages[0].url;
-      }
-      
-      char.images = currentImages;
-      nextChars[charId] = char;
-    });
-    
-    let nextLogs = [...logs];
-    if (newIllustrations.length > 0) {
-      newIllustrations.forEach(url => {
-        nextLogs.push({
-          id: 'ill_' + Math.random().toString(36).substring(2, 9),
-          type: 'illustration',
-          content: url,
-          charId: '',
-          name: '',
-          color: '',
-          isCommand: false,
-          isBgmBlock: false,
-          isIllustration: true,
-          tabId: tabOrder[0] || ''
-        });
-      });
-    }
-
-    setCharSettings(nextChars);
-    if (newIllustrations.length > 0) {
-      setLogs(nextLogs);
-      saveToHistory({ charSettings: nextChars, logs: nextLogs });
-    } else {
-      saveToHistory({ charSettings: nextChars });
-    }
-    
-    setIsBulkAllocatorOpen(false);
-  };
-  const handleBulkImgurFetch = async () => {
-    if (!bulkImgurUrl) return;
-    
-    setIsBulkImgurLoading(true);
-    try {
-      const response = await fetch('/api/imgur', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: bulkImgurUrl }),
-      });
-      
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Imgur 정보를 가져오지 못했습니다.');
-      }
-      
-      const images: { url: string; fileName: string; ext: string }[] = await response.json();
-      setBulkImages(images);
-      
-      // Auto-match based on fileName
-      const newMapping: Record<string, string> = {};
-      const newTypeMapping: Record<string, 'character' | 'illustration' | 'none'> = {};
-      
-      const normalize = (str: string) => str.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
-
-      images.forEach(img => {
-        newTypeMapping[img.url] = 'character';
-        let nameToMatch = img.fileName;
-        if (nameToMatch.includes('.')) {
-          nameToMatch = nameToMatch.substring(0, nameToMatch.lastIndexOf('.'));
-        }
-        
-        const normalizedFileName = normalize(nameToMatch);
-        let matchedCharId = Object.keys(charSettings).find(id => normalize(charSettings[id].name) === normalizedFileName);
-        
-        // Advanced matching: check both ways (filename contains character name OR character name contains filename)
-        if (!matchedCharId) {
-          const sortedIds = Object.keys(charSettings).sort((a, b) => charSettings[b].name.length - charSettings[a].name.length);
-          matchedCharId = sortedIds.find(id => {
-            const normalizedCharName = normalize(charSettings[id].name);
-            if (normalizedCharName.length === 0 || normalizedFileName.length === 0) return false;
-            
-            const fileLower = nameToMatch.toLowerCase();
-            const charLower = charSettings[id].name.toLowerCase();
-            
-            return (
-              normalizedFileName.includes(normalizedCharName) || 
-              normalizedCharName.includes(normalizedFileName) ||
-              fileLower.includes(charLower) ||
-              charLower.includes(fileLower)
-            );
-          });
-        }
-
-        if (matchedCharId) {
-          newMapping[img.url] = matchedCharId;
-        }
-      });
-      setBulkImageMapping(newMapping);
-      setBulkImageTypeMapping(newTypeMapping);
-      
-    } catch (error: any) {
-      alert(error.message);
-    } finally {
-      setIsBulkImgurLoading(false);
-    }
-  };
-
-  const applyBulkImages = () => {
-    let charChangedCount = 0;
-    let illAddedCount = 0;
-    const nextCharSettings = { ...charSettings };
-    const nextLogs = [...logs];
-
-    bulkImages.forEach((img) => {
-      const charId = bulkImageMapping[img.url];
-      
-      // Step 1: Character Match
-      if (charId && nextCharSettings[charId]) {
-        nextCharSettings[charId] = {
-          ...nextCharSettings[charId],
-          imageUrl: img.url,
-          imageName: img.fileName
-        };
-        charChangedCount++;
-      } 
-      // Step 2: Selected as illustration (if not selected as a character in step 1)
-      else if (bulkSelectedIllustrations[img.url] === true) {
-        const defaultLogIndex = nextLogs.length > 0 ? nextLogs.length - 1 : 0;
-        const defaultTabId = nextLogs[defaultLogIndex]?.tabId || Object.keys(tabSettings)[0] || 'main';
-        const newIllustrationLog: LogEntry = {
-          id: `ill_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${Math.floor(Math.random() * 1000)}`,
-          color: '',
-          tabId: defaultTabId,
-          tab: tabSettings[defaultTabId]?.name || defaultTabId,
-          charId: 'system',
-          name: '',
-          content: img.url,
-          imageName: img.fileName,
-          isCommand: false,
-          isContinuation: false,
-          isHiddenContent: false,
-          isIllustration: true,
-          isUnplaced: true,
-          tabOverride: 'auto',
-          width: defaultIllWidth,
-          align: defaultIllAlign
-        };
-        nextLogs.push(newIllustrationLog);
-        illAddedCount++;
-      }
-    });
-
-    if (charChangedCount > 0 || illAddedCount > 0) {
-      if (charChangedCount > 0) {
-        setCharSettings(nextCharSettings);
-      }
-      if (illAddedCount > 0) {
-        setLogs(nextLogs);
-      }
-      
-      saveToHistory({
-        charSettings: charChangedCount > 0 ? nextCharSettings : charSettings,
-        logs: illAddedCount > 0 ? nextLogs : logs
-      });
-
-      let msg = '';
-      if (charChangedCount > 0 && illAddedCount > 0) {
-        msg = `총 ${charChangedCount}명의 캐릭터 이미지와 ${illAddedCount}개의 삽화가 일괄 등록되었습니다.`;
-      } else if (charChangedCount > 0) {
-        msg = `총 ${charChangedCount}명의 캐릭터 이미지가 업데이트되었습니다.`;
-      } else {
-        msg = `총 ${illAddedCount}개의 삽화가 등록되었습니다.`;
-      }
-      alert(msg);
-    } else {
-      alert('적용된 변경 사항이 없습니다.');
-    }
-    
-    setIsBulkImgurModalOpen(false);
-    setBulkImgurUrl('');
-    setBulkImages([]);
-    setBulkImageMapping({});
-    setBulkImageTypeMapping({});
-    setBulkImportStep(1);
-    setBulkSelectedIllustrations({});
-  };
-
-  const handleIllBulkFetch = async () => {
-    if (!illBulkUrl) return;
-    
-    setIsIllBulkLoading(true);
-    try {
-      const response = await fetch('/api/imgur', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: illBulkUrl }),
-      });
-      
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Imgur 정보를 가져오지 못했습니다.');
-      }
-      
-      const images: { url: string; fileName: string; ext: string }[] = await response.json();
-      setIllBulkImages(images);
-      
-      // All selected by default
-      const initialSelected: Record<string, boolean> = {};
-      images.forEach(img => {
-        initialSelected[img.url] = true;
-      });
-      setSelectedIllBulkImages(initialSelected);
-      setIsIllBulkModalOpen(true);
-    } catch (error: any) {
-      alert(error.message);
-    } finally {
-      setIsIllBulkLoading(false);
-    }
-  };
-
-  const applyIllBulkImages = () => {
-    const selectedUrls = illBulkImages.filter(img => selectedIllBulkImages[img.url]);
-    if (selectedUrls.length === 0) {
-      alert('선택된 이미지가 없습니다.');
-      return;
-    }
-
-    const defaultLogIndex = logs.length > 0 ? logs.length - 1 : 0;
-    const defaultTabId = logs[defaultLogIndex]?.tabId || Object.keys(tabSettings)[0] || 'main';
-
-    const nextLogs = [...logs];
-    selectedUrls.forEach((img) => {
-      const newIllustrationLog: LogEntry = {
-        id: `ill_${Date.now()}_${Math.random().toString(36).substring(2, 11)}_${Math.floor(Math.random() * 1000)}`,
-        color: '',
-        tabId: defaultTabId,
-        tab: tabSettings[defaultTabId]?.name || defaultTabId,
-        charId: 'system',
-        name: '',
-        content: img.url,
-        imageName: img.fileName,
-        isCommand: false,
-        isContinuation: false,
-        isHiddenContent: false,
-        isIllustration: true,
-        isUnplaced: true,
-        tabOverride: 'auto',
-        width: defaultIllWidth,
-        align: defaultIllAlign
-      };
-      nextLogs.push(newIllustrationLog);
-    });
-
-    setLogs(nextLogs);
-    
-    saveToHistory({
-      logs: nextLogs
-    });
-
-    alert(`총 ${selectedUrls.length}개의 삽화가 일괄 등록되었습니다.`);
-    setIsIllBulkModalOpen(false);
-  };
-
-  // 다중 이미지 관련 상태 관리 함수 (1단계)
-  const addCharacterImage = (charId: string, url: string) => {
-    let next = { ...charSettings };
-    const char = next[charId];
-    if (char) {
-      const newImage = {
-        id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        url,
-        isRepresentative: !char.images || char.images.length === 0
-      };
-      char.images = [...(char.images || []), newImage];
-      if (newImage.isRepresentative) {
-        char.imageUrl = url;
-      }
-      setCharSettings(next);
-      saveToHistory({ charSettings: next });
-    }
-  };
-
-  const updateCharacterImage = (charId: string, imageId: string, newUrl: string) => {
-    let next = { ...charSettings };
-    const char = next[charId];
-    if (char && char.images) {
-      char.images = char.images.map(img => img.id === imageId ? { ...img, url: newUrl } : img);
-      const rep = char.images.find(img => img.isRepresentative);
-      if (rep && rep.id === imageId) {
-        char.imageUrl = newUrl;
-      }
-      setCharSettings(next);
-      // saveToHistory is triggered onBlur instead to avoid spam
-    }
-  };
-
-  const removeCharacterImage = (charId: string, imageId: string) => {
-    let next = { ...charSettings };
-    const char = next[charId];
-    if (char && char.images) {
-      char.images = char.images.filter((img: any) => img.id !== imageId);
-      if (!char.images.some((img: any) => img.isRepresentative) && char.images.length > 0) {
-        char.images[0].isRepresentative = true;
-        char.imageUrl = char.images[0].url;
-      } else if (char.images.length === 0) {
-        char.imageUrl = '';
-      }
-      setCharSettings(next);
-      saveToHistory({ charSettings: next });
-    }
-  };
-
-  const setRepresentativeImage = (charId: string, imageId: string) => {
-    let next = { ...charSettings };
-    const char = next[charId];
-    if (char && char.images) {
-      char.images = char.images.map((img: any) => ({
-        ...img,
-        isRepresentative: img.id === imageId
-      }));
-      const rep = char.images.find((img: any) => img.isRepresentative);
-      if (rep) {
-        char.imageUrl = rep.url;
-      }
-      setCharSettings(next);
-      saveToHistory({ charSettings: next });
-    }
-  };
-
-  const saveToHistory = (state: any) => {
-    const fullState = {
+  const getFullStateSnapshot = useCallback(() => {
+    return {
       charSettings,
+      charOrder,
+      charSortMode,
       tabSettings,
       tabOrder,
+      tabSortMode,
       cssFormat,
       fontSize,
       textFontSize,
       lineHeight,
       letterSpacing,
       blockSpacing,
-      avatarSizeValue,
       contentPadding,
+      avatarSizeValue,
       fontFamily,
       theme,
       darkBgColor,
@@ -1493,166 +566,87 @@ export default function App() {
       cropFaceTop,
       hideAllAvatars,
       narrationCharacter,
+      narrationCharacter2,
       enableSentenceSpacing,
+      enableSentenceSpacing2,
       enableSecretNarration,
+      enableSecretNarration2,
       narrationFormat,
+      narrationFormat2,
       showLogDivider,
-      illustrations,
-      ...state
+      pageTitle
     };
-    
-    // JSON 직렬화를 통해 참조를 끊고 순수 데이터만 추출 (diff를 위함)
-    const clonedState = JSON.parse(JSON.stringify(fullState));
+  }, [
+    charSettings, charOrder, charSortMode, tabSettings, tabOrder, tabSortMode,
+    cssFormat, fontSize, textFontSize, lineHeight, letterSpacing, blockSpacing, contentPadding, avatarSizeValue,
+    fontFamily, theme, darkBgColor, lightBgColor, disableOtherColor, filterBarMode, logs, insertedBlocks,
+    mergeTabs, showTabNames, mergeTabStyles, hideEmptyAvatars, cropFaceTop, hideAllAvatars,
+    narrationCharacter, narrationCharacter2, enableSentenceSpacing, enableSentenceSpacing2,
+    enableSecretNarration, enableSecretNarration2, narrationFormat, narrationFormat2, showLogDivider, pageTitle
+  ]);
 
-    if (historyRef.current.length === 0 || !currentHistoryStateRef.current) {
-      currentHistoryStateRef.current = clonedState;
-      const initialHistory = [{ type: 'base', state: clonedState }];
-      historyRef.current = initialHistory;
-      historyIndexRef.current = 0;
-      setHistory(initialHistory);
-      setHistoryIndex(0);
-      return;
-    }
-
-    const forward = compare(currentHistoryStateRef.current, clonedState);
-    const reverse = compare(clonedState, currentHistoryStateRef.current);
-
-    // 변경사항이 없으면 저장하지 않음
-    if (forward.length === 0) return;
-
-    currentHistoryStateRef.current = clonedState;
-
-    let newHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
-    newHistory.push({ type: 'patch', forward, reverse });
-    
-    if (newHistory.length > MAX_HISTORY) {
-      // 0번(base)에 1번(patch)를 병합하여 base를 업데이트하고 1번은 제거
-      const baseStep = newHistory[0];
-      const patchStep = newHistory[1];
-      const newBaseState = JSON.parse(JSON.stringify(baseStep.state));
-      applyPatch(newBaseState, patchStep.forward);
-      
-      newHistory[0] = { type: 'base', state: newBaseState };
-      newHistory.splice(1, 1);
-    }
-    
-    historyRef.current = newHistory;
-    historyIndexRef.current = newHistory.length - 1;
-    
-    setHistory([...newHistory]);
-    setHistoryIndex(newHistory.length - 1);
-  };
-
-  const undo = () => {
-    const currentIndex = historyIndexRef.current;
-    if (currentIndex > 0) {
-      const step = historyRef.current[currentIndex];
-      if (step.type === 'patch') {
-        const prevState = JSON.parse(JSON.stringify(currentHistoryStateRef.current));
-        applyPatch(prevState, step.reverse);
-        currentHistoryStateRef.current = prevState;
-        applyState(prevState);
-      }
-      historyIndexRef.current = currentIndex - 1;
-      setHistoryIndex(currentIndex - 1);
-    }
-  };
-
-  const redo = () => {
-    const currentIndex = historyIndexRef.current;
-    if (currentIndex < historyRef.current.length - 1) {
-      const nextIdx = currentIndex + 1;
-      const step = historyRef.current[nextIdx];
-      if (step.type === 'patch') {
-        const nextState = JSON.parse(JSON.stringify(currentHistoryStateRef.current));
-        applyPatch(nextState, step.forward);
-        currentHistoryStateRef.current = nextState;
-        applyState(nextState);
-      }
-      historyIndexRef.current = nextIdx;
-      setHistoryIndex(nextIdx);
-    }
-  };
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const activeEl = document.activeElement;
-      const isEditable = activeEl && (
-        activeEl.tagName === 'INPUT' || 
-        activeEl.tagName === 'TEXTAREA' || 
-        (activeEl as HTMLElement).isContentEditable
-      );
-      if (isEditable) return;
-
-      const isCtrl = e.ctrlKey || e.metaKey;
-      if (isCtrl) {
-        const key = e.key.toLowerCase();
-        if (key === 'z') {
-          e.preventDefault();
-          if (e.shiftKey) {
-            redo();
-          } else {
-            undo();
-          }
-        } else if (key === 'y' && !e.shiftKey) {
-          e.preventDefault();
-          redo();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [historyIndex, history]);
-
-  const applyState = (state: any) => {
-    setCharSettings(state.charSettings);
-    setTabSettings(state.tabSettings);
-    if (state.tabOrder) setTabOrder(state.tabOrder);
-    setCssFormat(state.cssFormat);
-    setFontSize(state.fontSize);
+  const applyState = useCallback((state: any) => {
+    if (!state) return;
+    if (state.charSettings !== undefined) setCharSettings(state.charSettings);
+    if (state.charOrder !== undefined) setCharOrder(state.charOrder);
+    if (state.charSortMode !== undefined) setCharSortMode(state.charSortMode);
+    if (state.tabSettings !== undefined) setTabSettings(state.tabSettings);
+    if (state.tabOrder !== undefined) setTabOrder(state.tabOrder);
+    if (state.tabSortMode !== undefined) setTabSortMode(state.tabSortMode);
+    if (state.cssFormat !== undefined) setCssFormat(state.cssFormat);
+    if (state.fontSize !== undefined) setFontSize(state.fontSize);
     if (state.textFontSize !== undefined) setTextFontSize(state.textFontSize);
     if (state.lineHeight !== undefined) setLineHeight(state.lineHeight);
     if (state.letterSpacing !== undefined) setLetterSpacing(state.letterSpacing);
     if (state.blockSpacing !== undefined) setBlockSpacing(state.blockSpacing);
     if (state.contentPadding !== undefined) setContentPadding(state.contentPadding);
     if (state.avatarSizeValue !== undefined) setAvatarSizeValue(state.avatarSizeValue);
-    setFontFamily(state.fontFamily);
-    setTheme(state.theme);
-    if (state.darkBgColor) setDarkBgColor(state.darkBgColor);
-    if (state.lightBgColor) setLightBgColor(state.lightBgColor);
-    setDisableOtherColor(state.disableOtherColor);
+    if (state.fontFamily !== undefined) setFontFamily(state.fontFamily);
+    if (state.theme !== undefined) setTheme(state.theme);
+    if (state.darkBgColor !== undefined) setDarkBgColor(state.darkBgColor);
+    if (state.lightBgColor !== undefined) setLightBgColor(state.lightBgColor);
+    if (state.disableOtherColor !== undefined) setDisableOtherColor(state.disableOtherColor);
     if (state.filterBarMode !== undefined) {
       setFilterBarMode(state.filterBarMode);
     } else if (state.isFilterBarEnabled !== undefined) {
       setFilterBarMode(state.isFilterBarEnabled ? 'floating' : 'none');
     }
-    if (state.logs) {
+    if (state.logs !== undefined) {
       let nextLogs = state.logs;
       if (state.illustrations && state.illustrations.length > 0) {
-        nextLogs = migrateIllustrationsToLogs(nextLogs, state.illustrations, state.tabSettings || state.tabSettings || tabSettings);
+        nextLogs = migrateIllustrationsToLogs(nextLogs, state.illustrations, state.tabSettings || tabSettings);
       }
       setLogs(nextLogs);
     }
-    if (state.insertedBlocks) {
+    if (state.insertedBlocks !== undefined) {
       setInsertedBlocks(state.insertedBlocks);
     } else if (state.insertedImages || state.splitPoints) {
       setInsertedBlocks(migrateToInsertedBlocks(state.insertedImages, state.splitPoints, state.sectionNames));
     }
-    if (state.mergeTabs) setMergeTabs(new Set(state.mergeTabs));
-    if (state.showTabNames) setShowTabNames(new Set(state.showTabNames));
-    if (state.mergeTabStyles) setMergeTabStyles(new Set(state.mergeTabStyles));
+    if (state.mergeTabs !== undefined) setMergeTabs(new Set(state.mergeTabs));
+    if (state.showTabNames !== undefined) setShowTabNames(new Set(state.showTabNames));
+    if (state.mergeTabStyles !== undefined) setMergeTabStyles(new Set(state.mergeTabStyles));
     if (state.hideEmptyAvatars !== undefined) setHideEmptyAvatars(state.hideEmptyAvatars);
     if (state.cropFaceTop !== undefined) setCropFaceTop(state.cropFaceTop);
     if (state.hideAllAvatars !== undefined) setHideAllAvatars(state.hideAllAvatars);
     if (state.narrationCharacter !== undefined) setNarrationCharacter(state.narrationCharacter);
+    if (state.narrationCharacter2 !== undefined) setNarrationCharacter2(state.narrationCharacter2);
     if (state.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(state.enableSentenceSpacing);
+    if (state.enableSentenceSpacing2 !== undefined) setEnableSentenceSpacing2(state.enableSentenceSpacing2);
     if (state.enableSecretNarration !== undefined) setEnableSecretNarration(state.enableSecretNarration);
+    if (state.enableSecretNarration2 !== undefined) setEnableSecretNarration2(state.enableSecretNarration2);
     if (state.narrationFormat !== undefined) setNarrationFormat(state.narrationFormat);
+    if (state.narrationFormat2 !== undefined) setNarrationFormat2(state.narrationFormat2);
     if (state.showLogDivider !== undefined) setShowLogDivider(state.showLogDivider);
-  };
+    if (state.pageTitle !== undefined) setPageTitle(state.pageTitle);
+  }, [tabSettings]);
+
+  // History for Undo/Redo
+  const { history, historyIndex, saveToHistory, clearHistory, undo, redo } = useAppHistory(
+    300,
+    applyState,
+    getFullStateSnapshot
+  );
 
   const resetSettings = () => {
     if (confirm('설정을 초기화하시겠습니까?')) {
@@ -1687,9 +681,13 @@ export default function App() {
         setCropFaceTop(state.cropFaceTop || false);
         setHideAllAvatars(state.hideAllAvatars || false);
         setNarrationCharacter(state.narrationCharacter || null);
+        setNarrationCharacter2(state.narrationCharacter2 || null);
         setEnableSentenceSpacing(state.enableSentenceSpacing || false);
+        setEnableSentenceSpacing2(state.enableSentenceSpacing2 || false);
         setEnableSecretNarration(state.enableSecretNarration || false);
+        setEnableSecretNarration2(state.enableSecretNarration2 || false);
         setNarrationFormat(state.narrationFormat || 'style1');
+        setNarrationFormat2(state.narrationFormat2 || 'style1');
         setShowLogDivider(state.showLogDivider || false);
         saveToHistory(state);
       } else {
@@ -1723,15 +721,16 @@ export default function App() {
           images: true,
           edits: true
         });
+        clearHistory();
       }
     }
   };
 
   useEffect(() => {
-    if (historyIndex === -1 && Object.keys(charSettings).length > 0) {
-      saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+    if (historyIndex === -1 && (Object.keys(charSettings).length > 0 || logs.length > 0)) {
+      saveToHistory(getFullStateSnapshot());
     }
-  }, [charSettings]);
+  }, [historyIndex, charSettings, logs, getFullStateSnapshot, saveToHistory]);
 
   const renameCharacter = (charId: string, newName: string) => {
     if (!newName) {
@@ -1871,7 +870,6 @@ export default function App() {
     setOpenLibraryDropdownId(null);
   };
   
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const styleInputRef = useRef<HTMLInputElement>(null);
 
   // Unify character and tab settings across multiple parsed log files by name
@@ -1903,17 +901,35 @@ export default function App() {
         const charName = (log.name || '').trim();
         let canonicalCharId = log.charId;
 
-        if (charName) {
-          if (charNameToIdMap.has(charName)) {
-            canonicalCharId = charNameToIdMap.get(charName)!;
+        // Handle chars without name as well by giving them a generic name or grouping by ID/color
+        if (!charName) {
+           canonicalCharId = log.charId || `char_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+           if (!mergedChars[canonicalCharId]) {
+             const fileCharObj = fileItem.newChars[log.charId] || { id: canonicalCharId, name: '', color: log.color || '#ffffff', imageUrl: '', images: [], visible: true };
+             mergedChars[canonicalCharId] = { ...fileCharObj, id: canonicalCharId, name: '' };
+           }
+        } else {
+          // If the character name exists, group by name + color to differentiate same names with different colors? 
+          // Wait, normally CCFolia groups by name + color? The parser groups by name + color!
+          // So let's group by log.charId instead if it exists, otherwise fallback to name mapping.
+          
+          if (fileItem.newChars[log.charId]) {
+            canonicalCharId = log.charId;
+            if (!mergedChars[canonicalCharId]) {
+               mergedChars[canonicalCharId] = { ...fileItem.newChars[log.charId] };
+            }
           } else {
-            canonicalCharId = log.charId || `char_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-            charNameToIdMap.set(charName, canonicalCharId);
-          }
+            if (charNameToIdMap.has(charName)) {
+              canonicalCharId = charNameToIdMap.get(charName)!;
+            } else {
+              canonicalCharId = log.charId || `char_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+              charNameToIdMap.set(charName, canonicalCharId);
+            }
 
-          if (!mergedChars[canonicalCharId]) {
-            const fileCharObj = fileItem.newChars[log.charId] || { id: canonicalCharId, name: charName, color: log.color || '#ffffff', imageUrl: '', images: [], visible: true };
-            mergedChars[canonicalCharId] = { ...fileCharObj, id: canonicalCharId, name: charName };
+            if (!mergedChars[canonicalCharId]) {
+              const fileCharObj = fileItem.newChars[log.charId] || { id: canonicalCharId, name: charName, color: log.color || '#ffffff', imageUrl: '', images: [], visible: true };
+              mergedChars[canonicalCharId] = { ...fileCharObj, id: canonicalCharId, name: charName };
+            }
           }
         }
 
@@ -1976,6 +992,7 @@ export default function App() {
     setPageTitle('데모');
     setInsertedBlocks(demo.insertedBlocks);
     setNarrationCharacter(demo.narrationCharacter);
+    setNarrationCharacter2(null);
     setActiveFileId('active');
     setFiles([{
       id: 'active',
@@ -1983,13 +1000,37 @@ export default function App() {
       logs: demo.logs,
       insertedBlocks: demo.insertedBlocks
     }]);
+    clearHistory();
   };
 
-  // Parse HTML Log (Main / First upload)
+  // Parse Log (Main / First upload)
   const handleLogUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFilesAll = Array.from(e.target.files || []);
+    
     const rawFiles = ENABLE_MULTI_FILE_UI ? rawFilesAll : rawFilesAll.slice(0, 1);
     if (rawFiles.length === 0) return;
+
+    // Validate each file using inspectUploadedFile
+    for (const f of rawFiles) {
+      const check = await inspectUploadedFile(f as File);
+      if (!check.valid) {
+        window.alert(check.reason || "지원하지 않는 형식의 파일입니다.");
+        e.target.value = '';
+        return;
+      }
+      if (check.type === 'app_project') {
+        window.alert("프로젝트 설정 백업 파일(.json)은 '프로젝트 파일 관리'의 불러오기 버튼에서 업로드해주세요.");
+        e.target.value = '';
+        return;
+      }
+    }
+
+    const jsonFile = rawFiles.find((f: any) => f.name.toLowerCase().endsWith('.json'));
+    if (jsonFile) {
+        setExtractorFile(jsonFile as File);
+    } else {
+        setExtractorFile(null); // Reset if HTML
+    }
 
     if (files.length > 0 || logs.length > 0) {
       if (!confirm('현재 로그를 편집중입니다. 초기화하고 새 파일을 여시겠습니까?')) {
@@ -2004,14 +1045,20 @@ export default function App() {
     for (let i = 0; i < rawFiles.length; i++) {
       const file = rawFiles[i] as File;
       const fileName = file.name.replace(/\.[^/.]+$/, "");
-      const res = await parseLogFile(file);
-      parsedRaw.push({
-        name: fileName,
-        trimmedLogs: res.trimmedLogs,
-        newChars: res.newChars,
-        newTabs: res.newTabs,
-        colorsFound: res.colorsFound
-      });
+      try {
+        const res = await parseLogFile(file, exportMode === 'html' ? 'easy' : 'high_quality');
+        parsedRaw.push({
+          name: fileName,
+          trimmedLogs: res.trimmedLogs,
+          newChars: res.newChars,
+          newTabs: res.newTabs,
+          colorsFound: res.colorsFound
+        });
+      } catch (err: any) {
+        alert(err?.message || "지원하지 않는 형식의 파일입니다.");
+        e.target.value = '';
+        return;
+      }
     }
 
     const { unifiedFiles, mergedChars, mergedTabs, mergedColors } = processAndUnifyLogFiles(parsedRaw, {}, {});
@@ -2034,7 +1081,7 @@ export default function App() {
       setDisableOtherColor(true);
     }
     setPageTitle('');
-    setActiveTab('tabs');
+    clearHistory();
 
     e.target.value = '';
   };
@@ -2044,18 +1091,43 @@ export default function App() {
     const rawFiles = Array.from(e.target.files || []);
     if (rawFiles.length === 0) return;
 
+    for (const f of rawFiles) {
+      const check = await inspectUploadedFile(f as File);
+      if (!check.valid) {
+        window.alert(check.reason || "지원하지 않는 형식의 파일입니다.");
+        e.target.value = '';
+        return;
+      }
+      if (check.type === 'app_project') {
+        window.alert("프로젝트 설정 백업 파일(.json)은 '프로젝트 파일 관리'의 불러오기 버튼에서 업로드해주세요.");
+        e.target.value = '';
+        return;
+      }
+    }
+
+    const jsonFile = rawFiles.find((f: any) => f.name.toLowerCase().endsWith('.json'));
+    if (jsonFile) {
+      setExtractorFile(jsonFile as File);
+    }
+
     const parsedRaw = [];
     for (let i = 0; i < rawFiles.length; i++) {
       const file = rawFiles[i] as File;
       const fileName = file.name.replace(/\.[^/.]+$/, "");
-      const res = await parseLogFile(file);
-      parsedRaw.push({
-        name: fileName,
-        trimmedLogs: res.trimmedLogs,
-        newChars: res.newChars,
-        newTabs: res.newTabs,
-        colorsFound: res.colorsFound
-      });
+      try {
+        const res = await parseLogFile(file, exportMode === 'html' ? 'easy' : 'high_quality');
+        parsedRaw.push({
+          name: fileName,
+          trimmedLogs: res.trimmedLogs,
+          newChars: res.newChars,
+          newTabs: res.newTabs,
+          colorsFound: res.colorsFound
+        });
+      } catch (err: any) {
+        alert(err?.message || "지원하지 않는 형식의 파일입니다.");
+        e.target.value = '';
+        return;
+      }
     }
 
     const { unifiedFiles, mergedChars, mergedTabs, mergedColors } = processAndUnifyLogFiles(
@@ -2075,7 +1147,6 @@ export default function App() {
     e.target.value = '';
   };
 
-
   const [jsonFileName, setJsonFileName] = useState('');
 
   // Handle Project Upload
@@ -2083,9 +1154,32 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!file.name.toLowerCase().endsWith('.json') && file.type !== 'application/json') {
+      window.alert("지원하지 않는 형식의 파일입니다. 프로젝트 파일(.json)을 선택해주세요.");
+      e.target.value = '';
+      return;
+    }
+
     try {
       const jsonText = await file.text();
-      const json = JSON.parse(jsonText);
+      let json: any;
+      try {
+        json = JSON.parse(jsonText);
+      } catch (parseErr) {
+        window.alert("파일 형식이 올바르지 않거나 손상된 JSON 파일입니다.");
+        e.target.value = '';
+        return;
+      }
+
+      if (!isAppProjectJson(json)) {
+        if (Array.isArray(json?.messages)) {
+          window.alert("코코포리아 신버전 로그(.json) 파일입니다. '로그 업로드' 메뉴에서 업로드해주세요.");
+        } else {
+          window.alert("올바른 프로젝트 백업 파일(.json)이 아닙니다.");
+        }
+        e.target.value = '';
+        return;
+      }
       
       let confirmMessage = "";
       
@@ -2151,8 +1245,11 @@ export default function App() {
       if (json.lightBgColor !== undefined) setLightBgColor(json.lightBgColor);
       if (json.filterBarMode !== undefined) setFilterBarMode(json.filterBarMode);
       if (json.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(json.enableSentenceSpacing);
+      if (json.enableSentenceSpacing2 !== undefined) setEnableSentenceSpacing2(json.enableSentenceSpacing2);
       if (json.enableSecretNarration !== undefined) setEnableSecretNarration(json.enableSecretNarration);
+      if (json.enableSecretNarration2 !== undefined) setEnableSecretNarration2(json.enableSecretNarration2);
       if (json.narrationFormat !== undefined) setNarrationFormat(json.narrationFormat);
+      if (json.narrationFormat2 !== undefined) setNarrationFormat2(json.narrationFormat2);
       if (json.disableOtherColor !== undefined) setDisableOtherColor(json.disableOtherColor);
       if (json.showLogDivider !== undefined) setShowLogDivider(json.showLogDivider);
       
@@ -2169,18 +1266,19 @@ export default function App() {
       if (json.cropFaceTop !== undefined) setCropFaceTop(json.cropFaceTop);
       if (json.hideAllAvatars !== undefined) setHideAllAvatars(json.hideAllAvatars);
       if (json.narrationCharacter !== undefined) setNarrationCharacter(json.narrationCharacter);
+      if (json.narrationCharacter2 !== undefined) setNarrationCharacter2(json.narrationCharacter2);
 
-      saveToHistory(json);
+      clearHistory();
       setJsonFileName(file.name);
-    } catch (err) {
-      alert('프로젝트 파일을 읽는 중 오류가 발생했습니다.');
+    } catch (err: any) {
+      alert(err?.message || '지원하지 않는 형식의 파일입니다.');
     }
     e.target.value = '';
   };
 
   const exportProject = () => {
     const data: any = { 
-      version: '1.10.17',
+      version: '1.11.1',
       files,
       activeFileId,
       originalFileName,
@@ -2191,6 +1289,7 @@ export default function App() {
       data.charSettings = charSettings;
       data.charOrder = charOrder;
       data.narrationCharacter = narrationCharacter;
+      data.narrationCharacter2 = narrationCharacter2;
       data.hideEmptyAvatars = hideEmptyAvatars;
       data.cropFaceTop = cropFaceTop;
       data.hideAllAvatars = hideAllAvatars;
@@ -2220,8 +1319,11 @@ export default function App() {
       data.lightBgColor = lightBgColor;
       data.filterBarMode = filterBarMode;
       data.enableSentenceSpacing = enableSentenceSpacing;
+      data.enableSentenceSpacing2 = enableSentenceSpacing2;
       data.enableSecretNarration = enableSecretNarration;
+      data.enableSecretNarration2 = enableSecretNarration2;
       data.narrationFormat = narrationFormat;
+      data.narrationFormat2 = narrationFormat2;
       data.showLogDivider = showLogDivider;
     }
     
@@ -2575,7 +1677,9 @@ export default function App() {
     }
     
     return Math.min(Math.max(20, Math.ceil(mw + 4)), 160);
-  }, [displayItems, textFontSize, fontFamily, narrationCharacter, hideAllAvatars, narrationFormat, tabSettings, charSettings]);
+  }, [displayItems, textFontSize, fontFamily, narrationCharacter,
+      narrationCharacter2, hideAllAvatars, narrationFormat,
+      narrationFormat2, tabSettings, charSettings]);
 
   useEffect(() => {
     if (searchQuery) {
@@ -2816,6 +1920,266 @@ export default function App() {
     return { groups, unplacedItems, totalCount: groups.reduce((acc, g) => acc + g.items.length, 0) + unplacedItems.length };
   }, [files, logs, originalFileName, pageTitle]);
 
+
+  const applyBulkAllocations = (allocations: Record<string, string[]>, reps: Record<string, string>) => {
+    setCharSettings(prev => {
+      const next = { ...prev };
+      for (const [charId, urls] of Object.entries(allocations)) {
+        if (!next[charId]) continue;
+        const currentImages = next[charId].images || [];
+        const newImages = [...currentImages];
+        urls.forEach(url => {
+          if (!newImages.find(i => i.url === url)) {
+            newImages.push({ id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, url });
+          }
+        });
+        
+        const repUrl = reps[charId];
+        if (repUrl) {
+           newImages.forEach(i => i.isRepresentative = (i.url === repUrl));
+        }
+        
+        next[charId] = { ...next[charId], images: newImages };
+      }
+      saveToHistory({ charSettings: next });
+      return next;
+    });
+    setIsBulkAllocatorOpen(false);
+  };
+
+
+  const handleBulkImgurFetch = async () => {
+    if (!bulkImgurUrl) return;
+    setIsBulkImgurLoading(true);
+    try {
+      const match = bulkImgurUrl.match(/imgur\.com\/a\/([a-zA-Z0-9]+)/);
+      if (!match) throw new Error('올바른 Imgur 앨범 주소가 아닙니다. (예: https://imgur.com/a/XXXXX)');
+      const albumHash = match[1];
+      const res = await fetch(`https://api.imgur.com/3/album/${albumHash}/images`, {
+        headers: { 'Authorization': 'Client-ID ' + (process.env.VITE_IMGUR_CLIENT_ID || '1480f2d93d7c3b9') }
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error('앨범 정보를 불러올 수 없습니다.');
+      const fetched = data.data.map((img: any) => ({
+        url: img.link,
+        fileName: img.name || img.id,
+        ext: img.type.split('/')[1] || 'png'
+      }));
+      setBulkImages(fetched);
+
+      // 캐릭터 이름 자동 매칭
+      const initialMapping: Record<string, string> = {};
+      fetched.forEach((img: any) => {
+        const fName = (img.fileName || '').toLowerCase();
+        for (const [cId, cSetting] of Object.entries(charSettings)) {
+          const cName = (cSetting.name || '').trim().toLowerCase();
+          if (cName && fName.includes(cName)) {
+            initialMapping[img.url] = cId;
+            break;
+          }
+        }
+      });
+      setBulkImageMapping(initialMapping);
+      setBulkSelectedIllustrations({});
+      setBulkImportStep(1);
+    } catch (e: any) {
+      alert(e.message || 'Imgur 앨범을 불러오는 중 오류가 발생했습니다.');
+    } finally {
+      setIsBulkImgurLoading(false);
+    }
+  };
+
+  const handleIllBulkFetch = async () => {
+    if (!illBulkUrl) return;
+    setIsIllBulkLoading(true);
+    try {
+      const match = illBulkUrl.match(/imgur\.com\/a\/([a-zA-Z0-9]+)/);
+      if (!match) throw new Error('올바른 Imgur 앨범 주소가 아닙니다.');
+      const albumHash = match[1];
+      const res = await fetch(`https://api.imgur.com/3/album/${albumHash}/images`, {
+        headers: { 'Authorization': 'Client-ID ' + (process.env.VITE_IMGUR_CLIENT_ID || '1480f2d93d7c3b9') }
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error('앨범 정보를 불러올 수 없습니다.');
+      const fetched = data.data.map((img: any) => ({
+        url: img.link,
+        fileName: img.name || img.id,
+        ext: img.type.split('/')[1] || 'png'
+      }));
+      setIllBulkImages(fetched);
+      const initSelected: Record<string, boolean> = {};
+      fetched.forEach((f: any) => initSelected[f.url] = true);
+      setSelectedIllBulkImages(initSelected);
+    } catch (e: any) {
+      alert(e.message || '오류가 발생했습니다.');
+    } finally {
+      setIsIllBulkLoading(false);
+    }
+  };
+
+  const applyBulkImages = () => {
+    setCharSettings(prev => {
+      const next = { ...prev };
+      bulkImages.forEach(img => {
+        const charId = bulkImageMapping[img.url];
+        if (charId && next[charId]) {
+          const arr = next[charId].images || [];
+          if (!arr.find(i => i.url === img.url)) {
+            const isFirst = arr.length === 0;
+            const expressionName = img.fileName ? img.fileName.replace(/\.[^/.]+$/, "") : "";
+            arr.push({ 
+              id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, 
+              url: img.url, 
+              isRepresentative: isFirst,
+              name: expressionName
+            });
+            next[charId].images = arr;
+            if (isFirst || !next[charId].imageUrl) {
+              next[charId].imageUrl = img.url;
+            }
+          }
+        }
+      });
+      saveToHistory({ charSettings: next });
+      return next;
+    });
+    
+    // 캐릭터로 미지정된 이미지 중 삽화로 선택된 것 추가
+    const illLogs: LogEntry[] = [];
+    bulkImages.forEach((img, idx) => {
+      const isChar = !!bulkImageMapping[img.url];
+      if (!isChar && bulkSelectedIllustrations[img.url]) {
+        illLogs.push({
+          id: `ill_${Date.now()}_${idx}`,
+          color: '',
+          tabId: 'main',
+          tab: 'main',
+          charId: 'system',
+          name: '',
+          content: img.url,
+          isCommand: false,
+          isContinuation: false,
+          isHiddenContent: false,
+          isIllustration: true,
+          tabOverride: 'auto',
+          width: defaultIllWidth,
+          align: defaultIllAlign
+        });
+      }
+    });
+    
+    if (illLogs.length > 0 && logs.length > 0) {
+      const nextLogs = [...logs];
+      nextLogs.splice(0, 0, ...illLogs);
+      setLogs(nextLogs);
+      saveToHistory({ logs: nextLogs });
+    }
+    
+    setIsBulkImgurModalOpen(false);
+  };
+
+  const applyIllBulkImages = () => {
+    const selected = illBulkImages.filter(img => selectedIllBulkImages[img.url]);
+    if (selected.length === 0) return;
+    
+    const newLogs = selected.map((img, idx) => ({
+      id: `ill_bulk_${Date.now()}_${idx}`,
+      color: '',
+      tabId: 'main',
+      tab: 'main',
+      charId: 'system',
+      name: '',
+      content: img.url,
+      isCommand: false,
+      isContinuation: false,
+      isHiddenContent: false,
+      isIllustration: true,
+      tabOverride: 'auto',
+      width: defaultIllWidth,
+      align: defaultIllAlign
+    }));
+    
+    if (logs.length > 0) {
+      const nextLogs = [...logs];
+      nextLogs.splice(0, 0, ...newLogs);
+      setLogs(nextLogs);
+      saveToHistory({ logs: nextLogs });
+    }
+    setIsIllBulkModalOpen(false);
+  };
+
+  const addCharacterImage = (charId: string, url: string) => {
+    setCharSettings(prev => {
+      const next = { ...prev };
+      if (next[charId]) {
+        const arr = next[charId].images || [];
+        if (!arr.find(i => i.url === url)) {
+          const isFirst = arr.length === 0;
+          arr.push({ id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, url, isRepresentative: isFirst });
+          next[charId].images = arr;
+          if (isFirst || !next[charId].imageUrl) {
+            next[charId].imageUrl = url;
+          }
+        }
+      }
+      saveToHistory({ charSettings: next });
+      return next;
+    });
+  };
+
+  const removeCharacterImage = (charId: string, idOrUrl: string) => {
+    setCharSettings(prev => {
+      const next = { ...prev };
+      if (next[charId]) {
+        const arr = next[charId].images || [];
+        const wasRep = arr.find(i => i.id === idOrUrl || i.url === idOrUrl)?.isRepresentative;
+        next[charId].images = arr.filter(u => u.id !== idOrUrl && u.url !== idOrUrl);
+        if (next[charId].images.length > 0) {
+          if (wasRep || !next[charId].images.some(i => i.isRepresentative)) {
+            next[charId].images[0].isRepresentative = true;
+            next[charId].imageUrl = next[charId].images[0].url;
+          }
+        } else {
+          next[charId].imageUrl = '';
+        }
+      }
+      saveToHistory({ charSettings: next });
+      return next;
+    });
+  };
+
+  const setRepresentativeImage = (charId: string, idOrUrl: string) => {
+    setCharSettings(prev => {
+      const next = { ...prev };
+      if (next[charId] && next[charId].images) {
+        let repUrl = '';
+        next[charId].images = next[charId].images!.map((i: any) => {
+          const isRep = (i.id === idOrUrl || i.url === idOrUrl);
+          if (isRep) repUrl = i.url;
+          return { ...i, isRepresentative: isRep };
+        });
+        if (repUrl) {
+          next[charId].imageUrl = repUrl;
+        }
+      }
+      saveToHistory({ charSettings: next });
+      return next;
+    });
+  };
+
+  const updateCharacterImageName = (charId: string, idOrUrl: string, name: string) => {
+    setCharSettings(prev => {
+      const next = { ...prev };
+      if (next[charId] && next[charId].images) {
+        next[charId].images = next[charId].images!.map((i: any) => 
+          (i.id === idOrUrl || i.url === idOrUrl) ? { ...i, name } : i
+        );
+      }
+      saveToHistory({ charSettings: next });
+      return next;
+    });
+  };
+
   const handleApplyBulkIllustrationSettings = useCallback(() => {
     if (files.length > 0) {
       setFiles(prevFiles => prevFiles.map(f => ({
@@ -2923,8 +2287,8 @@ export default function App() {
   const sortedCharOrder = useMemo(() => {
     if (charSortMode === 'appearance') return charOrder;
     return [...charOrder].sort((idA, idB) => {
-      const a = charSettings[idA]?.name || 'Unknown';
-      const b = charSettings[idB]?.name || 'Unknown';
+      const a = charSettings[idA]?.name ?? 'Unknown';
+      const b = charSettings[idB]?.name ?? 'Unknown';
 
       // Handle "Unknown" or empty names by putting them at the end
       if (a === 'Unknown' && b !== 'Unknown') return 1;
@@ -2943,8 +2307,8 @@ export default function App() {
   const sortedTabOrder = useMemo(() => {
     if (tabSortMode === 'appearance') return tabOrder;
     return [...tabOrder].sort((idA, idB) => {
-      const a = tabSettings[idA]?.name || 'Unknown';
-      const b = tabSettings[idB]?.name || 'Unknown';
+      const a = tabSettings[idA]?.name ?? 'Unknown';
+      const b = tabSettings[idB]?.name ?? 'Unknown';
 
       // Handle "Unknown" or empty names by putting them at the end
       if (a === 'Unknown' && b !== 'Unknown') return 1;
@@ -3292,19 +2656,31 @@ export default function App() {
     return result;
   };
 
-  const getCombinedHtmlString = () => {
-    const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
-    const fileList = files.length > 0 ? files : (activeFile ? [activeFile] : []);
-    const combinedLogsList: LogEntry[] = [];
-    const combinedBlocks: Record<string, InsertedBlock[]> = {};
-    const combinedIllustrations: Illustration[] = [];
+  const getCombinedHtmlString = async () => {
+    setIsConverting(true);
+    try {
+      const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
+      const fileList = files.length > 0 ? files : (activeFile ? [activeFile] : []);
+      const combinedLogsList: LogEntry[] = [];
+      const combinedBlocks: Record<string, InsertedBlock[]> = {};
 
-    fileList.forEach(file => {
-      combinedLogsList.push(...file.logs);
-      if (file.insertedBlocks) {
-        Object.assign(combinedBlocks, file.insertedBlocks);
-      }
-      file.logs.forEach((log, idx) => {
+      fileList.forEach(file => {
+        combinedLogsList.push(...file.logs);
+        if (file.insertedBlocks) {
+          Object.assign(combinedBlocks, file.insertedBlocks);
+        }
+      });
+
+      // Process images (convert external & imgur images to WebP data URLs for HTML mode)
+      const { charSettings: processedChars, blocks: processedBlocks, logs: processedLogs } = await processImagesForExport(charSettings, combinedBlocks, combinedLogsList, exportMode);
+
+      const filteredLogs = processedLogs.filter(log => 
+        tabSettings[log.tabId]?.visible && 
+        (charSettings[log.charId]?.visible !== false)
+      );
+
+      const combinedIllustrations: Illustration[] = [];
+      processedLogs.forEach((log, idx) => {
         if (log.isIllustration) {
           combinedIllustrations.push({
             id: log.id,
@@ -3317,53 +2693,55 @@ export default function App() {
           });
         }
       });
-    });
 
-    const filteredLogs = combinedLogsList.filter(log => 
-      tabSettings[log.tabId]?.visible && 
-      (charSettings[log.charId]?.visible !== false)
-    );
-
-    return generateFinalHtmlStr(
-      filteredLogs,
-      combinedLogsList,
-      charSettings,
-      tabSettings,
-      cssFormat,
-      theme,
-      darkBgColor,
-      lightBgColor,
-      filterBarMode,
-      fontSize,
-      fontFamily,
-      disableOtherColor,
-      hideEmptyAvatars,
-      cropFaceTop,
-      hideAllAvatars,
-      narrationCharacter,
-      enableSentenceSpacing,
-      enableSecretNarration,
-      narrationFormat,
-      combinedBlocks,
-      mergeTabs,
-      mergeTabStyles,
-      showTabNames,
-      pageTitle || (fileList[0]?.name) || '연속로그_통합',
-      selectedFont.value,
-      textFontSize,
-      lineHeight,
-      letterSpacing,
-      blockSpacing,
-      contentPadding,
-      avatarSizeValue,
-      showLogDivider,
-      combinedIllustrations,
-      combinedLogsList
-    );
+      return generateFinalHtmlStr(
+        filteredLogs,
+        processedLogs,
+        processedChars,
+        tabSettings,
+        cssFormat,
+        theme,
+        darkBgColor,
+        lightBgColor,
+        filterBarMode,
+        fontSize,
+        fontFamily,
+        disableOtherColor,
+        hideEmptyAvatars,
+        cropFaceTop,
+        hideAllAvatars,
+        narrationCharacter,
+        narrationCharacter2,
+        enableSentenceSpacing,
+        enableSentenceSpacing2,
+        enableSecretNarration,
+        enableSecretNarration2,
+        narrationFormat,
+        narrationFormat2,
+        processedBlocks,
+        mergeTabs,
+        mergeTabStyles,
+        showTabNames,
+        pageTitle || (fileList[0]?.name) || '연속로그_통합',
+        selectedFont.value,
+        textFontSize,
+        lineHeight,
+        letterSpacing,
+        blockSpacing,
+        contentPadding,
+        avatarSizeValue,
+        showLogDivider,
+        combinedIllustrations,
+        processedLogs,
+        exportMode
+      );
+    } finally {
+      setIsConverting(false);
+    }
   };
 
-  const downloadCombinedHtml = () => {
-    const html = getCombinedHtmlString();
+  const downloadCombinedHtml = async () => {
+    const html = await getCombinedHtmlString();
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -3376,16 +2754,21 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const getHtmlStringForFile = (targetFile: LogFile, sectionId?: string) => {
-    const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
+  const getHtmlStringForFile = async (targetFile: LogFile, sectionId?: string) => {
+    setIsConverting(true);
+    try {
+      const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
     const fileLogs = targetFile.logs;
     const fileBlocks = targetFile.insertedBlocks || {};
 
+    // Process images first (converting external & imgur images to WebP data URLs for HTML mode)
+    const { charSettings: processedChars, blocks: processedBlocks, logs: processedFileLogs } = await processImagesForExport(charSettings, fileBlocks as any, fileLogs, exportMode);
+
     const fileSections = getFileSectionsList(targetFile);
     let secIdx = 0;
-    const processedLogs = fileLogs.map((log) => {
+    const processedLogs = processedFileLogs.map((log) => {
       const currentSecId = fileSections.length > 0 ? (fileSections[secIdx]?.id || `sec_${secIdx}`) : undefined;
-      const isSplit = (fileBlocks[log.id] as any)?.some((b: any) => b.type === 'split');
+      const isSplit = (processedBlocks[log.id] as any)?.some((b: any) => b.type === 'split');
       if (isSplit) {
         secIdx++;
       }
@@ -3401,7 +2784,7 @@ export default function App() {
       (charSettings[log.charId]?.visible !== false)
     );
 
-    const fileIllustrations: Illustration[] = fileLogs
+    const fileIllustrations: Illustration[] = targetLogs
       .map((log, idx) => ({ log, idx }))
       .filter(({ log }) => log.isIllustration === true)
       .map(({ log, idx }) => ({
@@ -3416,8 +2799,8 @@ export default function App() {
 
     return generateFinalHtmlStr(
       filteredLogs,
-      processedLogs,
-      charSettings,
+      targetLogs,
+      processedChars,
       tabSettings,
       cssFormat,
       theme,
@@ -3431,10 +2814,14 @@ export default function App() {
       cropFaceTop,
       hideAllAvatars,
       narrationCharacter,
+      narrationCharacter2,
       enableSentenceSpacing,
+      enableSentenceSpacing2,
       enableSecretNarration,
+      enableSecretNarration2,
       narrationFormat,
-      fileBlocks as unknown as Record<string, InsertedBlock[]>,
+      narrationFormat2,
+      processedBlocks as unknown as Record<string, InsertedBlock[]>,
       mergeTabs,
       mergeTabStyles,
       showTabNames,
@@ -3448,12 +2835,16 @@ export default function App() {
       avatarSizeValue,
       showLogDivider,
       fileIllustrations,
-      fileLogs
+      targetLogs,
+      exportMode
     );
+    } finally {
+      setIsConverting(false);
+    }
   };
 
-  const downloadHtmlForFile = (targetFile: LogFile, section?: { id: string; name: string }) => {
-    const html = getHtmlStringForFile(targetFile, section?.id);
+  const downloadHtmlForFile = async (targetFile: LogFile, section?: { id: string; name: string }) => {
+    const html = await getHtmlStringForFile(targetFile, section?.id);
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -3480,12 +2871,12 @@ export default function App() {
       const fSections = getFileSectionsList(f);
       if (fSections.length > 1) {
         const subFolder = folder?.folder(f.name);
-        fSections.forEach(s => {
-          const html = getHtmlStringForFile(f, s.id);
+        for (const s of fSections) {
+          const html = await getHtmlStringForFile(f, s.id);
           subFolder?.file(`${s.name || s.id}.html`, html);
-        });
+        }
       } else {
-        const html = getHtmlStringForFile(f);
+        const html = await getHtmlStringForFile(f);
         folder?.file(`${f.name}.html`, html);
       }
     }
@@ -3524,9 +2915,13 @@ export default function App() {
       cropFaceTop,
       hideAllAvatars,
       narrationCharacter,
+      narrationCharacter2,
       enableSentenceSpacing,
+      enableSentenceSpacing2,
       enableSecretNarration,
+      enableSecretNarration2,
       narrationFormat,
+      narrationFormat2,
       insertedBlocks,
       mergeTabs,
       mergeTabStyles,
@@ -3541,7 +2936,8 @@ export default function App() {
       avatarSizeValue,
       showLogDivider,
       illustrations,
-      logs
+      logs,
+      exportMode
     );
   };
 
@@ -3593,9 +2989,13 @@ export default function App() {
       cropFaceTop,
         hideAllAvatars,
         narrationCharacter,
+      narrationCharacter2,
         enableSentenceSpacing,
+      enableSentenceSpacing2,
         enableSecretNarration,
+      enableSecretNarration2,
         narrationFormat,
+      narrationFormat2,
         insertedBlocks,
         mergeTabs,
         mergeTabStyles,
@@ -3610,7 +3010,8 @@ export default function App() {
         avatarSizeValue,
         showLogDivider,
         illustrations,
-        logs
+        logs,
+        exportMode
       );
       
       const finalName = s.name ? `${fileName}_${s.name}` : `${fileName}_section_${i + 1}`;
@@ -3632,6 +3033,11 @@ export default function App() {
       scrollPositions.current[activeTab] = sidebarScrollRef.current.scrollTop;
     }
     setActiveTab(newTab);
+    if (newTab !== 'chars') {
+      setPinnedCharPanel(null);
+      setActiveColorPicker(null);
+      setPanelTriggerRect(null);
+    }
   };
 
   const handleGlobalDrop = async (e: React.DragEvent) => {
@@ -3642,15 +3048,30 @@ export default function App() {
     const droppedFiles = Array.from(e.dataTransfer.files || []) as File[];
     if (droppedFiles.length === 0) return;
 
-    const htmlFilesRaw = droppedFiles.filter(f => f.name.toLowerCase().endsWith('.html') || f.name.toLowerCase().endsWith('.htm'));
-    const htmlFiles = ENABLE_MULTI_FILE_UI ? htmlFilesRaw : htmlFilesRaw.slice(0, 1);
-    const jsonFile = droppedFiles.find(f => f.name.toLowerCase().endsWith('.json'));
+    // Check each file with inspectUploadedFile
+    const fileInspections = await Promise.all(
+      droppedFiles.map(async f => ({ file: f, res: await inspectUploadedFile(f) }))
+    );
 
-    if (jsonFile) {
-      const mockEvent = { target: { files: [jsonFile] } } as any;
+    const validFiles = fileInspections.filter(item => item.res.valid);
+    if (validFiles.length === 0) {
+      window.alert("지원하지 않는 형식의 파일입니다. 코코포리아 로그(HTML/신버전 JSON) 또는 프로젝트 파일(.json)을 업로드해주세요.");
+      return;
+    }
+
+    // 1. If there's an app_project file dropped
+    const projectItem = validFiles.find(item => item.res.type === 'app_project');
+    if (projectItem) {
+      const mockEvent = { target: { files: [projectItem.file] } } as any;
       await handleProjectUpload(mockEvent);
-    } else if (htmlFiles.length > 0) {
-      const mockEvent = { target: { files: htmlFiles } } as any;
+      return;
+    }
+
+    // 2. Otherwise handle log files (cocofolia_html or cocofolia_json)
+    const logItems = validFiles.filter(item => item.res.type === 'cocofolia_html' || item.res.type === 'cocofolia_json');
+    if (logItems.length > 0) {
+      const filesToProcess = ENABLE_MULTI_FILE_UI ? logItems.map(i => i.file) : [logItems[0].file];
+      const mockEvent = { target: { files: filesToProcess } } as any;
       if (files.length > 0) {
         await handleAdditionalLogUpload(mockEvent);
       } else {
@@ -3676,9 +3097,13 @@ export default function App() {
       cropFaceTop,
       hideAllAvatars,
       narrationCharacter,
+      narrationCharacter2,
       enableSentenceSpacing,
+      enableSentenceSpacing2,
       enableSecretNarration,
+      enableSecretNarration2,
       narrationFormat,
+      narrationFormat2,
       lineHeight,
       letterSpacing,
       blockSpacing,
@@ -3826,33 +3251,108 @@ export default function App() {
                 className="space-y-6"
               >
                 <Section>
+                  <div className="flex justify-end mb-4">
+                    <button 
+                      type="button"
+                      onClick={handleLoadDemo}
+                      className="flex items-center gap-1.5 text-[11px] font-medium text-white/50 hover:text-white/90 cursor-pointer px-1"
+                    >
+                      <Info className="w-3.5 h-3.5" /> 데모 로그 보기 (간단 설명서)
+                    </button>
+                  </div>
+                  <div className="mb-6">
+                    <SectionTitle icon={FileOutput} title="내보내기 설정" />
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <button
+                        onClick={() => setExportMode('html')}
+                        className={`w-full py-2 px-3 rounded-xl border-2 transition-all cursor-pointer text-[11px] font-bold ${
+                          exportMode === 'html'
+                            ? 'bg-[#e6005c] border-[#e6005c] text-white'
+                            : 'bg-white/5 border-white/5 text-white/50 hover:border-white/10'
+                        }`}
+                      >
+                        HTML 다운로드용
+                      </button>
+                      <button
+                        onClick={() => setExportMode('blog')}
+                        className={`w-full py-2 px-3 rounded-xl border-2 transition-all cursor-pointer text-[11px] font-bold ${
+                          exportMode === 'blog'
+                            ? 'bg-[#e6005c] border-[#e6005c] text-white'
+                            : 'bg-white/5 border-white/5 text-white/50 hover:border-white/10'
+                        }`}
+                      >
+                        블로그 복붙용
+                      </button>
+                    </div>
+                    <div className="mt-2 p-3 bg-white/5 rounded-xl border border-white/5 text-[11px] leading-relaxed">
+                      {exportMode === 'html' ? (
+                        <div className="text-white/90">
+                          HTML 파일 속에 스탠딩/삽화 이미지가 WebP 형식으로 내장되며, 오프라인 열람이 가능합니다. (BGM 기능 사용 불가)
+                        </div>
+                      ) : (
+                        <div className="text-white/90">
+                          티스토리 등 외부 블로그에 붙여넣는 용으로 코드를 단축한 버전입니다. 스탠딩 이미지를 외부 링크로 교체하는 것을 권장합니다.<br />
+                          <span className="text-white/50">일괄 교체 방법: ① 신버전 JSON 로그 파일 업로드 후 '이미지 추출 다운로드' 버튼 클릭. ② 이미지를 ZIP 파일로 저장. ③ 저장된 이미지를 전부 선택해 Imgur에 업로드. ④ Imgur 앨범 링크를 복사해 붙여넣고 '불러오기' 버튼 클릭.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <SectionTitle icon={MessageSquare} title="로그 업로드" />
-                  <label 
-                    htmlFor="main-log-upload"
-                    className="w-full h-[50px] px-3 flex items-center justify-between border-2 border-dashed border-white/5 rounded-xl hover:border-[#e6005c] hover:bg-pink-500/5 transition-all group cursor-pointer mb-3"
-                  >
-                    <div className="flex items-center gap-3 overflow-hidden">
+                  <div className={cn(
+                    "w-full h-[50px] px-3 flex items-center justify-between border-2 border-dashed rounded-xl transition-all group mb-3 relative",
+                    (files.length > 0 || activeFile)
+                      ? "border-white/10 bg-white/[0.02] hover:border-white/20"
+                      : "border-white/5 hover:border-[#e6005c] hover:bg-pink-500/5"
+                  )}>
+                    <label 
+                      htmlFor="main-log-upload"
+                      className="flex items-center gap-3 overflow-hidden flex-1 h-full cursor-pointer py-1.5 min-w-0"
+                    >
                       <div className="p-1.5 rounded-lg bg-[#242424] group-hover:bg-[#e6005c]/20 transition-colors shrink-0">
-                        <Upload className="w-3.5 h-3.5 text-white/50 group-hover:text-[#e6005c] transition-colors" />
+                        {(files.length > 0 || activeFile) ? (
+                          <FileText className="w-3.5 h-3.5 text-[#e6005c]" />
+                        ) : (
+                          <Upload className="w-3.5 h-3.5 text-white/50 group-hover:text-[#e6005c] transition-colors" />
+                        )}
                       </div>
                       <div className="text-left w-full overflow-hidden">
                         <p className="text-[11px] font-bold text-white/80 truncate">
-                          HTML 로그 파일 선택 {ENABLE_MULTI_FILE_UI && '(다중 선택 가능)'}
+                          {files.length > 0 
+                            ? (files.length === 1 ? files[0].name : `${files[0].name} 외 ${files.length - 1}개 파일`) 
+                            : activeFile 
+                              ? activeFile.name 
+                              : "로그 파일 선택 (구버전 HTML/신버전 JSON)"}
                         </p>
                       </div>
-                    </div>
-                  </label>
-                  
-                  <button 
-                    type="button"
-                    onClick={handleLoadDemo}
-                    className="flex items-center gap-1.5 text-[11px] font-medium text-white/50 hover:text-white/90 cursor-pointer px-1 mb-4"
-                  >
-                    <Info className="w-3.5 h-3.5" /> 데모 로그 보기 (간단 설명서)
-                  </button>
+                    </label>
 
-                  <input type="file" id="main-log-upload" ref={fileInputRef} onChange={handleLogUpload} accept=".html" multiple={ENABLE_MULTI_FILE_UI ? true : undefined} className="hidden" />
-                  <input type="file" ref={additionalFileInputRef} onChange={handleAdditionalLogUpload} accept=".html" multiple={ENABLE_MULTI_FILE_UI ? true : undefined} className="hidden" />
+                    {(files.length > 0 || activeFile) && (
+                      <button
+                        type="button"
+                        onClick={handleClearUploadedFiles}
+                        className="p-1.5 hover:bg-red-500/20 text-white/40 hover:text-red-400 rounded-lg transition-colors shrink-0 ml-1.5 z-10 cursor-pointer"
+                        title="파일 업로드 취소 (파일 삭제)"
+                        aria-label="파일 업로드 취소"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  {exportMode === 'blog' && (
+                    <button 
+                      type="button"
+                      onClick={() => setShowJsonExtractor(true)}
+                      className="flex items-center gap-2 text-[12px] font-bold border-2 border-[#e6005c]/50 text-[#e6005c] bg-transparent hover:bg-[#e6005c]/10 hover:border-[#e6005c] hover:shadow-[0_0_15px_rgba(230,0,92,0.15)] transition-all cursor-pointer rounded-xl px-3 py-2 w-full justify-center mb-4"
+                    >
+                      <Download className="w-4 h-4" /> 
+                      이미지 추출 다운로드
+                    </button>
+                  )}
+
+                  <input type="file" id="main-log-upload" ref={fileInputRef} onChange={handleLogUpload} accept=".html,.htm,.json,application/json" multiple={ENABLE_MULTI_FILE_UI ? true : undefined} className="hidden" />
+                  <input type="file" ref={additionalFileInputRef} onChange={handleAdditionalLogUpload} accept=".html,.htm,.json,application/json" multiple={ENABLE_MULTI_FILE_UI ? true : undefined} className="hidden" />
 
 
                   {/* Uploaded Files List in Sidebar */}
@@ -4259,7 +3759,7 @@ export default function App() {
                               >
                                 I
                               </button>
-                            </div>
+                                                    </div>
                           </div>
                           <div className="flex items-center gap-3">
                             <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-3 flex-1">
@@ -4370,7 +3870,12 @@ export default function App() {
                           onClick={() => setIsNarrationDropdownOpen(!isNarrationDropdownOpen)}
                           className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/90 px-2 py-1 outline-none hover:border-white/20 transition-colors"
                         >
-                          <span className="max-w-[100px] truncate">{narrationCharacter ? charSettings[narrationCharacter]?.name || narrationCharacter : '선택 안 함'}</span>
+                          <div className="flex items-center gap-1.5 overflow-hidden">
+                            {narrationCharacter && charSettings[narrationCharacter] && (
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: charSettings[narrationCharacter].color }}></span>
+                            )}
+                            <span className="max-w-[100px] truncate">{narrationCharacter ? charSettings[narrationCharacter]?.name || narrationCharacter : '선택 안 함'}</span>
+                          </div>
                           <ChevronDown className="w-3 h-3 opacity-50" />
                         </button>
                         
@@ -4406,7 +3911,7 @@ export default function App() {
                                       narrationCharacter === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
                                     )}
                                   >
-                                    {char.name}
+                                    {char.name || '(이름 없음)'}
                                   </button>
                                 );
                               })}
@@ -4476,7 +3981,129 @@ export default function App() {
                       </div>
                     )}
                     </div>
-                    
+
+                    {narrationCharacter && (
+                      <div className="bg-white/5 border border-white/5 rounded-xl shadow-sm transition-all flex flex-col mt-2">
+                        <div className="flex items-center justify-between p-3 relative h-11" ref={narrationDropdownRef2}>
+                          <span className="text-[11px] font-bold text-white/80">나레이션 캐릭터 2</span>
+                        <div className="relative">
+                          <button
+                            onClick={() => setIsNarrationDropdownOpen2(!isNarrationDropdownOpen2)}
+                            className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/90 px-2 py-1 outline-none hover:border-white/20 transition-colors"
+                          >
+                            <div className="flex items-center gap-1.5 overflow-hidden">
+                              {narrationCharacter2 && charSettings[narrationCharacter2] && (
+                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: charSettings[narrationCharacter2].color }}></span>
+                              )}
+                              <span className="max-w-[100px] truncate">{narrationCharacter2 ? charSettings[narrationCharacter2]?.name || narrationCharacter2 : '선택 안 함'}</span>
+                            </div>
+                            <ChevronDown className="w-3 h-3 opacity-50" />
+                          </button>
+                            
+                          {isNarrationDropdownOpen2 && (
+                            <div className="absolute right-0 top-full mt-1 w-40 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                              <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-1">
+                                <button
+                                  onClick={(e) => {
+                                    setNarrationCharacter2(null);
+                                    saveToHistory({ narrationCharacter2: null });
+                                    setIsNarrationDropdownOpen2(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
+                                    !narrationCharacter2 ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                  )}
+                                >
+                                  선택 안 함
+                                </button>
+                                {Object.keys(charSettings).map(charId => {
+                                  const char = charSettings[charId];
+                                  if (!char) return null;
+                                  return (
+                                    <button
+                                      key={charId}
+                                      onClick={(e) => {
+                                        setNarrationCharacter2(charId);
+                                        saveToHistory({ narrationCharacter2: charId });
+                                        setIsNarrationDropdownOpen2(false);
+                                      }}
+                                      className={cn(
+                                        "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
+                                        narrationCharacter2 === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                      )}
+                                    >
+                                      {char.name || '(이름 없음)'}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {narrationCharacter2 && (
+                        <div className="flex flex-col border-t border-white/5">
+                          <div className="flex items-center justify-between p-3 h-11 relative">
+                            <span className="text-[11px] font-bold text-white/80 shrink-0">나레이션 2 출력 디자인</span>
+                            <div className="flex bg-black/20 border border-white/5 rounded-lg p-0.5 gap-0.5 ml-2">
+                              <button
+                                onClick={(e) => { setNarrationFormat2('style1'); saveToHistory({ narrationFormat2: 'style1' }); }}
+                                className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                  narrationFormat2 === 'style1'
+                                    ? 'bg-[#e6005c] text-white shadow-sm'
+                                    : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+                                }`}
+                              >
+                                기본
+                              </button>
+                              <button
+                                onClick={(e) => { setNarrationFormat2('style2'); saveToHistory({ narrationFormat2: 'style2' }); }}
+                                className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                  narrationFormat2 === 'style2'
+                                    ? 'bg-[#e6005c] text-white shadow-sm'
+                                    : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+                                }`}
+                              >
+                                이탤릭
+                              </button>
+                              <button
+                                onClick={(e) => { setNarrationFormat2('style3'); saveToHistory({ narrationFormat2: 'style3' }); }}
+                                className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                  narrationFormat2 === 'style3'
+                                    ? 'bg-[#e6005c] text-white shadow-sm'
+                                    : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+                                }`}
+                              >
+                                단락
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between p-3 h-11 border-t border-white/5">
+                            <span className="text-[11px] font-bold text-white/80">나레이션 2 문단 자동 나누기</span>
+                            <Toggle 
+                              enabled={enableSentenceSpacing2} 
+                              onChange={(val) => {
+                                setEnableSentenceSpacing2(val);
+                                saveToHistory({ enableSentenceSpacing2: val });
+                              }} 
+                            />
+                          </div>
+                          <div className="flex items-center justify-between p-3 h-11 border-t border-white/5">
+                            <span className="text-[11px] font-bold text-white/80">비밀탭에도 적용 (나레이션 2)</span>
+                            <Toggle 
+                              enabled={enableSecretNarration2} 
+                              onChange={(val) => {
+                                setEnableSecretNarration2(val);
+                                saveToHistory({ enableSecretNarration2: val });
+                              }} 
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    )}
+
                   </div>
                 </Section>
 
@@ -4588,7 +4215,7 @@ export default function App() {
                                                       <img key={i} src={c.imageUrl} className={cn("object-cover rounded-md", thumbSizeClass)} alt="" referrerPolicy="no-referrer" />
                                                     ) : (
                                                       <div key={i} className={cn("bg-black/20 flex items-center justify-center shrink-0 rounded-md", thumbSizeClass)}>
-                                                        <User className={cn("text-white/30", userIconSize)} />
+                                                        
                                                       </div>
                                                     )
                                                 ))}
@@ -4599,9 +4226,7 @@ export default function App() {
                                         <div className="w-8 h-8 rounded-lg outline-none shrink-0 border border-white/5 bg-[#1a1a1a] flex items-center justify-center relative">
                                           {lib.characters[0]?.imageUrl ? (
                                               <img src={lib.characters[0].imageUrl} className="w-full h-full object-cover rounded-lg" alt="" referrerPolicy="no-referrer" />
-                                            ) : (
-                                              <User className="w-4 h-4 text-white/30" />
-                                          )}
+                                            ) : ( <></> )}
                                         </div>
                                       </Tooltip>
                                       
@@ -4747,9 +4372,7 @@ export default function App() {
                                                         <div className="w-[28px] h-[28px] rounded-md overflow-hidden bg-black/40 border border-white/5 shrink-0 flex items-center justify-center z-10">
                                                           {c.imageUrl ? (
                                                             <img src={c.imageUrl} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
-                                                          ) : (
-                                                            <User className="w-4 h-4 text-white/30" />
-                                                          )}
+                                                          ) : ( <></> )}
                                                         </div>
                                                         <span className="truncate flex-1 font-medium group-hover:text-white transition-colors z-10 relative">{c.name}</span>
                                                       </button>
@@ -4923,7 +4546,7 @@ export default function App() {
                             </div>
                           ) : (
                             <div className="flex items-center gap-1 w-24 shrink-0 overflow-visible relative h-7">
-                              <CharacterNameWithTooltip name={char.name} />
+                              <CharacterNameWithTooltip name={char.name || '(이름 없음)'} />
                               <button 
                                 onClick={(e) => { setRenamingChar(char.id); setNewNameInput(char.name); }}
                                 className="p-0.5 text-white/30 hover:text-[#e6005c] transition-colors"
@@ -4949,71 +4572,99 @@ export default function App() {
                             />
                           </div>
 
-                          <input 
-                            type="text" 
-                            placeholder="이미지 URL"
-                            value={char.imageUrl}
-                            onChange={(e) => {
-                              const next = { ...charSettings, [char.id]: { ...char, imageUrl: e.target.value } };
-                              setCharSettings(next);
-                            }}
-                            onBlur={() => {
-                              saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
-                            }}
-                            className="flex-1 min-w-0 text-[10px] px-2 h-7 bg-black/20 border border-white/5 rounded-lg outline-none focus:border-[#e6005c] text-white/90 transition-colors"
-                          />
-                          
-                          <div 
-                            className="group/charimg relative w-7 h-7 rounded-lg bg-black/20 border border-white/5 shrink-0 flex items-center justify-center ml-auto cursor-pointer"
-                            onMouseEnter={(e) => {
-                              if (panelHoverTimeout.current) clearTimeout(panelHoverTimeout.current);
-                              if (pinnedCharPanel !== char.id) {
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                setPanelTriggerRect(rect);
-                                setActiveColorPicker(char.id + '_panel');
-                              }
-                            }}
-                            onMouseLeave={() => {
-                              if (pinnedCharPanel !== char.id) {
-                                panelHoverTimeout.current = setTimeout(() => {
-                                  setActiveColorPicker(null);
-                                  setPanelTriggerRect(null);
-                                }, 150);
-                              }
-                            }}
-                            onClick={(e) => {
-                              if (pinnedCharPanel === char.id) {
-                                setPinnedCharPanel(null);
-                                // Don't close on click because we are still hovering
-                              } else {
-                                setPinnedCharPanel(char.id);
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                setPanelTriggerRect(rect);
-                                setActiveColorPicker(char.id + '_panel');
-                              }
-                            }}
-                          >
-                            {char.imageUrl ? (
-                              <img src={char.imageUrl} alt="" referrerPolicy="no-referrer" className="max-w-full max-h-full object-cover rounded-lg" />
-                            ) : (
-                              <ImageIcon className="w-3.5 h-3.5 text-white/10" />
-                            )}
-                            
-                            {/* 뱃지 */}
-                            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border border-[#222] flex items-center justify-center bg-[#333] shadow-sm z-10 transition-colors"
-                              style={{ 
-                                backgroundColor: char.images && char.images.length > 1 ? '#e6005c' : '#333'
-                              }}
-                            >
-                              {char.images && char.images.length > 1 ? (
-                                <span className="text-[7px] font-bold text-white leading-none">
-                                  {char.images.length}
-                                </span>
-                              ) : (
-                                <span className="text-[8px] font-bold text-white/50 leading-none pb-[1px]">+</span>
-                              )}
-                            </div>
-                          </div>
+                          {(() => {
+                            const repImgUrl = char.images?.find(i => i.isRepresentative)?.url || (char.images && char.images.length > 0 ? char.images[0].url : '') || char.imageUrl || '';
+                            return (
+                              <>
+                                <input 
+                                  type="text" 
+                                  placeholder="이미지 URL"
+                                  value={repImgUrl}
+                                  onChange={(e) => {
+                                    const newUrl = e.target.value;
+                                    const updatedImages = [...(char.images || [])];
+                                    if (updatedImages.length > 0) {
+                                      const repIdx = updatedImages.findIndex(i => i.isRepresentative);
+                                      if (repIdx >= 0) {
+                                        updatedImages[repIdx] = { ...updatedImages[repIdx], url: newUrl };
+                                      } else {
+                                        updatedImages[0] = { ...updatedImages[0], url: newUrl, isRepresentative: true };
+                                      }
+                                    } else if (newUrl.trim()) {
+                                      updatedImages.push({
+                                        id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                        url: newUrl,
+                                        isRepresentative: true
+                                      });
+                                    }
+                                    const next = { 
+                                      ...charSettings, 
+                                      [char.id]: { 
+                                        ...char, 
+                                        imageUrl: newUrl,
+                                        images: updatedImages
+                                      } 
+                                    };
+                                    setCharSettings(next);
+                                  }}
+                                  onBlur={() => {
+                                    saveToHistory({ charSettings, tabSettings, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
+                                  }}
+                                  className="flex-1 min-w-0 text-[10px] px-2 h-7 bg-black/20 border border-white/5 rounded-lg outline-none focus:border-[#e6005c] text-white/90 transition-colors"
+                                />
+                                
+                                <div 
+                                  className="group/charimg relative w-7 h-7 rounded-lg bg-black/40 border border-white/5 shrink-0 flex items-center justify-center ml-auto cursor-pointer"
+                                  onMouseEnter={(e) => {
+                                    if (panelHoverTimeout.current) clearTimeout(panelHoverTimeout.current);
+                                    if (pinnedCharPanel !== char.id) {
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setPanelTriggerRect(rect);
+                                      setActiveColorPicker(char.id + '_panel');
+                                    }
+                                  }}
+                                  onMouseLeave={() => {
+                                    if (pinnedCharPanel !== char.id) {
+                                      panelHoverTimeout.current = setTimeout(() => {
+                                        setActiveColorPicker(null);
+                                        setPanelTriggerRect(null);
+                                      }, 150);
+                                    }
+                                  }}
+                                  onClick={(e) => {
+                                    if (pinnedCharPanel === char.id) {
+                                      setPinnedCharPanel(null);
+                                      // Don't close on click because we are still hovering
+                                    } else {
+                                      setPinnedCharPanel(char.id);
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setPanelTriggerRect(rect);
+                                      setActiveColorPicker(char.id + '_panel');
+                                    }
+                                  }}
+                                >
+                                  {repImgUrl ? (
+                                    <img src={repImgUrl} alt="" referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain p-0.5 rounded-lg" />
+                                  ) : ( <></> )}
+                                  
+                                  {/* 뱃지 */}
+                                  <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border border-[#222] flex items-center justify-center bg-[#333] shadow-sm z-10 transition-colors"
+                                    style={{ 
+                                      backgroundColor: char.images && char.images.length > 1 ? '#e6005c' : '#333'
+                                    }}
+                                  >
+                                    {char.images && char.images.length > 1 ? (
+                                      <span className="text-[7px] font-bold text-white leading-none">
+                                        {char.images.length}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[8px] font-bold text-white/50 leading-none pb-[1px]">+</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       );
                     };
@@ -5834,7 +5485,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/30 hover:text-white/50 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.10.17</span>
+            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.11.1</span>
           </div>
         </div>
       </aside>
@@ -6016,67 +5667,109 @@ export default function App() {
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2"
+                      className="absolute right-0 mt-2 w-[320px] bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden py-2 flex flex-col"
                     >
-                      <div className="space-y-0.5">
-                        <div className="px-3 py-1"><p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">설정 (Settings)</p></div>
-                        {[
-                          { id: 'tabs', label: '탭' },
-                          { id: 'chars', label: '캐릭터' },
-                          { id: 'design', label: '디자인' },
-                        ].map((item) => (
-                          <label key={item.id} className="flex items-center gap-2.5 p-1.5 px-3 hover:bg-white/5 rounded-lg transition-colors cursor-pointer group">
-                            <input 
-                              type="checkbox"
-                              checked={(saveOptions as any)[item.id]}
-                              onChange={(e) => setSaveOptions(prev => ({ ...prev, [item.id]: e.target.checked }))}
-                              className="hidden"
-                            />
-                            <div className={cn(
-                              "w-3.5 h-3.5 rounded-sm flex items-center justify-center border transition-colors shrink-0",
-                              (saveOptions as any)[item.id] ? "bg-[#e6005c] border-[#e6005c]" : "bg-white/5 border-white/20 group-hover:border-white/40"
-                            )}>
-                              {(saveOptions as any)[item.id] && <Check className="w-2.5 h-2.5 text-white" />}
+                      {/* Bulk Save Section */}
+                      <div className="px-2 pb-2 border-b border-white/10 mb-2">
+                        {ENABLE_MULTI_FILE_UI ? (
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={async (e) => { try { const html = await getCombinedHtmlString(); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
+                              className="flex-1 p-2 rounded-xl hover:bg-white/5 transition-colors flex flex-col items-center justify-center gap-1 group text-white/70 hover:text-white"
+                            >
+                              <Copy className="w-5 h-5 mb-1 text-white/50 group-hover:text-white transition-colors" />
+                              <span className="text-[11px] font-bold">연속 파일 복사</span>
+                              <span className="text-[9px] opacity-60">전체 통합 복사</span>
+                            </button>
+                            <button 
+                              onClick={async (e) => { await downloadCombinedHtml(); setShowDownloadMenu(false); }}
+                              className="flex-1 p-2 rounded-xl hover:bg-[#e6005c]/10 transition-colors flex flex-col items-center justify-center gap-1 group text-[#e6005c]"
+                            >
+                              <Download className="w-5 h-5 mb-1 opacity-70 group-hover:opacity-100 transition-opacity" />
+                              <span className="text-[11px] font-bold">연속 파일 저장</span>
+                              <span className="text-[9px] opacity-60">전체 통합 저장</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={async (e) => { await downloadAllZip(); setShowDownloadMenu(false); }}
+                            className="w-full py-3 px-2 rounded-xl hover:bg-[#e6005c]/5 transition-colors flex items-center gap-4 text-[#e6005c] group text-left"
+                          >
+                            <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                              <span className="text-[22px] font-light leading-none mb-1">+</span>
                             </div>
-                            <span className="text-[11px] font-bold text-white flex-1">{item.label}</span>
-                          </label>
-                        ))}
+                            <div>
+                              <div className="text-[13px] font-bold tracking-tight">ZIP으로 모두 저장</div>
+                              <div className="text-[11px] opacity-60 mt-0.5">모든 파일/섹션을 압축파일로 저장</div>
+                            </div>
+                          </button>
+                        )}
                       </div>
 
-                      <div className="space-y-0.5 mt-2">
-                        <div className="px-3 py-1"><p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">편집 (Edits)</p></div>
-                        {[
-                          { id: 'splits', label: '섹션 이름 및 분할 위치' },
-                          { id: 'images', label: '이미지 삽입' },
-                          { id: 'edits', label: '대사 수정 내역' },
-                        ].map((item) => (
-                          <label key={item.id} className="flex items-center gap-2.5 p-1.5 px-3 hover:bg-white/5 rounded-lg transition-colors cursor-pointer group">
-                            <input 
-                              type="checkbox"
-                              checked={(saveOptions as any)[item.id]}
-                              onChange={(e) => setSaveOptions(prev => ({ ...prev, [item.id]: e.target.checked }))}
-                              className="hidden"
-                            />
-                            <div className={cn(
-                              "w-3.5 h-3.5 rounded-sm flex items-center justify-center border transition-colors shrink-0",
-                              (saveOptions as any)[item.id] ? "bg-[#e6005c] border-[#e6005c]" : "bg-white/5 border-white/20 group-hover:border-white/40"
-                            )}>
-                              {(saveOptions as any)[item.id] && <Check className="w-2.5 h-2.5 text-white" />}
-                            </div>
-                            <span className="text-[11px] font-bold text-white flex-1">{item.label}</span>
-                          </label>
-                        ))}
+                      <div className="px-3 pb-1">
+                        <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">파일 목록</p>
                       </div>
 
-                      <div className="h-px bg-white/5 my-2" />
-                      
-                      <button 
-                        onClick={(e) => { exportProject(); setShowSaveMenu(false); }}
-                        className="w-full flex items-center justify-center gap-2 p-2.5 bg-[#e6005c] hover:bg-[#ff0066] rounded-xl text-white transition-all text-[11px] font-bold shadow-lg shadow-pink-500/20 mt-1"
-                      >
-                        <FileJson className="w-3.5 h-3.5" />
-                        JSON 저장
-                      </button>
+                      <div className="max-h-80 overflow-y-auto custom-scrollbar flex flex-col px-2">
+                        {(files.length > 0 ? files : (activeFile ? [activeFile] : [])).map((f) => {
+                          const fSections = getFileSectionsList(f);
+                          return (
+                            <div key={f.id} className="mb-2 last:mb-0">
+                              <div className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors group">
+                                <div className="flex items-center gap-2 min-w-0 pr-2">
+                                  <FileText className="w-4 h-4 text-white/40 group-hover:text-[#e6005c] transition-colors shrink-0" />
+                                  <span className="text-[12px] font-bold text-white/90 truncate">{f.name}</span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    onClick={async (e) => { try { const html = await getHtmlStringForFile(f); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
+                                    className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
+                                    title="전체 복사"
+                                  >
+                                    <Copy className="w-3 h-3" /> 복사
+                                  </button>
+                                  <button
+                                    onClick={async (e) => { await downloadHtmlForFile(f); setShowDownloadMenu(false); }}
+                                    className="px-2 py-1 bg-[#e6005c]/20 hover:bg-[#e6005c]/80 text-[#e6005c] hover:text-white rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
+                                    title="전체 저장"
+                                  >
+                                    <Download className="w-3 h-3" /> 저장
+                                  </button>
+                                </div>
+                              </div>
+
+                              {fSections.length > 0 && (
+                                <div className="pl-6 pr-2 py-1 flex flex-col gap-1 border-l-2 border-white/5 ml-3 mt-1">
+                                  {fSections.map((s, sIdx) => (
+                                    <div key={sIdx} className="flex items-center justify-between group/sec py-1 px-2 rounded hover:bg-white/5 transition-colors">
+                                      <div className="flex flex-col min-w-0 pr-2">
+                                        <span className="text-[11px] font-medium text-white/70 truncate">{s.name}</span>
+                                        <span className="text-[9px] text-white/30">{s.startBlock} ~ {s.endBlock}번 블록</span>
+                                      </div>
+                                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/sec:opacity-100 transition-opacity">
+                                        <button
+                                          onClick={async (e) => { try { const html = await getHtmlStringForFile(f, s.id); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
+                                          className="p-1.5 bg-white/5 hover:bg-white/20 text-white/60 hover:text-white rounded transition-colors"
+                                          title="섹션 복사"
+                                        >
+                                          <Copy className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                          onClick={async (e) => { await downloadHtmlForFile(f, s); setShowDownloadMenu(false); }}
+                                          className="p-1.5 bg-[#e6005c]/10 hover:bg-[#e6005c] text-[#e6005c] hover:text-white rounded transition-colors"
+                                          title="섹션 저장"
+                                        >
+                                          <Download className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </motion.div>
                   </>
                 )}
@@ -6101,39 +5794,39 @@ export default function App() {
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 mt-2 w-72 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-2.5 space-y-2"
+                      className="absolute right-0 mt-2 w-80 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-3 space-y-3"
                     >
                       {ENABLE_MULTI_FILE_UI ? (
-                        <div className="bg-[#e6005c]/10 border border-[#e6005c]/30 rounded-xl p-2.5 space-y-1.5">
+                        <div className="bg-[#e6005c]/10 border border-[#e6005c]/30 rounded-xl p-3 space-y-2">
                           <div className="flex items-center gap-2">
                             <FileText className="w-4 h-4 text-[#e6005c] shrink-0" />
                             <div>
-                              <p className="text-[11px] font-bold text-white">연속 파일 (전체 로그 통합)</p>
-                              <p className="text-[9px] text-white/50">목록 순서대로 모든 로그를 하나의 파일로 내보냅니다.</p>
+                              <p className="text-[12px] font-bold text-white">연속 파일 (전체 로그 통합)</p>
+                              <p className="text-[10px] text-white/50 mt-0.5">목록 순서대로 모든 로그를 하나의 파일로 내보냅니다.</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1.5 pt-1">
+                          <div className="flex items-center gap-2 pt-1">
                             <button 
-                              onClick={(e) => { copyToClipboard(getCombinedHtmlString()); setShowDownloadMenu(false); }}
-                              className="flex-1 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5"
+                              onClick={async (e) => { try { const html = await getCombinedHtmlString(); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
+                              className="flex-1 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5"
                             >
-                              <Copy className="w-3 h-3 text-white/90" /> 연속 파일 복사
+                              <Copy className="w-3.5 h-3.5" /> 연속 파일 복사
                             </button>
                             <button 
-                              onClick={(e) => { downloadCombinedHtml(); setShowDownloadMenu(false); }}
-                              className="flex-1 py-1.5 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
+                              onClick={async (e) => { await downloadCombinedHtml(); setShowDownloadMenu(false); }}
+                              className="flex-1 py-2 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
                             >
-                              <Download className="w-3 h-3 text-white" /> 연속 파일 저장
+                              <Download className="w-3.5 h-3.5" /> 연속 파일 저장
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <div className="bg-[#e6005c]/10 border border-[#e6005c]/30 rounded-xl p-2.5 space-y-1.5">
+                        <div className="bg-[#e6005c]/10 border border-[#e6005c]/30 rounded-xl p-3 space-y-2">
                           <button 
-                            onClick={(e) => { downloadAllZip(); setShowDownloadMenu(false); }}
-                            className="w-full py-1.5 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
+                            onClick={async (e) => { await downloadAllZip(); setShowDownloadMenu(false); }}
+                            className="w-full py-2 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
                           >
-                            <Archive className="w-3 h-3 text-white" /> 모든 파일 ZIP 저장
+                            <Archive className="w-3.5 h-3.5" /> 모든 파일 ZIP 저장
                           </button>
                         </div>
                       )}
@@ -6141,62 +5834,61 @@ export default function App() {
                       <div className="h-px bg-white/5" />
 
                       <div className="px-1">
-                        <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">섹션별 내보내기</p>
+                        <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">개별 & 섹션별 내보내기</p>
                       </div>
 
-                      <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-2 pr-0.5">
+                      <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-2.5 pr-1">
                         {(files.length > 0 ? files : (activeFile ? [activeFile] : [])).map((f) => {
                           const fSections = getFileSectionsList(f);
                           return (
-                            <div key={f.id} className="bg-white/5 border border-white/5 rounded-xl p-2 space-y-1">
+                            <div key={f.id} className="bg-white/5 border border-white/5 rounded-xl p-3 space-y-2">
                               {/* File Header */}
-                              <div className="flex items-center justify-between gap-2 pb-1 border-b border-white/5">
+                              <div className="flex items-center justify-between pb-2 border-b border-white/10">
                                 <div className="flex items-center gap-1.5 min-w-0">
-                                  <FileText className="w-3.5 h-3.5 text-[#e6005c] shrink-0" />
-                                  <span className="text-[11px] font-bold text-white truncate max-w-[110px]">{f.name}</span>
+                                  <FileText className="w-4 h-4 text-[#e6005c] shrink-0" />
+                                  <span className="text-[12px] font-bold text-white truncate max-w-[130px]">{f.name}</span>
                                 </div>
-                                <div className="flex items-center gap-1 shrink-0">
+                                <div className="flex gap-1.5 shrink-0">
                                   <button
-                                    onClick={(e) => { copyToClipboard(getHtmlStringForFile(f)); setShowDownloadMenu(false); }}
-                                    className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[9px] font-bold transition-colors flex items-center gap-1"
+                                    onClick={async (e) => { try { const html = await getHtmlStringForFile(f); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
+                                    className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1"
                                     title="파일 전체 복사"
                                   >
-                                    <Copy className="w-2.5 h-2.5" /> 복사
+                                    <Copy className="w-3 h-3" /> 복사
                                   </button>
                                   <button
-                                    onClick={(e) => { downloadHtmlForFile(f); setShowDownloadMenu(false); }}
-                                    className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded text-[9px] font-bold transition-colors flex items-center gap-1"
+                                    onClick={async (e) => { await downloadHtmlForFile(f); setShowDownloadMenu(false); }}
+                                    className="px-2.5 py-1 bg-[#e6005c]/80 hover:bg-[#e6005c] text-white rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1 shadow-sm"
                                     title="파일 전체 저장"
                                   >
-                                    <Download className="w-2.5 h-2.5" /> 저장
+                                    <Download className="w-3 h-3" /> 저장
                                   </button>
                                 </div>
                               </div>
 
                               {/* Sections if available */}
                               {fSections.length > 0 && (
-                                <div className="space-y-1 pl-1 pt-0.5">
+                                <div className="space-y-1.5 pt-1">
                                   {fSections.map((s, sIdx) => (
-                                    <div key={sIdx} className="flex items-center justify-between py-0.5 px-1 hover:bg-white/5 rounded transition-colors">
-                                      <div className="flex items-center gap-1 min-w-0">
-                                        <span className="text-[9px] font-bold text-white/40 shrink-0">ㄴ</span>
-                                        <span className="text-[10px] font-medium text-white/90 truncate max-w-[90px]">{s.name}</span>
-                                        <span className="text-[8px] text-white/40 shrink-0">({s.startBlock}~{s.endBlock})</span>
+                                    <div key={sIdx} className="flex items-center justify-between py-1.5 px-2 bg-black/20 hover:bg-black/40 rounded-lg transition-colors border border-white/5">
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className="text-[11px] font-medium text-white/90 truncate max-w-[100px]">{s.name}</span>
+                                        <span className="text-[9px] text-white/40 shrink-0">({s.startBlock}~{s.endBlock})</span>
                                       </div>
                                       <div className="flex items-center gap-1 shrink-0">
                                         <button
-                                          onClick={(e) => { copyToClipboard(getHtmlStringForFile(f, s.id)); setShowDownloadMenu(false); }}
-                                          className="p-1 text-white/40 hover:text-white transition-colors"
+                                          onClick={async (e) => { try { const html = await getHtmlStringForFile(f, s.id); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
+                                          className="px-2 py-1 bg-white/5 hover:bg-white/15 text-white/80 hover:text-white rounded text-[9px] font-bold transition-colors flex items-center gap-1"
                                           title="섹션 복사"
                                         >
-                                          <Copy className="w-3 h-3" />
+                                          <Copy className="w-2.5 h-2.5" /> 복사
                                         </button>
                                         <button
-                                          onClick={(e) => { downloadHtmlForFile(f, s); setShowDownloadMenu(false); }}
-                                          className="p-1 text-emerald-400/60 hover:text-emerald-300 transition-colors"
+                                          onClick={async (e) => { await downloadHtmlForFile(f, s); setShowDownloadMenu(false); }}
+                                          className="px-2 py-1 bg-white/5 hover:bg-[#e6005c] text-white/80 hover:text-white rounded text-[9px] font-bold transition-colors flex items-center gap-1"
                                           title="섹션 저장"
                                         >
-                                          <Download className="w-3 h-3" />
+                                          <Download className="w-2.5 h-2.5" /> 저장
                                         </button>
                                       </div>
                                     </div>
@@ -6645,7 +6337,7 @@ export default function App() {
                   <p className={cn(
                     "text-sm font-medium",
                     theme === 'dark' ? "text-white/30" : "text-stone-900/40"
-                  )}>CCFOLIA에서 추출한 HTML 파일을 업로드하여 시작하세요</p>
+                  )}>코코포리아 로그 파일(HTML 또는 신버전 JSON)을 업로드하여 시작하세요</p>
                 </div>
                 <label 
                   htmlFor="main-log-upload"
@@ -6871,7 +6563,7 @@ export default function App() {
                                         : "border-white/10 hover:border-white/20 hover:scale-[1.02]"
                                     )}
                                   >
-                                    <img src={img.url} className="w-full h-full object-cover select-none pointer-events-none" alt={img.fileName} referrerPolicy="no-referrer" />
+                                    <img src={img.url} className="w-full h-full object-contain p-1 select-none pointer-events-none" alt={img.fileName} referrerPolicy="no-referrer" />
                                     
                                     {/* Checkmark overlay for selected images */}
                                     {isSelected && (
@@ -7067,7 +6759,7 @@ export default function App() {
         return (
           <AvatarImagePopup
             charId={char.id}
-            charName={char.name}
+            charName={char.name || '(이름 없음)'}
             color={char.color || '#ffffff'}
             images={char.images}
             triggerRect={avatarPopupInfo.triggerRect}
@@ -7080,6 +6772,10 @@ export default function App() {
         );
       })()}
 
+      
+      {showJsonExtractor && (
+        <JsonImageExtractorModal onClose={() => setShowJsonExtractor(false)} initialFile={extractorFile} onOpenBulkImgur={() => { setIsBulkImgurModalOpen(true); }} />
+      )}
       <BulkImageAllocatorModal
         isOpen={isBulkAllocatorOpen}
         onClose={() => setIsBulkAllocatorOpen(false)}
@@ -7095,7 +6791,7 @@ export default function App() {
         
         return (
           <CharImagePanelPopup
-            charName={char.name}
+            charName={char.name || '(이름 없음)'}
             images={char.images || []}
             color={char.color || '#ffffff'}
             triggerRect={panelTriggerRect}
@@ -7114,7 +6810,7 @@ export default function App() {
             onThumbnailHover={(url, rect) => {
               setHoverImgUrl(url);
               setHoverImgRect(rect);
-              setHoverImgLabel(char.name + ' 스탠딩');
+              setHoverImgLabel((char.name || '(이름 없음)') + ' 스탠딩');
             }}
             onTogglePin={() => {
               if (pinnedCharPanel === charId) {
@@ -7132,12 +6828,32 @@ export default function App() {
             onAddImage={(url) => addCharacterImage(charId, url)}
             onRemoveImage={(id) => removeCharacterImage(charId, id)}
             onSetRepresentative={(id) => setRepresentativeImage(charId, id)}
+            onUpdateImageName={(id, name) => updateCharacterImageName(charId, id, name)}
           />
         );
       })()}
 
       <Analytics />
-    </div>
+    
+      {/* Conversion Loading Overlay */}
+      <AnimatePresence>
+        {isConverting && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          >
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-12 h-12 text-[#e6005c] animate-spin" />
+              <p className="text-white font-bold text-sm">이미지를 최적화하는 중입니다...</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+</div>
     </SettingsProvider>
   );
+
 }
+

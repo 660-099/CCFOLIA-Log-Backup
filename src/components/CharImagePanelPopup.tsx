@@ -12,6 +12,7 @@ interface CharImagePanelPopupProps {
   onClose: () => void;
   onAddImage: (url: string) => void;
   onRemoveImage: (id: string) => void;
+  onUpdateImageName?: (id: string, name: string) => void;
   onSetRepresentative: (id: string) => void;
   isPinned: boolean;
   onMouseEnter?: () => void;
@@ -29,6 +30,7 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
   onAddImage,
   onRemoveImage,
   onSetRepresentative,
+  onUpdateImageName,
   isPinned,
   onTogglePin,
   color,
@@ -85,7 +87,7 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
 
   if (!triggerRect) return null;
 
-  const PANEL_WIDTH = 280;
+  const PANEL_WIDTH = 300;
   
       let left = triggerRect.right + 12;
   if (left + PANEL_WIDTH > window.innerWidth) {
@@ -113,20 +115,25 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
         if (!isPinned) onClose();
       }}
     >
-      <div className="flex items-center gap-1.5 p-2.5 border-b border-white/5 bg-white/5">
-        <button
-          onClick={onTogglePin}
-          className={cn(
-            "p-1.5 rounded-md transition-colors shrink-0",
-            isPinned ? "text-[#e6005c] hover:bg-[#e6005c]/10" : "text-white/40 hover:bg-white/10 hover:text-white"
-          )}
-          title={isPinned ? "고정 해제" : "패널 고정"}
-        >
-          <Pin className={cn("w-3.5 h-3.5", isPinned && "fill-current")} />
-        </button>
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[11px] font-bold truncate" style={{ color }}>{charName}</span>
-          <span className="text-[11px] font-bold text-white/80 truncate">스탠딩 변경</span>
+      <div className="flex flex-col border-b border-white/5 bg-white/5">
+        <div className="flex items-center gap-1.5 p-2.5">
+          <button
+            onClick={onTogglePin}
+            className={cn(
+              "p-1.5 rounded-md transition-colors shrink-0",
+              isPinned ? "text-[#e6005c] hover:bg-[#e6005c]/10" : "text-white/40 hover:bg-white/10 hover:text-white"
+            )}
+            title={isPinned ? "고정 해제" : "패널 고정"}
+          >
+            <Pin className={cn("w-3.5 h-3.5", isPinned && "fill-current")} />
+          </button>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[11px] font-bold truncate" style={{ color }}>{charName}</span>
+            <span className="text-[11px] font-bold text-white/40 mx-1">–</span> <span className="text-[11px] font-bold text-white/80 truncate">스탠딩 목록</span>
+          </div>
+        </div>
+        <div className="px-3 pb-2 text-[10px] text-white/50 leading-tight">
+          썸네일을 눌러 대표 이미지로 지정. 표정 이름 입력 가능.
         </div>
       </div>
       
@@ -168,12 +175,12 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
                     }
                   }}
                   className={cn(
-                    "w-6 h-6 shrink-0 rounded overflow-hidden flex items-center justify-center transition-all",
+                    "w-7 h-7 shrink-0 rounded overflow-hidden flex items-center justify-center transition-all bg-black/40",
                     item.isRepresentative
                       ? "ring-1 ring-[#e6005c] ring-offset-1 ring-offset-[#222]"
                       : isNew
                         ? "bg-white/5 text-white/30 cursor-default"
-                        : "bg-white/5 text-white/30 hover:bg-white/10 hover:text-white"
+                        : "hover:bg-white/10 hover:text-white"
                   )}
                   disabled={isNew}
                   title={isNew ? "" : item.isRepresentative ? "대표 이미지" : "대표 이미지로 설정"}
@@ -181,10 +188,22 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
                   {isNew ? (
                     <ImageIcon className="w-3.5 h-3.5" />
                   ) : (
-                    <img src={item.url} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    <img src={item.url} alt="" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
                   )}
                 </button>
                 
+                <input
+                  type="text"
+                  placeholder={isNew ? "새 표정 이름" : "표정 이름"}
+                  value={isNew ? "" : (item.name || "")}
+                  onChange={(e) => {
+                    if (!isNew && onUpdateImageName) {
+                      onUpdateImageName(item.id, e.target.value);
+                    }
+                  }}
+                  readOnly={isNew}
+                  className={cn("w-16 shrink-0 bg-black/40 text-[10px] outline-none text-white/80 placeholder:text-white/20 border border-white/10 focus:border-[#e6005c] rounded px-1.5 py-1 text-center transition-colors", isNew && "opacity-0 pointer-events-none")}
+                />
                 <input
                   type="text"
                   placeholder={isNew ? "새로운 이미지 URL 추가..." : "이미지 URL"}
@@ -192,13 +211,10 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
                   onChange={(e) => {
                     if (isNew) {
                       handleInputChange(item.id, e.target.value);
-                    } else {
-                      // We don't support direct editing for simplicity, or we can just ignore it
-                      // Because adding a new one is easy. 
                     }
                   }}
                   readOnly={!isNew}
-                  className="flex-1 min-w-0 bg-transparent text-[10px] outline-none text-white/80 placeholder:text-white/30"
+                  className="flex-1 min-w-0 bg-black/40 text-[10px] outline-none text-white/80 placeholder:text-white/20 border border-white/10 focus:border-[#e6005c] rounded px-1.5 py-1 transition-colors"
                 />
                 
                 {!isNew && (

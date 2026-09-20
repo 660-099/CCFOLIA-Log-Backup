@@ -106,7 +106,7 @@ export const AvatarImagePopup: React.FC<AvatarImagePopupProps> = ({
       >
         <div className="flex items-center gap-1.5 p-3 border-b border-white/5 bg-white/5 shrink-0">
           <span className="text-[11px] font-bold truncate" style={{ color }}>{charName}</span>
-          <span className="text-[11px] font-bold text-white/80 truncate">스탠딩 변경</span>
+          <span className="text-[11px] font-bold text-white/40 mx-1">–</span> <span className="text-[11px] font-bold text-white/80 truncate">스탠딩 변경</span>
         </div>
         
         <div className="p-3 overflow-y-auto custom-scrollbar flex-1">
@@ -124,17 +124,22 @@ export const AvatarImagePopup: React.FC<AvatarImagePopupProps> = ({
                   }
                 }}
                 onDoubleClick={() => onSelectSingle(img.id)}
+                title={img.name ? `${img.name}${img.isRepresentative ? ' (대표)' : ''}` : (img.isRepresentative ? '대표 스탠딩' : '스탠딩')}
                 className={cn(
-                  "relative aspect-square rounded-lg overflow-hidden border transition-all",
+                  "relative aspect-square rounded-lg overflow-hidden border transition-all bg-black/40 flex items-center justify-center",
                   selectedImgId === img.id
                     ? "border-[#e6005c] ring-2 ring-[#e6005c]/30"
                     : "border-white/10 hover:border-white/30"
                 )}
-                title="클릭하여 선택, 다시 클릭하거나 영역 밖을 누르면 즉시 적용"
               >
-                <img src={img.url} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                <img src={img.url} alt="" referrerPolicy="no-referrer" className="w-full h-full object-contain p-1" />
                 {img.isRepresentative && (
-                  <div className="absolute inset-0 border-2 border-white/40 rounded-lg pointer-events-none" title="대표 이미지" />
+                  <div className="absolute inset-0 border-2 border-white/40 rounded-lg pointer-events-none" />
+                )}
+                {img.name && (
+                  <div className="absolute bottom-0 inset-x-0 bg-black/80 backdrop-blur-[2px] text-white text-[10px] font-medium text-center py-0.5 truncate px-1 border-t border-white/10">
+                    {img.name}
+                  </div>
                 )}
               </button>
             ))}
@@ -142,7 +147,7 @@ export const AvatarImagePopup: React.FC<AvatarImagePopupProps> = ({
         </div>
 
         <div className="p-3 border-t border-white/5 bg-black/20 shrink-0">
-          <div className="text-[10px] text-white/50 mb-2 font-bold px-1">구간 적용 (#번 블록)</div>
+          <div className="text-[10px] text-white/50 mb-2 font-bold px-1">블록 #으로 범위 지정</div>
           <div className="flex items-center gap-2 mb-3">
             <input 
               type="number"
@@ -160,14 +165,14 @@ export const AvatarImagePopup: React.FC<AvatarImagePopupProps> = ({
             <button
               onClick={handleBatchApply}
               disabled={!selectedImgId || !startIdx || !endIdx || parseInt(startIdx,10) > parseInt(endIdx,10)}
-              className="shrink-0 bg-[#e6005c] hover:bg-[#ff007f] disabled:opacity-30 disabled:hover:bg-[#e6005c] text-white rounded text-[11px] px-3 py-1.5 font-bold transition-colors whitespace-nowrap"
+              className="shrink-0 bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:hover:bg-white/10 text-white rounded text-[11px] px-3 py-1.5 font-bold transition-colors whitespace-nowrap"
             >
               구간 적용
             </button>
           </div>
           
           <div className="flex gap-2">
-             <button
+            <button
               onClick={() => {
                 if (selectedImgId) onSelectSingle(selectedImgId);
               }}
@@ -181,9 +186,9 @@ export const AvatarImagePopup: React.FC<AvatarImagePopupProps> = ({
                 if (selectedImgId) onSelectBatch(selectedImgId, 1, 999999);
               }}
               disabled={!selectedImgId}
-              className="flex-1 bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:hover:bg-white/10 text-white rounded text-[11px] py-2 font-bold transition-colors"
+              className="flex-1 bg-[#e6005c] hover:bg-[#ff007f] disabled:opacity-30 disabled:hover:bg-[#e6005c] text-white rounded text-[11px] py-2 font-bold transition-colors"
             >
-              전체 일괄 적용
+              전체 적용
             </button>
           </div>
         </div>

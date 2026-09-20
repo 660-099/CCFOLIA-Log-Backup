@@ -16,9 +16,11 @@ export type SettingsContextType = {
   cropFaceTop: boolean;
   hideAllAvatars: boolean;
   narrationCharacter: string | null;
+  narrationCharacter2: string | null;
   enableSentenceSpacing: boolean;
   enableSecretNarration: boolean;
   narrationFormat: 'style1' | 'style2' | 'style3';
+  narrationFormat2: 'style1' | 'style2' | 'style3';
   lineHeight: number;
   letterSpacing: number;
   blockSpacing: number;
@@ -58,9 +60,11 @@ export const SettingsProvider: React.FC<{
     settings.cropFaceTop,
     settings.hideAllAvatars,
     settings.narrationCharacter,
+    settings.narrationCharacter2,
     settings.enableSentenceSpacing,
     settings.enableSecretNarration,
     settings.narrationFormat,
+    settings.narrationFormat2,
     settings.lineHeight,
     settings.letterSpacing,
     settings.blockSpacing,
