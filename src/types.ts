@@ -100,3 +100,22 @@ export interface LogFile {
   insertedBlocks?: Record<string, any[]>;
 }
 
+export interface MergeSourceFile {
+  id: string;
+  name: string;
+  badgeColor: string;
+  logs: LogEntry[];
+  charSettings?: Record<string, CharSetting>;
+  charOrder?: string[];
+  tabSettings?: Record<string, TabSetting>;
+  tabOrder?: string[];
+}
+
+export interface MergeClip {
+  id: string;
+  sourceFileId: string;
+  startIndex: number;
+  endIndex: number;
+  sectionTitle?: string; // Optional divider/section title
+}
+

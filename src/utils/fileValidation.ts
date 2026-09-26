@@ -58,32 +58,56 @@ export const isCocofoliaHtmlText = (text: string): boolean => {
 /**
  * Checks if a parsed JSON object is an App Project File.
  */
-export const isAppProjectJson = (json: any): boolean => {
-  if (!json || typeof json !== 'object' || Array.isArray(json)) return false;
-
-  // Project file should contain specific signature keys
-  const hasCharSettings = !!json.charSettings && typeof json.charSettings === 'object';
-  const hasTabSettings = !!json.tabSettings && typeof json.tabSettings === 'object';
-  const hasFiles = Array.isArray(json.files);
-  const hasLogs = Array.isArray(json.logs);
-  const hasVersion = typeof json.version === 'string';
-
-  return (hasCharSettings && hasTabSettings) || hasFiles || (hasLogs && (hasCharSettings || hasTabSettings || hasVersion));
-};
-
 /**
  * Checks if a parsed JSON object is a Cocofolia New JSON Log.
+ * Cocofolia logs always contain a top-level `messages` array where items represent chat messages (text, channel, etc.).
  */
 export const isCocofoliaLogJson = (json: any): boolean => {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return false;
 
+  // Cocofolia JSON format contains a 'messages' array
   if (Array.isArray(json.messages)) {
-    // If messages array is present, check that it is not our app project file
-    if (isAppProjectJson(json)) return false;
-    return true;
+    // Check if the messages look like Cocofolia chat messages (or empty array)
+    if (json.messages.length === 0) return true;
+    const firstMsg = json.messages[0];
+    if (firstMsg && typeof firstMsg === 'object' && ('text' in firstMsg || 'channel' in firstMsg || 'channelName' in firstMsg || 'name' in firstMsg)) {
+      return true;
+    }
+    // Even if messages has different items, if it has messages array and doesn't have app project specific keys, it's cocofolia
+    if (!json.charSettings && !json.tabSettings && !json.files) {
+      return true;
+    }
   }
 
   return false;
+};
+
+/**
+ * Checks if a parsed JSON object is an App Project File.
+ * App Project files contain backup data: charSettings, tabSettings, files array (LogFile[]), etc.
+ * Note: A Cocofolia log with messages array is NOT an app project file.
+ */
+export const isAppProjectJson = (json: any): boolean => {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return false;
+
+  // If it's a Cocofolia log with messages array, it is NOT an app project file
+  if (Array.isArray(json.messages) && !json.files && !json.charSettings && !json.tabSettings) {
+    return false;
+  }
+
+  const hasCharSettings = !!json.charSettings && typeof json.charSettings === 'object' && !Array.isArray(json.charSettings);
+  const hasTabSettings = !!json.tabSettings && typeof json.tabSettings === 'object' && !Array.isArray(json.tabSettings);
+  const hasFiles = Array.isArray(json.files) && json.files.length > 0 && typeof json.files[0] === 'object' && ('logs' in json.files[0] || 'insertedBlocks' in json.files[0]);
+  const hasLogs = Array.isArray(json.logs) && json.logs.length > 0 && typeof json.logs[0] === 'object' && ('charId' in json.logs[0] || 'tabId' in json.logs[0]);
+  const hasVersion = typeof json.version === 'string' && (hasCharSettings || hasTabSettings || hasFiles || hasLogs || !!json.cssFormat || !!json.theme);
+
+  // App Project must have our app's specific structure and must not be a Cocofolia log
+  if (Array.isArray(json.messages)) {
+    // If it has messages AND looks like an app project (e.g. has explicit app export fields)
+    return (hasCharSettings && hasTabSettings) || hasFiles;
+  }
+
+  return (hasCharSettings && hasTabSettings) || hasFiles || (hasLogs && (hasCharSettings || hasTabSettings || hasVersion)) || (hasVersion && (hasCharSettings || hasTabSettings));
 };
 
 /**
@@ -97,11 +121,12 @@ export const inspectUploadedFile = async (file: File): Promise<FileTypeCheckResu
       const text = await file.text();
       const json = JSON.parse(text);
 
-      if (isAppProjectJson(json)) {
-        return { type: 'app_project', valid: true };
-      }
+      // Check Cocofolia Log JSON first, because logs contain messages array
       if (isCocofoliaLogJson(json)) {
         return { type: 'cocofolia_json', valid: true };
+      }
+      if (isAppProjectJson(json)) {
+        return { type: 'app_project', valid: true };
       }
 
       return {

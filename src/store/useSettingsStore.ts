@@ -67,10 +67,10 @@ interface SettingsState {
   setNarrationFormat2: (val: 'style1' | 'style2' | 'style3') => void;
   showLogDivider: boolean;
   setShowLogDivider: (val: boolean) => void;
-  narrationCharacter: string;
-  setNarrationCharacter: (val: string) => void;
-  narrationCharacter2: string;
-  setNarrationCharacter2: (val: string) => void;
+  narrationCharacter: string | null;
+  setNarrationCharacter: (val: string | null) => void;
+  narrationCharacter2: string | null;
+  setNarrationCharacter2: (val: string | null) => void;
   exportMode: 'html' | 'blog';
   setExportMode: (mode: 'html' | 'blog') => void;
 }
@@ -144,9 +144,9 @@ export const useSettingsStore = create<SettingsState>()(
       setNarrationFormat2: (val) => set({ narrationFormat2: val }),
       showLogDivider: false,
       setShowLogDivider: (val) => set({ showLogDivider: val }),
-      narrationCharacter: '',
+      narrationCharacter: null,
       setNarrationCharacter: (val) => set({ narrationCharacter: val }),
-      narrationCharacter2: '',
+      narrationCharacter2: null,
       setNarrationCharacter2: (val) => set({ narrationCharacter2: val })
     }),
     {

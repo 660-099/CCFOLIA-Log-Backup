@@ -23,6 +23,7 @@ import {
   Square,
   FileJson,
   Layout,
+  Layers,
   MessageSquare,
   Trash2,
   Plus,
@@ -101,6 +102,8 @@ import { useSettingsState } from './hooks/useSettingsState';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { GlobalBgmPlayer } from './components/GlobalBgmPlayer';
 import { inspectUploadedFile, isAppProjectJson } from './utils/fileValidation';
+import { LogMergeStudio } from './components/LogMergeStudio';
+import { MergeSourceFile } from './types';
 
 const ENABLE_MULTI_FILE_UI = false;
 
@@ -270,6 +273,8 @@ export default function App() {
   } = useLibraryState(files);
 
   const [collapsedAccordionFiles, setCollapsedAccordionFiles] = useState<Record<string, boolean>>({});
+  const [isMergeStudioOpen, setIsMergeStudioOpen] = useState<boolean>(false);
+  const [mergeStudioSources, setMergeStudioSources] = useState<MergeSourceFile[]>([]);
 
   const toggleAccordionFile = useCallback((key: string) => {
     setCollapsedAccordionFiles(prev => ({
@@ -445,6 +450,8 @@ export default function App() {
     setExtractedColors([]);
     setCharOrder([]);
     setTabOrder([]);
+    setNarrationCharacter(null);
+    setNarrationCharacter2(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (additionalFileInputRef.current) additionalFileInputRef.current.value = '';
   };
@@ -496,7 +503,7 @@ export default function App() {
   setIsNarrationDropdownOpen(false);
   }
   if (narrationDropdownRef2.current && !narrationDropdownRef2.current.contains(target)) {
-  setIsNarrationDropdownOpen(false);
+  setIsNarrationDropdownOpen2(false);
   }
   if (fontDropdownRef.current && !fontDropdownRef.current.contains(target)) {
   setIsFontDropdownOpen(false);
@@ -1079,6 +1086,15 @@ export default function App() {
       setCssFormat('internal');
       setFontSize(14);
       setDisableOtherColor(true);
+      setNarrationCharacter(null);
+      setNarrationCharacter2(null);
+    } else {
+      if (narrationCharacter && !mergedChars[narrationCharacter]) {
+        setNarrationCharacter(null);
+      }
+      if (narrationCharacter2 && !mergedChars[narrationCharacter2]) {
+        setNarrationCharacter2(null);
+      }
     }
     setPageTitle('');
     clearHistory();
@@ -1145,6 +1161,64 @@ export default function App() {
     }
 
     e.target.value = '';
+  };
+
+  // Open Log Merge Studio
+  const handleOpenMergeStudio = () => {
+    const sources: MergeSourceFile[] = [];
+
+    // If there is currently an active log or files loaded in editor, include as the first file (Option B)
+    if (logs && logs.length > 0) {
+      sources.push({
+        id: activeFileId || 'current_active_file',
+        name: activeFile?.name || originalFileName || pageTitle || '현재 작업 로그',
+        badgeColor: '#3b82f6',
+        logs: [...logs],
+        charSettings: { ...charSettings },
+        charOrder: [...charOrder],
+        tabSettings: { ...tabSettings },
+        tabOrder: [...tabOrder],
+      });
+    }
+
+    setMergeStudioSources(sources);
+    setIsMergeStudioOpen(true);
+  };
+
+  // Callback when merging is completed from LogMergeStudio
+  const handleCompleteMerge = (result: {
+    logs: LogEntry[];
+    charSettings: Record<string, CharSetting>;
+    charOrder: string[];
+    tabSettings: Record<string, TabSetting>;
+    tabOrder: string[];
+    mergedFileName: string;
+  }) => {
+    const newFileId = `file_${Date.now()}`;
+    const newFile: LogFile = {
+      id: newFileId,
+      name: result.mergedFileName,
+      logs: result.logs,
+      insertedBlocks: {},
+    };
+
+    setCharSettings(result.charSettings);
+    setCharOrder(result.charOrder);
+    setTabSettings(result.tabSettings);
+    setTabOrder(result.tabOrder);
+
+    // Extract colors
+    const colors = Array.from(new Set(Object.values(result.charSettings).map(c => c.color).filter(Boolean)));
+    setExtractedColors(colors);
+
+    // Update files and active file
+    setFiles([newFile]);
+    setActiveFileId(newFileId);
+    setPageTitle(result.mergedFileName);
+    setOriginalFileName(result.mergedFileName);
+
+    clearHistory();
+    setIsMergeStudioOpen(false);
   };
 
   const [jsonFileName, setJsonFileName] = useState('');
@@ -1278,7 +1352,7 @@ export default function App() {
 
   const exportProject = () => {
     const data: any = { 
-      version: '1.11.1',
+      version: '1.11.2',
       files,
       activeFileId,
       originalFileName,
@@ -3072,7 +3146,7 @@ export default function App() {
     if (logItems.length > 0) {
       const filesToProcess = ENABLE_MULTI_FILE_UI ? logItems.map(i => i.file) : [logItems[0].file];
       const mockEvent = { target: { files: filesToProcess } } as any;
-      if (files.length > 0) {
+      if (ENABLE_MULTI_FILE_UI && files.length > 0) {
         await handleAdditionalLogUpload(mockEvent);
       } else {
         await handleLogUpload(mockEvent);
@@ -3353,6 +3427,17 @@ export default function App() {
 
                   <input type="file" id="main-log-upload" ref={fileInputRef} onChange={handleLogUpload} accept=".html,.htm,.json,application/json" multiple={ENABLE_MULTI_FILE_UI ? true : undefined} className="hidden" />
                   <input type="file" ref={additionalFileInputRef} onChange={handleAdditionalLogUpload} accept=".html,.htm,.json,application/json" multiple={ENABLE_MULTI_FILE_UI ? true : undefined} className="hidden" />
+
+                  {ENABLE_MULTI_FILE_UI && (
+                    <button
+                      type="button"
+                      onClick={handleOpenMergeStudio}
+                      className="flex items-center gap-2 text-[12px] font-bold border border-white/10 hover:border-white/20 text-white/80 hover:text-white bg-white/5 hover:bg-white/10 transition-all cursor-pointer rounded-xl px-3 py-2 w-full justify-center mb-4"
+                    >
+                      <Layers className="w-3.5 h-3.5 text-[#e6005c]" />
+                      <span>여러 로그 파일 병합하기</span>
+                    </button>
+                  )}
 
 
                   {/* Uploaded Files List in Sidebar */}
@@ -3874,7 +3959,7 @@ export default function App() {
                             {narrationCharacter && charSettings[narrationCharacter] && (
                               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: charSettings[narrationCharacter].color }}></span>
                             )}
-                            <span className="max-w-[100px] truncate">{narrationCharacter ? charSettings[narrationCharacter]?.name || narrationCharacter : '선택 안 함'}</span>
+                            <span className="max-w-[100px] truncate">{narrationCharacter && charSettings[narrationCharacter] ? charSettings[narrationCharacter].name : '선택 안 함'}</span>
                           </div>
                           <ChevronDown className="w-3 h-3 opacity-50" />
                         </button>
@@ -3890,7 +3975,7 @@ export default function App() {
                                 }}
                                 className={cn(
                                   "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
-                                  !narrationCharacter ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                  (!narrationCharacter || !charSettings[narrationCharacter]) ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
                                 )}
                               >
                                 선택 안 함
@@ -3982,7 +4067,7 @@ export default function App() {
                     )}
                     </div>
 
-                    {narrationCharacter && (
+                    {narrationCharacter && charSettings[narrationCharacter] && (
                       <div className="bg-white/5 border border-white/5 rounded-xl shadow-sm transition-all flex flex-col mt-2">
                         <div className="flex items-center justify-between p-3 relative h-11" ref={narrationDropdownRef2}>
                           <span className="text-[11px] font-bold text-white/80">나레이션 캐릭터 2</span>
@@ -3995,7 +4080,7 @@ export default function App() {
                               {narrationCharacter2 && charSettings[narrationCharacter2] && (
                                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: charSettings[narrationCharacter2].color }}></span>
                               )}
-                              <span className="max-w-[100px] truncate">{narrationCharacter2 ? charSettings[narrationCharacter2]?.name || narrationCharacter2 : '선택 안 함'}</span>
+                              <span className="max-w-[100px] truncate">{narrationCharacter2 && charSettings[narrationCharacter2] ? charSettings[narrationCharacter2].name : '선택 안 함'}</span>
                             </div>
                             <ChevronDown className="w-3 h-3 opacity-50" />
                           </button>
@@ -4011,7 +4096,7 @@ export default function App() {
                                   }}
                                   className={cn(
                                     "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
-                                    !narrationCharacter2 ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                    (!narrationCharacter2 || !charSettings[narrationCharacter2]) ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
                                   )}
                                 >
                                   선택 안 함
@@ -5485,7 +5570,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/30 hover:text-white/50 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.11.1</span>
+            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.11.2</span>
           </div>
         </div>
       </aside>
@@ -6835,6 +6920,15 @@ export default function App() {
 
       <Analytics />
     
+      {/* Log Merge Studio Full Screen View */}
+      {ENABLE_MULTI_FILE_UI && isMergeStudioOpen && (
+        <LogMergeStudio
+          initialSourceFiles={mergeStudioSources}
+          onCancel={() => setIsMergeStudioOpen(false)}
+          onCompleteMerge={handleCompleteMerge}
+        />
+      )}
+
       {/* Conversion Loading Overlay */}
       <AnimatePresence>
         {isConverting && (
