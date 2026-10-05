@@ -90,7 +90,102 @@ export const fetchAndCompressImage = async (url: string, maxWidth = 1000, maxHei
 
 
 import { getOriginDataUrl } from './blobStore';
-import { CharSetting, LogEntry } from '../types';
+import { CharSetting, LogEntry, TabSetting } from '../types';
+
+export const isBase64Url = (url: string | null | undefined): boolean => {
+  if (!url) return false;
+  if (url.startsWith('data:')) return true;
+  if (url.startsWith('blob:')) {
+    const origin = getOriginDataUrl(url);
+    return Boolean(origin && origin.startsWith('data:'));
+  }
+  return false;
+};
+
+export const getUsedBase64ImagesInfo = (
+  files: any[],
+  charSettings: Record<string, CharSetting>,
+  tabSettings: Record<string, TabSetting>,
+  hideAllAvatars: boolean
+): string[] => {
+  const result: string[] = [];
+  const addedChars = new Set<string>();
+
+  // Determine all logs that are actually exported
+  const allLogs: LogEntry[] = [];
+  const allBlocks: Record<string, any[]> = {};
+  (files || []).forEach(f => {
+    allLogs.push(...(f.logs || []));
+    if (f.insertedBlocks) {
+      Object.assign(allBlocks, f.insertedBlocks);
+    }
+  });
+
+  // Filter for visible tabs and characters
+  const visibleLogs = allLogs.filter(log => {
+    const tabVisible = tabSettings[log.tabId]?.visible !== false;
+    const charVisible = charSettings[log.charId]?.visible !== false;
+    return tabVisible && charVisible;
+  });
+
+  // 1. Check speaking characters' avatars if avatars are not hidden
+  if (!hideAllAvatars) {
+    visibleLogs.forEach(log => {
+      const char = charSettings[log.charId];
+      if (!char || addedChars.has(char.id)) return;
+
+      let imgUrl = char.imageUrl;
+      if (log.overrideImageId && char.images) {
+        const override = char.images.find(i => i.id === log.overrideImageId);
+        if (override?.url) imgUrl = override.url;
+      }
+
+      if (isBase64Url(imgUrl)) {
+        addedChars.add(char.id);
+        result.push(char.name || log.name || '미지정 캐릭터');
+      }
+    });
+  }
+
+  // 2. Check illustrations and image blocks in order of appearance
+  let illustrationCounter = 0;
+  
+  // Check start blocks
+  const startBlocks = allBlocks['__start__'] || [];
+  startBlocks.forEach(block => {
+    if (block && (block.type === 'image' || block.type === 'illustration')) {
+      illustrationCounter++;
+      const url = typeof block === 'string' ? block : block.url;
+      if (isBase64Url(url)) {
+        result.push(`${illustrationCounter}번째 삽화`);
+      }
+    }
+  });
+
+  // Look through logs for illustrations and blocks
+  visibleLogs.forEach(log => {
+    const logBlocks = allBlocks[log.id] || [];
+    logBlocks.forEach(block => {
+      if (block && (block.type === 'image' || block.type === 'illustration')) {
+        illustrationCounter++;
+        const url = typeof block === 'string' ? block : block.url;
+        if (isBase64Url(url)) {
+          result.push(`${illustrationCounter}번째 삽화`);
+        }
+      }
+    });
+
+    if (log.isIllustration && !log.isUnplaced) {
+      illustrationCounter++;
+      const url = log.content || log.illustration?.url;
+      if (isBase64Url(url)) {
+        result.push(`${illustrationCounter}번째 삽화`);
+      }
+    }
+  });
+
+  return Array.from(new Set(result));
+};
 
 export const processImagesForExport = async (
   charSettings: Record<string, CharSetting>, 
@@ -98,28 +193,14 @@ export const processImagesForExport = async (
   logs: LogEntry[], 
   exportMode: 'html' | 'blog'
 ): Promise<{ charSettings: Record<string, CharSetting>, blocks: Record<string, any[]>, logs: LogEntry[] }> => {
-  // We ALWAYS need to process to some degree because 'blob:' URLs are useless when exported.
-  // If exportMode === 'blog', we just map 'blob:' back to their original (external URL or base64) and DO NOT fetch/compress external URLs.
-
-  // Create deep copies
+  // Deep copy
   const newCharSettings = JSON.parse(JSON.stringify(charSettings)) as Record<string, CharSetting>;
   const newBlocks = JSON.parse(JSON.stringify(blocks)) as Record<string, any[]>;
   const newLogs = JSON.parse(JSON.stringify(logs)) as LogEntry[];
 
-  // Collect all used URLs
+  // Collect ONLY actually used URLs from active logs and blocks (avoiding unused data)
   const usedUrls = new Set<string>();
 
-  // 1. Check charSettings (default images & multi-images)
-  Object.values(newCharSettings).forEach(char => {
-    if (char.imageUrl) usedUrls.add(char.imageUrl);
-    if (char.images) {
-      char.images.forEach(img => {
-        if (img.url) usedUrls.add(img.url);
-      });
-    }
-  });
-
-  // 2. Check logs for avatars and illustrations
   newLogs.forEach(log => {
     const char = newCharSettings[log.charId];
     if (char) {
@@ -132,22 +213,22 @@ export const processImagesForExport = async (
     }
 
     // Check illustrations in logs
-    if (log.isIllustration) {
+    if (log.isIllustration && !log.isUnplaced) {
       if (log.content) usedUrls.add(log.content);
       if (log.illustration?.url) usedUrls.add(log.illustration.url);
     }
   });
 
-  // 3. Check inserted blocks for illustrations/images
+  // Check inserted blocks for illustrations/images
   Object.values(newBlocks).forEach(blockList => {
-    blockList.forEach(block => {
+    (blockList || []).forEach(block => {
       if ((block.type === 'illustration' || block.type === 'image') && block.url) {
         usedUrls.add(block.url);
       }
     });
   });
 
-  const urlMap = new Map<string, string>(); // Original URL -> Compressed Base64 WebP
+  const urlMap = new Map<string, string>();
   const failedUrls: string[] = [];
 
   const isIllustrationUrl = (u: string) => {
@@ -163,42 +244,39 @@ export const processImagesForExport = async (
   for (const url of urlArray) {
     if (!url) continue;
 
+    const isIll = isIllustrationUrl(url);
+    const maxW = isIll ? 1600 : 300;
+    const maxH = isIll ? 1600 : 300;
+
     try {
       if (url.startsWith('blob:')) {
         const originData = getOriginDataUrl(url);
         if (originData) {
           if (exportMode === 'html') {
-            const isIll = isIllustrationUrl(url);
-            const maxW = isIll ? 1920 : 800;
-            const maxH = isIll ? 1920 : 1200;
-            const optimized = await fetchAndCompressImage(originData, maxW, maxH, 0.82);
+            const optimized = await fetchAndCompressImage(originData, maxW, maxH, 0.8);
             urlMap.set(url, optimized);
           } else {
-            // Blog mode: restore original base64 or URL
-            urlMap.set(url, originData);
+            // Blog mode: if origin is base64, compress it to WebP so it fits easily in blog post
+            if (originData.startsWith('data:')) {
+              const compressed = await compressImageToWebP(originData, maxW, maxH, 0.8);
+              urlMap.set(url, compressed);
+            } else {
+              urlMap.set(url, originData);
+            }
           }
         } else {
           urlMap.set(url, url);
         }
       } else if (url.startsWith('data:')) {
-        if (exportMode === 'html') {
-          const isIll = isIllustrationUrl(url);
-          const maxW = isIll ? 1920 : 800;
-          const maxH = isIll ? 1920 : 1200;
-          const optimized = await fetchAndCompressImage(url, maxW, maxH, 0.82);
-          urlMap.set(url, optimized);
-        } else {
-          urlMap.set(url, url);
-        }
+        // High-compression WebP for data: URLs in both modes
+        const optimized = await compressImageToWebP(url, maxW, maxH, 0.8);
+        urlMap.set(url, optimized);
       } else if (url.startsWith('http')) {
         if (exportMode === 'blog') {
           // Do not touch external URLs for blog mode
           urlMap.set(url, url);
         } else {
-          const isIll = isIllustrationUrl(url);
-          const maxW = isIll ? 1920 : 800;
-          const maxH = isIll ? 1920 : 1200;
-          const optimized = await fetchAndCompressImage(url, maxW, maxH, 0.82);
+          const optimized = await fetchAndCompressImage(url, maxW, maxH, 0.8);
           urlMap.set(url, optimized);
         }
       } else {
@@ -234,7 +312,7 @@ export const processImagesForExport = async (
 
   // Apply mapped URLs to Inserted Blocks
   Object.values(newBlocks).forEach(blockList => {
-    blockList.forEach(block => {
+    (blockList || []).forEach(block => {
       if ((block.type === 'illustration' || block.type === 'image') && block.url && urlMap.has(block.url)) {
         block.url = urlMap.get(block.url)!;
       }

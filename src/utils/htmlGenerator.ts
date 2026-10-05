@@ -1,9 +1,10 @@
-import { LogEntry, CharSetting, TabSetting, Illustration } from '../types';
+import { LogEntry, CharSetting, TabSetting, Illustration, TabFormat } from '../types';
 import { cn, r, linkifyAndFormat } from '../utils';
 import DOMPurify from 'dompurify';
 import { fonts } from '../constants';
 import { splitNarration } from './textTokenizer';
 import { parseYoutubeUrl } from './youtube';
+import { highlightCommandCharacterNames } from './commandHighlighter';
 
 const hexToRgbValues = (hex: string) => {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -64,13 +65,9 @@ export const generateFinalHtmlStr = (
   originalLogs: LogEntry[] = [],
   exportMode: 'html' | 'blog' = 'html'
 ) => {
-  const getNarrationFormat = (formatVal: 'main' | 'secret', charId?: string) => {
-    if (formatVal === 'main') {
-      if (narrationCharacter && charId === narrationCharacter) return narrationFormat;
-      if (narrationCharacter2 && charId === narrationCharacter2) return narrationFormat2;
-      return narrationFormat;
-    }
-    return narrationFormat2;
+  const getNarrationFormat = (formatVal?: TabFormat | 'main' | 'secret', charId?: string) => {
+    if (narrationCharacter2 && charId === narrationCharacter2) return narrationFormat2;
+    return narrationFormat;
   };
 
   const getEnableSentenceSpacing = (charId?: string) => { if (charId === narrationCharacter2) return enableSentenceSpacing2; return enableSentenceSpacing; };
@@ -402,18 +399,17 @@ export const generateFinalHtmlStr = (
         activeCharColors.set(cid, charColor);
       }
       
-      let imgUrl = charSettings[log.charId]?.imageUrl;
-      let overrideId = log.overrideImageId ? shortenId(log.overrideImageId) : 'def';
-      if (log.overrideImageId && charSettings[log.charId]?.images) {
+      if (!hideAllAvatars) {
+        let imgUrl = charSettings[log.charId]?.imageUrl;
+        let overrideId = log.overrideImageId ? shortenId(log.overrideImageId) : 'def';
+        if (log.overrideImageId && charSettings[log.charId]?.images) {
           const oImg = charSettings[log.charId].images.find(i => i.id === log.overrideImageId);
           if (oImg && oImg.url) imgUrl = oImg.url;
-      }
-      
-      if (imgUrl && !hideAllAvatars && !hideEmptyAvatars) {
-         // If hideEmptyAvatars is true, we might still need it if it exists.
-      }
-      if (imgUrl) {
-         activeAvatars.set(`av-${cid}-${overrideId}`, imgUrl);
+        }
+        
+        if (imgUrl) {
+          activeAvatars.set(`av-${cid}-${overrideId}`, imgUrl);
+        }
       }
     }
   });
@@ -432,7 +428,7 @@ export const generateFinalHtmlStr = (
   }
 
   let computedNameWidth = 120;
-  if ((hideAllAvatars || (narrationFormat === 'style3' || narrationFormat2 === 'style3')) && typeof document !== 'undefined') {
+  if ((hideAllAvatars || narrationFormat === 'style3' || narrationFormat2 === 'style3') && typeof document !== 'undefined') {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (ctx) {
@@ -443,7 +439,8 @@ export const generateFinalHtmlStr = (
       for (const log of filteredLogs) {
         if (!log.isContinuation) {
           const isNarration = (log.charId === narrationCharacter || log.charId === narrationCharacter2);
-          if (hideAllAvatars || (isNarration && (narrationFormat === 'style3' || narrationFormat2 === 'style3'))) {
+          const charFormat = getNarrationFormat('main', log.charId);
+          if (hideAllAvatars || (isNarration && charFormat === 'style3')) {
             const w = ctx.measureText(log.name + ':').width;
             if (w > mw) mw = w;
           }
@@ -950,7 +947,17 @@ export const generateFinalHtmlStr = (
     const format = tabSet?.format || 'main';
     const char = charSettings[log.charId];
     const color = char?.color || log.color;
-    const otherNameColor = disableOtherColor ? otherTextColor : color;
+    const tabTextColor = tabSet?.textColor || (tabSet?.format === 'other' && tabSet?.color && tabSet.color !== '#ffd400' ? tabSet.color : undefined);
+    const isNameColorEnabled = tabSet?.applyColorToName !== undefined
+      ? tabSet.applyColorToName
+      : (format === 'other' ? !disableOtherColor : true);
+
+    const defaultNameColor = format === 'other'
+      ? (tabTextColor || otherTextColor)
+      : (tabTextColor || textColor);
+
+    const otherNameColor = isNameColorEnabled ? color : defaultNameColor;
+    const finalContentColor = format === 'other' ? (tabTextColor || otherTextColor) : (tabTextColor || textColor);
     let img = char?.imageUrl;
     let avatarClass = '';
     const cid = shortenId(log.charId);
@@ -992,6 +999,7 @@ export const generateFinalHtmlStr = (
     const mergeWithNextOuter = shouldMergeStyle && isNextSameTab && !isSectionEndOuter;
 
     const isNarration = (log.charId === narrationCharacter || log.charId === narrationCharacter2) && (format === 'main' || (getEnableSecretNarration(log.charId) && format === 'secret'));
+    const charNarrationFmt = getNarrationFormat(format, log.charId);
     const isPrevNarration = prevVisibleChunk ? (!hasBlockBefore && (prevVisibleChunk.logs[0].charId === narrationCharacter || prevVisibleChunk.logs[0].charId === narrationCharacter2) && ((tabSettings[prevVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' || (getEnableSecretNarration(prevVisibleChunk.logs[0].charId) && tabSettings[prevVisibleChunk.logs[0].tabId]?.format === 'secret'))) : false;
     const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && (nextVisibleChunk.logs[0].charId === narrationCharacter || nextVisibleChunk.logs[0].charId === narrationCharacter2) && ((tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' || (getEnableSecretNarration(nextVisibleChunk.logs[0].charId) && tabSettings[nextVisibleChunk.logs[0].tabId]?.format === 'secret'))) : false;
 
@@ -1295,12 +1303,8 @@ export const generateFinalHtmlStr = (
       
       let htmlPieces = textPieces.map(piece => {
         let pieceHtml = linkifyAndFormat(piece);
-        if (l.name === 'system') {
-          pieceHtml = pieceHtml.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
-            const charIds = Object.keys(charSettings).filter(id => charSettings[id].name === p1.trim());
-            const matchedChar = charIds.length > 0 ? charSettings[charIds[0]] : null;
-            return matchedChar ? `<span style="color: ${matchedChar.color};">${match}</span>` : match;
-          });
+        if (l.name === 'system' || l.isCommand) {
+          pieceHtml = highlightCommandCharacterNames(pieceHtml, charSettings);
         }
         let sanitizeFn = (DOMPurify && DOMPurify.sanitize) ? DOMPurify.sanitize.bind(DOMPurify) : (global as any).DOMPurify?.sanitize;
         return sanitizeFn ? sanitizeFn(pieceHtml, { ADD_ATTR: ['target', 'style'] }) : pieceHtml;
@@ -1347,7 +1351,7 @@ export const generateFinalHtmlStr = (
       const bodyStyle = `flex:1;`;
       const nameStyle = `font-size:0.96em;margin-bottom:${Math.max(4, Math.ceil(textFontSize * (lineHeight >= 1.4 ? 0.3 : 0.5)))}px;display:block;`;
       const contentStyle = `white-space:pre-wrap;word-break:break-all;`;
-      const otherContentStyle = `color:${otherTextColor};white-space:pre-wrap;word-break:break-all;`;
+      const otherContentStyle = `color:${finalContentColor};white-space:pre-wrap;word-break:break-all;`;
       
       const isSectionStart = chunkIdx === 0 || hasBlockBefore;
       const mergeWithPrev = shouldMergeStyle && isPrevSameTab && !isSectionStart;
@@ -1378,7 +1382,7 @@ export const generateFinalHtmlStr = (
 
       const fullFilterAttrs = getFilterAttrs(log);
         
-      if (isNarration && (narrationFormat === 'style3' || narrationFormat2 === 'style3')) {
+      if (isNarration && charNarrationFmt === 'style3') {
         html += `<div${fullFilterAttrs} style="position:relative;margin-bottom:${itemMarginBottom};margin-top:${itemMarginTop};">`;
         const wrapperStyle = `display:flex;gap:16px;padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;align-items:flex-start;`;
         const flatPieces = finalHtmlContentPieces.flat();
@@ -1427,7 +1431,7 @@ export const generateFinalHtmlStr = (
       } else {
         html += `<div${fullFilterAttrs} style="position:relative;margin-bottom:${itemMarginBottom};margin-top:${itemMarginTop};">`;
         if (log.isCommand) {
-          const nameHtml = log.name !== 'system' ? `<b class="c-tx ${charClass}">[ ${log.name} ]</b>` : '';
+          const nameHtml = log.name !== 'system' ? `<b class="c-tx ${charClass}" style="color: ${color} !important;">[ ${log.name} ]</b>` : '';
           const marginLeft = log.name !== 'system' ? 'margin-left:8px;' : '';
           const cmdMarginTop = hasSpecialDividerAboveAndNoBadge ? '0' : `${s(8)}px`;
           if (format === 'secret') {
@@ -1544,7 +1548,7 @@ export const generateFinalHtmlStr = (
       html += `<div${fullFilterAttrs}>`;
 
       if (log.isCommand) {
-        const nameHtml = log.name !== 'system' ? `<b class="c-tx ${charClass}">[ ${log.name} ]</b> ` : '';
+        const nameHtml = log.name !== 'system' ? `<b class="c-tx ${charClass}" style="color: ${color} !important;">[ ${log.name} ]</b> ` : '';
         const marginLeft = log.name !== 'system' ? 'margin-left: 8px;' : '';
         if (format === 'secret') {
           const tabColor = tabSet?.color || '#ffd400';
@@ -1553,7 +1557,7 @@ export const generateFinalHtmlStr = (
         } else {
           html += `<div class="c-bx" style="display: flex; align-items: center; flex-wrap: wrap;">${nameHtml}<span class="c-tx" style="${marginLeft}">${finalHtmlContent}</span></div>`;
         }
-      } else if (isNarration && (narrationFormat === 'style3' || narrationFormat2 === 'style3')) {
+      } else if (isNarration && charNarrationFmt === 'style3') {
         const flatPieces = finalHtmlContentPieces.flat();
         let nameHtml = '';
         if (!log.isContinuation) {
@@ -1572,7 +1576,7 @@ export const generateFinalHtmlStr = (
         }).join('');
         html += `</div>`;
       } else if (format === 'other') {
-        html += `<div class="o-r" style="padding-top: ${s(2)}px; padding-bottom: ${s(2)}px;"><span class="o-nm" style="color: ${otherNameColor}">${log.name}</span><div class="o-c">${finalHtmlContent}</div></div>`;
+        html += `<div class="o-r" style="padding-top: ${s(2)}px; padding-bottom: ${s(2)}px;"><span class="o-nm" style="color: ${otherNameColor}">${log.name}</span><div class="o-c"${tabTextColor ? ` style="color: ${tabTextColor};"` : ''}>${finalHtmlContent}</div></div>`;
       } else if (format === 'info') {
         const tZ = isPrevSameTab && !isSectionStart, bZ = isNextSameTab && !isSectionEnd;
         const rad = shouldMergeStyle ? `${tZ ? 0 : 4}px ${tZ ? 0 : 4}px ${bZ ? 0 : 4}px ${bZ ? 0 : 4}px` : '4px';
@@ -1598,7 +1602,7 @@ export const generateFinalHtmlStr = (
           shouldMergeStyle && tZ ? 'border-top: none;' : ''
         ].filter(Boolean).join(' ');
 
-        if (isNarration && (narrationFormat === 'style3' || narrationFormat2 === 'style3')) {
+        if (isNarration && charNarrationFmt === 'style3') {
           const flatPieces = finalHtmlContentPieces.flat();
           let nameHtml = '';
           if (!log.isContinuation) {
@@ -1611,7 +1615,7 @@ export const generateFinalHtmlStr = (
         } else if (isNarration) {
           const flatPieces = finalHtmlContentPieces.flat();
           html += `<div class="s-r" style="${st} padding:${paddingVertical}px ${paddingHorizontal}px;">`;
-          html += `<div style="text-align:${'center'};font-weight:bold;font-style:${getNarrationFormat('main', log.charId) === 'style2' ? 'italic' : 'normal'};color:${textColor};width:100%;">`;
+          html += `<div style="text-align:${'center'};font-weight:bold;font-style:${charNarrationFmt === 'style2' ? 'italic' : 'normal'};color:${textColor};width:100%;">`;
           html += flatPieces.map((piece, pIdx) => {
             const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
             return `${prefix}<div style="white-space: pre-wrap; word-break: keep-all; overflow-wrap: break-word;">${piece}</div>`;
@@ -1893,6 +1897,28 @@ export const generateFinalHtmlStr = (
     </script>
   ` : '';
 
+  if (exportMode === 'blog') {
+    const blogHtml = `
+      <link href="https://hangeul.pstatic.net/hangeul_static/css/nanum-gothic-coding.css" rel="stylesheet">
+      ${isInline ? `<style>
+        ${fontImport}
+        ${filterBarCSS}
+        ${bgmPlayerCSS}
+        ${textResetCSS}
+        ${dynamicColorsCss}
+        .c-tx { font-family: 'NanumGothicCodingLigature', monospace; font-weight: bold; line-height: 1.6; }
+        .c-ct * { box-sizing: border-box; min-width: 0; }
+      </style>` : `<style>${css}\n${bgmPlayerCSS}</style>`}
+      <div class="c-mc"${isInline ? ` style="${cleanStyle(`background-color: ${bgColor}; margin: 0; padding: 0`)}"` : ''}>
+        ${filterBarHtml}
+        ${isInline ? `<div class="c-ct" style="${cleanStyle(`width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: ${lineHeight}; letter-spacing: ${letterSpacing === 0 ? 'normal' : `${letterSpacing}px`}; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden`)}">\n${html}\n</div>` : `<div class="c-ct">\n${html}\n</div>`}
+      </div>
+      ${filterBarScript}
+      ${bgmPlayerHtml}
+    `;
+    return minifyHtml(blogHtml);
+  }
+
   const finalHtml = `
     <!DOCTYPE html>
     <html lang="ko">
@@ -1911,14 +1937,9 @@ export const generateFinalHtmlStr = (
         .c-ct * { box-sizing: border-box; min-width: 0; }
       </style>` : `<style>${css}\n${bgmPlayerCSS}</style>`}
     </head>
-    <body${(exportMode === 'html' && isInline) ? ` style="${cleanStyle(`background-color: ${bgColor}; margin: 0; padding: 0`)}"` : ''}>
-      ${exportMode === 'blog' ? `<div class="c-mc"${isInline ? ` style="${cleanStyle(`background-color: ${bgColor}; margin: 0; padding: 0`)}"` : ''}>
-        ${filterBarHtml}
-        ${isInline ? `<div class="c-ct" style="${cleanStyle(`width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: ${lineHeight}; letter-spacing: ${letterSpacing === 0 ? 'normal' : `${letterSpacing}px`}; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden`)}">\n${html}\n</div>` : `<div class="c-ct">\n${html}\n</div>`}
-      </div>` : `
-        ${filterBarHtml}
-        ${isInline ? `<div class="c-ct" style="${cleanStyle(`width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: ${lineHeight}; letter-spacing: ${letterSpacing === 0 ? 'normal' : `${letterSpacing}px`}; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden`)}">\n${html}\n</div>` : `<div class="c-ct">\n${html}\n</div>`}
-      `}
+    <body${isInline ? ` style="${cleanStyle(`background-color: ${bgColor}; margin: 0; padding: 0`)}"` : ''}>
+      ${filterBarHtml}
+      ${isInline ? `<div class="c-ct" style="${cleanStyle(`width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; ${fontFamily !== '(폰트 적용X)' ? `font-family: ${fontValue};` : ''} background: ${bgColor}; color: ${textColor}; line-height: ${lineHeight}; letter-spacing: ${letterSpacing === 0 ? 'normal' : `${letterSpacing}px`}; padding: 20px 0; font-size: ${fontSize}px; overflow-x: hidden`)}">\n${html}\n</div>` : `<div class="c-ct">\n${html}\n</div>`}
       ${filterBarScript}
       ${bgmPlayerHtml}
     </body>

@@ -13,6 +13,7 @@ import { BgmInlineInput } from './BgmInlineInput';
 import { useSettings } from '../contexts/SettingsContext';
 import { splitNarration } from '../utils/textTokenizer';
 import { SearchableSelect } from './SearchableSelect';
+import { highlightCommandCharacterNames } from '../utils/commandHighlighter';
 // @ts-ignore
 import ReactQuill, { Quill } from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
@@ -629,12 +630,25 @@ export const LogItem = React.memo(({
 
   const format = tabSet?.format || 'main';
   const rawColor = char.color || log.color;
-  const tabTextColor = tabSet?.textColor;
+  const tabEffectiveColor = tabSet?.textColor || (tabSet?.format === 'other' && tabSet?.color && tabSet.color !== '#ffd400' ? tabSet.color : undefined);
+  const tabTextColor = tabEffectiveColor;
   
-  let nameColor = (tabSet?.applyColorToName && tabTextColor) ? tabTextColor : rawColor;
-  let otherNameColor = disableOtherColor 
-    ? (tabTextColor || (theme === 'dark' ? '#AAAAAA' : '#777777')) 
-    : nameColor;
+  // Character name color logic:
+  // - If applyColorToName is true: ALWAYS apply character's color (rawColor)
+  // - If applyColorToName is false: DO NOT apply character color (use tabTextColor or neutral text color)
+  // - If applyColorToName is undefined:
+  //     - in other (chatter/잡담): if disableOtherColor is true, default is false (grey/tabTextColor); if disableOtherColor is false, default is true (rawColor)
+  //     - in main/info/secret: default is true (rawColor)
+  const isNameColorEnabled = tabSet?.applyColorToName !== undefined
+    ? tabSet.applyColorToName
+    : (format === 'other' ? !disableOtherColor : true);
+
+  const defaultNameColor = format === 'other'
+    ? (tabTextColor || (theme === 'dark' ? '#AAAAAA' : '#777777'))
+    : (tabTextColor || (theme === 'dark' ? '#FFFFFF' : '#333333'));
+
+  let nameColor = isNameColorEnabled ? rawColor : defaultNameColor;
+  let otherNameColor = isNameColorEnabled ? rawColor : defaultNameColor;
   
   const color = nameColor;
   const nameWeight = 'bold';
@@ -670,7 +684,7 @@ export const LogItem = React.memo(({
   };
 
   const getNarrationFormat = (formatVal: 'main' | 'secret') => {
-    if (log.charId === narrationCharacter2) return narrationFormat2;
+    if (narrationCharacter2 && log.charId === narrationCharacter2) return narrationFormat2;
     return narrationFormat;
   };
 
@@ -689,14 +703,8 @@ export const LogItem = React.memo(({
 
   let formattedPieces = textPieces.map(piece => {
     let pieceHtml = linkifyAndFormat(piece);
-    if (log.name === 'system') {
-      pieceHtml = pieceHtml.replace(/\[\s*(.*?)\s*\]/g, (match: string, p1: string) => {
-        const charChars = charSettings[p1.trim()];
-        if (charChars) {
-          return `<span style="color: ${charChars.color};">${match}</span>`;
-        }
-        return match;
-      });
+    if (log.name === 'system' || log.isCommand) {
+      pieceHtml = highlightCommandCharacterNames(pieceHtml, charSettings);
     }
     return pieceHtml;
   });
@@ -1688,10 +1696,10 @@ export const LogItem = React.memo(({
               lineHeight: 1.6, // 다이스 매크로는 스페이싱 영향X
               letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px`
             }}>
-              {log.name !== 'system' && <span style={{ color, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", fontSize: `${scaledTextFontSize}px` }}>[ <span dangerouslySetInnerHTML={{ __html: safeHtmlName }} /> ]</span>}
+              {log.name !== 'system' && <span style={{ color: rawColor, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", fontSize: `${scaledTextFontSize}px` }}>[ <span dangerouslySetInnerHTML={{ __html: safeHtmlName }} /> ]</span>}
               <span style={{ color: theme === 'dark' ? '#FFFFFF' : '#333333', fontSize: `${scaledTextFontSize}px`, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', wordBreak: 'keep-all', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
             </div>
-          ) : (isNarration && getNarrationFormat('main') === 'style3') ? (
+          ) : (isNarration && getNarrationFormat(format) === 'style3') ? (
             <div key="narration-style2" className={cn(
               log.isContinuation && "pt-1 border-t-0 rounded-t-none",
               isNextContinuation && "pb-1 border-b-0 rounded-b-none"
@@ -1740,7 +1748,7 @@ export const LogItem = React.memo(({
               fontSize: `${scaledTextFontSize}px`,
               letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px`,
               fontWeight: 'bold',
-              fontStyle: getNarrationFormat('main') === 'style2' ? 'italic' : 'normal',
+              fontStyle: getNarrationFormat(format) === 'style2' ? 'italic' : 'normal',
               background: isSecret ? getSecretBg(tabColor) : 'transparent',
               borderLeft: isSecret ? `4px solid ${tabColor}` : 'none',
               marginTop: isSecret ? (hasSpecialDividerAboveAndNoBadge ? '0' : (mergeWithPrev ? '0' : '4px')) : '0',

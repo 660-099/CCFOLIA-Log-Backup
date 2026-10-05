@@ -11,8 +11,8 @@ interface BulkImageState {
   setBulkImages: (val: { url: string; fileName: string; ext: string }[]) => void;
   bulkImageMapping: Record<string, string>;
   setBulkImageMapping: (val: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => void;
-  bulkImageTypeMapping: Record<string, 'character' | 'illustration' | 'none'>;
-  setBulkImageTypeMapping: (val: Record<string, 'character' | 'illustration' | 'none'> | ((prev: Record<string, 'character' | 'illustration' | 'none'>) => Record<string, 'character' | 'illustration' | 'none'>)) => void;
+  bulkImageTypeMapping: Record<string, 'character' | 'illustration' | 'none' | 'manual' | 'auto'>;
+  setBulkImageTypeMapping: (val: Record<string, 'character' | 'illustration' | 'none' | 'manual' | 'auto'> | ((prev: Record<string, 'character' | 'illustration' | 'none' | 'manual' | 'auto'>) => Record<string, 'character' | 'illustration' | 'none' | 'manual' | 'auto'>)) => void;
   bulkImportStep: 1 | 2;
   setBulkImportStep: (val: 1 | 2) => void;
   bulkSelectedIllustrations: Record<string, boolean>;

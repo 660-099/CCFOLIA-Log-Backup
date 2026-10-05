@@ -137,10 +137,12 @@ export const parseLogFile = async (file: File, uploadMode: 'easy' | 'high_qualit
               } else if (uploadMode === 'high_quality') {
                   rawUrl = ''; // Fallback for some reason, maybe empty images
               }
+              const exprNum = (charImages.length + 1).toString().padStart(2, '0');
+              const sanitizedName = (name || '').trim().replace(/[/\\?%*:|"<>]/g, '_');
               charImages.push({
                   id: shortId,
                   url: rawUrl,
-                  name: '',
+                  name: sanitizedName ? `${sanitizedName}_${exprNum}` : '',
                   isRepresentative: charImages.length === 0
               });
               newChars[charId].images = charImages;

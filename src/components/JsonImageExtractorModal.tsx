@@ -80,27 +80,65 @@ export function JsonImageExtractorModal({ onClose, initialFile, onOpenBulkImgur 
       const extractedAssets: ImageAsset[] = [];
       const seenUrls = new Set<string>();
 
+      // 1. 메시지 데이터를 스캔하여 이미지 해시별 발언 캐릭터 이름 및 표정 번호 매핑
+      const hashToCharName = new Map<string, string>();
+      const hashToExprIndex = new Map<string, number>();
+      const charCounts = new Map<string, number>();
+
+      if (data && Array.isArray(data.messages)) {
+        data.messages.forEach((msg: any) => {
+          const hash = msg.iconImage;
+          if (hash && typeof hash === 'string') {
+            if (!hashToCharName.has(hash)) {
+              let rawName = (msg.name !== undefined && msg.name !== null ? String(msg.name).trim() : '');
+              rawName = rawName.replace(/[/\\?%*:|"<>]/g, '_').trim();
+              if (rawName.toLowerCase() === 'system') return; // 시스템 메시지 아이콘 제외
+              if (!rawName) rawName = '캐릭터';
+              hashToCharName.set(hash, rawName);
+              const nextCount = (charCounts.get(rawName) || 0) + 1;
+              charCounts.set(rawName, nextCount);
+              hashToExprIndex.set(hash, nextCount);
+            }
+          }
+        });
+      }
+
       // IF this is a standard V2 json log with `images` object
       if (data && data.images && typeof data.images === 'object') {
           // Create deterministic short IDs for images exactly like parser.ts
           const hashToShortId = new Map<string, string>();
           let imgCounter = 1;
-          Object.keys(data.images).sort().forEach(hash => {
+          const sortedHashes = Object.keys(data.images).sort();
+          sortedHashes.forEach(hash => {
               hashToShortId.set(hash, `img_${imgCounter.toString().padStart(3, '0')}`);
               imgCounter++;
           });
           
-          for (const [hashId, url] of Object.entries(data.images)) {
-             if (typeof url === 'string' && url.startsWith('data:image/') && !seenUrls.has(url)) {
+          let otherCounter = 1;
+          sortedHashes.forEach(hashId => {
+             const url = data.images[hashId];
+             if (typeof url === 'string' && url.startsWith('data:image/')) {
                 seenUrls.add(url);
+
+                // 캐릭터 이름 기반 의미론적 파일명 생성 (예: 엘리스_01, 엘리스_02, 탐정_01)
+                let semanticName = '';
+                if (hashToCharName.has(hashId)) {
+                  const cName = hashToCharName.get(hashId)!;
+                  const exprNum = hashToExprIndex.get(hashId) || 1;
+                  semanticName = `${cName}_${exprNum.toString().padStart(2, '0')}`;
+                } else {
+                  semanticName = `기타_${otherCounter.toString().padStart(2, '0')}`;
+                  otherCounter++;
+                }
+
                 extractedAssets.push({
-                   id: hashToShortId.get(hashId) || hashId, // Use short ID
+                   id: semanticName, // 사용자 친화적 및 Imgur 자동 식별용 파일명
                    url: url,
                    source: 'data.images',
-                   type: 'character'
+                   type: hashToCharName.has(hashId) ? 'character' : 'other'
                 });
              }
-          }
+          });
       }
 
       // Extract images recursively
@@ -202,8 +240,7 @@ export function JsonImageExtractorModal({ onClose, initialFile, onOpenBulkImgur 
             if (asset.id && !asset.id.startsWith('asset-')) {
                filename = `${asset.id}.${ext}`;
             } else {
-               const prefix = asset.type === 'character' ? 'char_' : asset.type === 'background' ? 'bg_' : 'img_';
-               filename = `${prefix}${idx + 1}.${ext}`;
+               filename = `asset_${idx + 1}.${ext}`;
             }
             zip.file(filename, base64Data, { base64: true });
           }

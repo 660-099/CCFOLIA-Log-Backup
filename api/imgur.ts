@@ -8,9 +8,25 @@ import type { Request, Response } from 'express';
 
 // 1. 사용자가 입력한 주소에서 고유 ID(해시값)만 추출하는 정규식 로직
 export function extractImgurId(url: string): string | null {
-  const regExp = /(?:https?:\/\/)?(?:www\.)?(?:m\.)?imgur\.com\/(?:a|gallery|t|r)\/([a-zA-Z0-9]+)/;
-  const match = url.match(regExp);
-  return match ? match[1] : null;
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+
+  // 1. Album / gallery format: imgur.com/a/XXXXX, imgur.com/gallery/XXXXX
+  const albumMatch = trimmed.match(/(?:https?:\/\/)?(?:www\.)?(?:m\.)?imgur\.com\/(?:a|gallery|t|r)\/([a-zA-Z0-9]+)/i);
+  if (albumMatch) return albumMatch[1];
+
+  // 2. Direct alphanumeric ID if user entered just the hash
+  if (/^[a-zA-Z0-9]{5,10}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  // 3. Direct single image link: i.imgur.com/XXXXX.ext or imgur.com/XXXXX
+  const singleMatch = trimmed.match(/(?:https?:\/\/)?(?:www\.)?(?:i\.)?imgur\.com\/([a-zA-Z0-9]+)(?:\.[a-zA-Z0-9]+)?/i);
+  if (singleMatch && singleMatch[1] !== 'a' && singleMatch[1] !== 'gallery') {
+    return singleMatch[1];
+  }
+
+  return null;
 }
 
 // 2. Imgur 페이지 소스코드를 긁어와서 숨겨진 이미지 데이터를 쪼개내는 핵심 로직
@@ -19,6 +35,8 @@ export async function fetchImgurImages(imgurUrl: string) {
     const imgurId = extractImgurId(imgurUrl);
     if (!imgurId) throw new Error('유효한 Imgur 앨범 주소가 아닙니다.');
     
+    const clientId = process.env.VITE_IMGUR_CLIENT_ID || process.env.IMGUR_CLIENT_ID || '546c25a59c58ad7';
+
     // 1순위: Imgur V3 API (Client-ID 사용)
     // 이 방식은 원본 업로드 파일명(name)을 유지해줍니다.
     try {
@@ -26,7 +44,7 @@ export async function fetchImgurImages(imgurUrl: string) {
       const apiResponse = await axios.get(apiUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Authorization': 'Client-ID 546c25a59c58ad7',
+          'Authorization': `Client-ID ${clientId}`,
           'Accept': 'application/json'
         }
       });
@@ -34,8 +52,6 @@ export async function fetchImgurImages(imgurUrl: string) {
       const images = apiResponse.data?.data?.images;
       if (images && Array.isArray(images) && images.length > 0) {
         return images.map((item: any) => {
-          console.log("Imgur API item:", item.name, item.id);
-          // extract extension from link or type
           let ext = '.jpg';
           if (item.link) {
             const match = item.link.match(/\.[a-zA-Z0-9]+$/);
@@ -44,12 +60,46 @@ export async function fetchImgurImages(imgurUrl: string) {
           return {
             url: item.link || `https://i.imgur.com/${item.id}${ext}`,
             fileName: item.name || item.title || item.description || item.id,
-            ext: ext
+            ext: ext,
+            size: typeof item.size === 'number' ? item.size : undefined,
+            width: typeof item.width === 'number' ? item.width : undefined,
+            height: typeof item.height === 'number' ? item.height : undefined
           };
         });
       }
-    } catch (apiError) {
-      console.warn("Imgur V3 API 실패, Embed 스크래핑으로 우회 시도합니다.", apiError);
+    } catch (apiError: any) {
+      // If 404, maybe this is a single image ID rather than an album
+      if (apiError.response?.status === 404) {
+        try {
+          const singleUrl = `https://api.imgur.com/3/image/${imgurId}`;
+          const singleRes = await axios.get(singleUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Authorization': `Client-ID ${clientId}`,
+              'Accept': 'application/json'
+            }
+          });
+          const item = singleRes.data?.data;
+          if (item && item.link) {
+            let ext = '.png';
+            if (item.link) {
+              const match = item.link.match(/\.[a-zA-Z0-9]+$/);
+              if (match) ext = match[0];
+            }
+            return [{
+              url: item.link || `https://i.imgur.com/${item.id}${ext}`,
+              fileName: item.name || item.title || item.description || item.id,
+              ext: ext,
+              size: typeof item.size === 'number' ? item.size : undefined,
+              width: typeof item.width === 'number' ? item.width : undefined,
+              height: typeof item.height === 'number' ? item.height : undefined
+            }];
+          }
+        } catch (singleErr) {
+          // ignore and proceed to scraping
+        }
+      }
+      console.warn("Imgur V3 API 실패, Embed 스크래핑으로 우회 시도합니다.", apiError.message);
     }
 
     // 2순위: Imgur의 embed 페이지를 통해 데이터 접근 우회 (스크래핑)
@@ -107,7 +157,10 @@ export async function fetchImgurImages(imgurUrl: string) {
       return {
         url: `https://i.imgur.com/${item.hash}${item.ext}`,
         fileName: item.name || item.title || item.description || item.id || item.hash, // 원래 파일명이나 업로더가 적은 이름
-        ext: item.ext
+        ext: item.ext,
+        size: typeof item.size === 'number' ? item.size : (typeof item.bytes === 'number' ? item.bytes : undefined),
+        width: typeof item.width === 'number' ? item.width : undefined,
+        height: typeof item.height === 'number' ? item.height : undefined
       };
     });
 

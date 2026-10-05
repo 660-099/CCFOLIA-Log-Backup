@@ -1,4 +1,5 @@
-import { processImagesForExport } from './utils/imageUtils';
+import { processImagesForExport, getUsedBase64ImagesInfo } from './utils/imageUtils';
+import { MaintenanceNotice } from './components/MaintenanceNotice';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -63,6 +64,7 @@ import {
   ArrowUp,
   ArrowDown,
   GripVertical,
+  AlertTriangle,
   Edit2,
   Archive,
 
@@ -73,7 +75,8 @@ import {
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
 import { clsx, type ClassValue } from 'clsx';
-import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem, Illustration, LogFile } from './types';
+import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem, Illustration, LogFile, CharImage } from './types';
+import { getOriginDataUrl } from './utils/blobStore';
 import { parseLogFile } from './parser';
 import { cn, r, rgbToHex, getFileNameFromUrl } from './utils';
 import { compare, applyPatch } from 'fast-json-patch';
@@ -87,6 +90,7 @@ import { CharImagePanelPopup } from './components/CharImagePanelPopup';
 import { AvatarImagePopup } from './components/AvatarImagePopup';
 import { BulkImageAllocatorModal } from './components/BulkImageAllocatorModal';
 import { JsonImageExtractorModal } from './components/JsonImageExtractorModal';
+import { matchImagesToCharacters } from './utils/characterMatcher';
 
 import { SearchableSelect } from './components/SearchableSelect';
 import { useBulkImageState, useIllustrationBulkState } from './hooks/useBulkStates';
@@ -1352,7 +1356,7 @@ export default function App() {
 
   const exportProject = () => {
     const data: any = { 
-      version: '1.11.2',
+      version: '1.11.16',
       files,
       activeFileId,
       originalFileName,
@@ -1741,8 +1745,9 @@ export default function App() {
       const log = item.log;
       if (!log.isContinuation) {
          if (tabSettings[log.tabId]?.visible !== false && charSettings[log.charId]?.visible !== false) {
-           const isNarration = log.charId === narrationCharacter;
-           if (hideAllAvatars || (isNarration && narrationFormat === 'style3')) {
+           const isNarration = log.charId === narrationCharacter || log.charId === narrationCharacter2;
+           const charFmt = log.charId === narrationCharacter2 ? narrationFormat2 : narrationFormat;
+           if (hideAllAvatars || (isNarration && charFmt === 'style3')) {
              const w = ctx.measureText(log.name + ':').width;
              if (w > mw) mw = w;
            }
@@ -1995,67 +2000,218 @@ export default function App() {
   }, [files, logs, originalFileName, pageTitle]);
 
 
-  const applyBulkAllocations = (allocations: Record<string, string[]>, reps: Record<string, string>) => {
+  const applyBulkAllocations = (
+    allocations: Record<string, string[]>, 
+    reps: Record<string, string>,
+    targetImgIds: Record<string, string> = {},
+    illustrationUrls: string[] = []
+  ) => {
     setCharSettings(prev => {
       const next = { ...prev };
+
       for (const [charId, urls] of Object.entries(allocations)) {
         if (!next[charId]) continue;
         const currentImages = next[charId].images || [];
         const newImages = [...currentImages];
+
         urls.forEach(url => {
-          if (!newImages.find(i => i.url === url)) {
-            newImages.push({ id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, url });
+          let replaced = false;
+          // 1. targetImgId(예: img_001 등) 우선 대조하여 기존 고유 식별자 보존
+          const targetId = targetImgIds[url];
+          if (targetId) {
+            const idx = newImages.findIndex(i => i.id === targetId);
+            if (idx !== -1) {
+              newImages[idx] = { ...newImages[idx], url };
+              replaced = true;
+            }
+          }
+
+          if (!replaced) {
+            const existingIdx = newImages.findIndex(i => i.url === url);
+            if (existingIdx !== -1) {
+              // 이미 동일한 URL이 등록된 경우 유지
+              replaced = true;
+            } else if (newImages.length === 1 && (newImages[0].url.startsWith('data:') || newImages[0].url.startsWith('blob:'))) {
+              // 캐릭터에 기존 임시 스탠딩이 1개만 있는 경우 교체
+              newImages[0] = { ...newImages[0], url };
+              replaced = true;
+            } else {
+              newImages.push({ 
+                id: targetId || `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, 
+                url 
+              });
+            }
           }
         });
         
         const repUrl = reps[charId];
         if (repUrl) {
-           newImages.forEach(i => i.isRepresentative = (i.url === repUrl));
+          newImages.forEach(i => i.isRepresentative = (i.url === repUrl));
         }
         
-        next[charId] = { ...next[charId], images: newImages };
+        const effectiveRepUrl = repUrl || newImages.find(i => i.isRepresentative)?.url || newImages[0]?.url || next[charId].imageUrl;
+        next[charId] = { 
+          ...next[charId], 
+          imageUrl: effectiveRepUrl,
+          images: newImages 
+        };
       }
       saveToHistory({ charSettings: next });
       return next;
     });
+
+    // 미지정 이미지를 삽화로 등록
+    if (illustrationUrls.length > 0 && logs.length > 0) {
+      const illLogs: LogEntry[] = illustrationUrls.map((url, idx) => ({
+        id: `ill_${Date.now()}_${idx}`,
+        color: '',
+        tabId: 'main',
+        tab: 'main',
+        charId: 'system',
+        name: '',
+        content: url,
+        isCommand: false,
+        isContinuation: false,
+        isHiddenContent: false,
+        isIllustration: true,
+        tabOverride: 'auto',
+        width: defaultIllWidth,
+        align: defaultIllAlign
+      }));
+
+      const nextLogs = [...logs];
+      nextLogs.splice(0, 0, ...illLogs);
+      setLogs(nextLogs);
+      saveToHistory({ logs: nextLogs });
+    }
+
     setIsBulkAllocatorOpen(false);
+
+    const totalAssigned = Object.values(allocations).reduce((acc, arr) => acc + arr.length, 0);
+
+    let msg = `총 ${totalAssigned}개의 스탠딩 이미지가 캐릭터에 성공적으로 적용되었습니다.`;
+    if (illustrationUrls.length > 0) {
+      msg += `\n(미지정 이미지 ${illustrationUrls.length}개가 삽화로 추가되었습니다.)`;
+    }
+    alert(msg);
   };
 
 
   const handleBulkImgurFetch = async () => {
-    if (!bulkImgurUrl) return;
+    if (!bulkImgurUrl.trim()) return;
     setIsBulkImgurLoading(true);
     try {
-      const match = bulkImgurUrl.match(/imgur\.com\/a\/([a-zA-Z0-9]+)/);
-      if (!match) throw new Error('올바른 Imgur 앨범 주소가 아닙니다. (예: https://imgur.com/a/XXXXX)');
-      const albumHash = match[1];
-      const res = await fetch(`https://api.imgur.com/3/album/${albumHash}/images`, {
-        headers: { 'Authorization': 'Client-ID ' + (process.env.VITE_IMGUR_CLIENT_ID || '1480f2d93d7c3b9') }
+      const res = await fetch('/api/imgur', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: bulkImgurUrl.trim() })
       });
-      const data = await res.json();
-      if (!data.success) throw new Error('앨범 정보를 불러올 수 없습니다.');
-      const fetched = data.data.map((img: any) => ({
-        url: img.link,
-        fileName: img.name || img.id,
-        ext: img.type.split('/')[1] || 'png'
-      }));
-      setBulkImages(fetched);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Imgur 앨범 정보를 불러올 수 없습니다. 주소를 확인해주세요.');
+      }
+      const fetched = await res.json();
+      if (!Array.isArray(fetched) || fetched.length === 0) {
+        throw new Error('앨범 내에서 이미지를 찾을 수 없습니다.');
+      }
 
-      // 캐릭터 이름 자동 매칭
-      const initialMapping: Record<string, string> = {};
-      fetched.forEach((img: any) => {
-        const fName = (img.fileName || '').toLowerCase();
-        for (const [cId, cSetting] of Object.entries(charSettings)) {
-          const cName = (cSetting.name || '').trim().toLowerCase();
-          if (cName && fName.includes(cName)) {
-            initialMapping[img.url] = cId;
-            break;
+      // 1. 기존 모든 캐릭터의 스탠딩 정보 및 원본 Base64 바이트 크기 수집
+      const allStandings: { 
+        charId: string; 
+        charName: string; 
+        cImg: CharImage; 
+        byteSize: number | null; 
+        cImgIdLower: string; 
+      }[] = [];
+
+      const byteSizeCounts = new Map<number, number>();
+
+      Object.entries(charSettings).forEach(([cId, cSetting]) => {
+        const cName = (cSetting.name || '').trim();
+        (cSetting.images || []).forEach(cImg => {
+          const originUrl = getOriginDataUrl(cImg.url) || (cImg.url?.startsWith('data:') ? cImg.url : null);
+          let byteSize: number | null = null;
+          if (originUrl && originUrl.startsWith('data:')) {
+            const commaIdx = originUrl.indexOf(',');
+            if (commaIdx !== -1) {
+              const b64 = originUrl.slice(commaIdx + 1).replace(/\s/g, '');
+              byteSize = Math.floor(b64.length * 3 / 4);
+              if (b64.endsWith('==')) byteSize -= 2;
+              else if (b64.endsWith('=')) byteSize -= 1;
+              if (byteSize <= 0) byteSize = null;
+            }
           }
+          if (byteSize !== null) {
+            byteSizeCounts.set(byteSize, (byteSizeCounts.get(byteSize) || 0) + 1);
+          }
+          allStandings.push({ 
+            charId: cId, 
+            charName: cName, 
+            cImg, 
+            byteSize, 
+            cImgIdLower: (cImg.id || '').trim().toLowerCase() 
+          });
+        });
+      });
+
+      // 앨범 내 이미지들의 바이트 크기 분포 계산
+      const fetchedSizeCounts = new Map<number, number>();
+      fetched.forEach((f: any) => {
+        if (typeof f.size === 'number' && f.size > 0) {
+          fetchedSizeCounts.set(f.size, (fetchedSizeCounts.get(f.size) || 0) + 1);
         }
       });
-      setBulkImageMapping(initialMapping);
+
+      // 캐릭터 후보 변환
+      const candidateChars = Object.entries(charSettings).map(([cId, char]) => ({
+        charId: cId,
+        charName: (char.name || '').trim(),
+        color: char.color,
+        images: (char.images || []).map(ci => ({
+          id: ci.id,
+          name: ci.name,
+          url: ci.url,
+          isRepresentative: ci.isRepresentative
+        }))
+      }));
+
+      // 정밀 매칭 엔진 실행
+      const matchCandidates = fetched.map((img: any) => ({
+        url: img.url,
+        fileName: img.fileName,
+        size: img.size
+      }));
+
+      const matchResults = matchImagesToCharacters(matchCandidates, candidateChars);
+
+      const autoMapping: Record<string, string> = {};
+      const newTypeMapping: Record<string, 'character' | 'illustration' | 'none'> = {};
+
+      fetched.forEach((img: any) => {
+        const res = matchResults[img.url];
+        if (res && res.charId) {
+          autoMapping[img.url] = res.charId;
+          img.targetImgId = res.targetImgId;
+          newTypeMapping[img.url] = 'character';
+        } else {
+          autoMapping[img.url] = "";
+          newTypeMapping[img.url] = 'none';
+        }
+      });
+
+      // 3. 매칭 확인 화면(Step 1)을 띄워 사용자가 검토 및 수정할 수 있도록 제공
+      setBulkImages(fetched);
+      setBulkImageMapping(autoMapping);
+      setBulkImageTypeMapping(newTypeMapping);
       setBulkSelectedIllustrations({});
       setBulkImportStep(1);
+
+      const autoMatchedCount = Object.values(autoMapping).filter(Boolean).length;
+      if (autoMatchedCount > 0) {
+        alert(`총 ${fetched.length}개의 이미지 중 ${autoMatchedCount}개가 캐릭터에 자동 매치되었습니다.\n매칭 결과를 확인하고 필요 시 변경한 후 하단의 [확인 및 적용]을 눌러주세요.`);
+      } else {
+        alert(`총 ${fetched.length}개의 이미지를 불러왔습니다.\n목록에서 각 이미지에 해당하는 캐릭터를 지정해주세요.`);
+      }
     } catch (e: any) {
       alert(e.message || 'Imgur 앨범을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -2064,22 +2220,22 @@ export default function App() {
   };
 
   const handleIllBulkFetch = async () => {
-    if (!illBulkUrl) return;
+    if (!illBulkUrl.trim()) return;
     setIsIllBulkLoading(true);
     try {
-      const match = illBulkUrl.match(/imgur\.com\/a\/([a-zA-Z0-9]+)/);
-      if (!match) throw new Error('올바른 Imgur 앨범 주소가 아닙니다.');
-      const albumHash = match[1];
-      const res = await fetch(`https://api.imgur.com/3/album/${albumHash}/images`, {
-        headers: { 'Authorization': 'Client-ID ' + (process.env.VITE_IMGUR_CLIENT_ID || '1480f2d93d7c3b9') }
+      const res = await fetch('/api/imgur', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: illBulkUrl.trim() })
       });
-      const data = await res.json();
-      if (!data.success) throw new Error('앨범 정보를 불러올 수 없습니다.');
-      const fetched = data.data.map((img: any) => ({
-        url: img.link,
-        fileName: img.name || img.id,
-        ext: img.type.split('/')[1] || 'png'
-      }));
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Imgur 앨범 정보를 불러올 수 없습니다. 주소를 확인해주세요.');
+      }
+      const fetched = await res.json();
+      if (!Array.isArray(fetched) || fetched.length === 0) {
+        throw new Error('앨범 내에서 이미지를 찾을 수 없습니다.');
+      }
       setIllBulkImages(fetched);
       const initSelected: Record<string, boolean> = {};
       fetched.forEach((f: any) => initSelected[f.url] = true);
@@ -2097,21 +2253,60 @@ export default function App() {
       bulkImages.forEach(img => {
         const charId = bulkImageMapping[img.url];
         if (charId && next[charId]) {
-          const arr = next[charId].images || [];
-          if (!arr.find(i => i.url === img.url)) {
-            const isFirst = arr.length === 0;
-            const expressionName = img.fileName ? img.fileName.replace(/\.[^/.]+$/, "") : "";
-            arr.push({ 
-              id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, 
-              url: img.url, 
-              isRepresentative: isFirst,
-              name: expressionName
+          const arr = [...(next[charId].images || [])];
+          const rawName = (img.fileName || '').trim();
+          const baseName = rawName.replace(/\.[^/.]+$/, '').trim();
+          const baseNameLower = baseName.toLowerCase();
+          const rawLower = rawName.toLowerCase();
+
+          // 기존 스탠딩 중 동일한 ID(img_001 등), targetImgId, 또는 동일 파일명이 있는 경우 교체
+          let existingByIdx = -1;
+          if ((img as any).targetImgId) {
+            existingByIdx = arr.findIndex(i => i.id === (img as any).targetImgId);
+          }
+          if (existingByIdx === -1) {
+            existingByIdx = arr.findIndex(i => {
+              const iIdLower = (i.id || '').toLowerCase();
+              const iNameLower = (i.name || '').toLowerCase();
+              return iIdLower === baseNameLower || iNameLower === baseNameLower || iIdLower === rawLower || i.url === img.url;
             });
-            next[charId].images = arr;
-            if (isFirst || !next[charId].imageUrl) {
+          }
+
+          if (existingByIdx !== -1) {
+            // 기존 image ID를 유지한 채 URL만 Imgur 링크로 교체 -> 대사 overrideImageId 연동 유지!
+            const wasRep = arr[existingByIdx].isRepresentative || next[charId].imageUrl === arr[existingByIdx].url;
+            arr[existingByIdx] = {
+              ...arr[existingByIdx],
+              url: img.url,
+              name: arr[existingByIdx].name || baseName
+            };
+            if (wasRep || !next[charId].imageUrl) {
               next[charId].imageUrl = img.url;
             }
+          } else {
+            // 캐릭터에 이미지가 1개뿐이고 base64/blob인 경우 단일 스탠딩 대체
+            const isSingleStanding = arr.length === 1 && (arr[0].url.startsWith('data:') || arr[0].url.startsWith('blob:'));
+            if (isSingleStanding) {
+              arr[0] = {
+                ...arr[0],
+                url: img.url,
+                name: arr[0].name || baseName
+              };
+              next[charId].imageUrl = img.url;
+            } else {
+              const isFirst = arr.length === 0;
+              arr.push({ 
+                id: (img as any).targetImgId || (baseName && !baseName.startsWith('Image_') ? baseName : `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`), 
+                url: img.url, 
+                isRepresentative: isFirst,
+                name: baseName
+              });
+              if (isFirst || !next[charId].imageUrl) {
+                next[charId].imageUrl = img.url;
+              }
+            }
           }
+          next[charId].images = arr;
         }
       });
       saveToHistory({ charSettings: next });
@@ -2149,7 +2344,13 @@ export default function App() {
       saveToHistory({ logs: nextLogs });
     }
     
+    const assignedCount = Object.values(bulkImageMapping).filter(Boolean).length;
     setIsBulkImgurModalOpen(false);
+    setBulkImgurUrl('');
+    setBulkImages([]);
+    setBulkImageMapping({});
+    setBulkSelectedIllustrations({});
+    alert(`${assignedCount}개의 스탠딩 이미지가 캐릭터에 성공적으로 적용되었습니다.`);
   };
 
   const applyIllBulkImages = () => {
@@ -2677,12 +2878,44 @@ export default function App() {
     setEditingLogId(newLogId);
   }, [logs, saveToHistory]);
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      alert('클립보드에 복사되었습니다.');
-    }).catch(err => {
-      console.error('복사 실패:', err);
-    });
+  const targetExportFiles = useMemo(() => {
+    return files.length > 0 ? files : (activeFile ? [activeFile] : []);
+  }, [files, activeFile]);
+
+  const usedBase64Images = useMemo(() => {
+    return getUsedBase64ImagesInfo(targetExportFiles, charSettings, tabSettings, hideAllAvatars);
+  }, [targetExportFiles, charSettings, tabSettings, hideAllAvatars]);
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        alert('클립보드에 복사되었습니다.');
+        return true;
+      }
+      throw new Error('Clipboard API unavailable');
+    } catch (err) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) {
+          alert('클립보드에 복사되었습니다.');
+          return true;
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback copy failed:', fallbackErr);
+      }
+      alert('클립보드 복사에 실패했습니다. 복사할 내용의 용량이 너무 크거나 브라우저 권한 제한일 수 있습니다.\n\n용량이 큰 경우 HTML 다운로드를 이용해주세요.');
+      return false;
+    }
   };
 
   const getFileSectionsList = (targetFile: LogFile) => {
@@ -3186,7 +3419,7 @@ export default function App() {
       showLogDivider
     }}>
       <div 
-        className="flex flex-col md:flex-row h-[100dvh] bg-[#121212] font-sans text-stone-200 overflow-hidden relative"
+        className="flex flex-col h-[100dvh] bg-[#121212] font-sans text-stone-200 overflow-hidden relative"
         onDragEnter={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -3204,6 +3437,7 @@ export default function App() {
           setIsDraggingFile(false);
         }}
       >
+        <MaintenanceNotice />
         {isDraggingFile && (
           <div 
             className="absolute inset-0 z-[1000000] bg-[#050505]/80 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-200"
@@ -3432,9 +3666,9 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleOpenMergeStudio}
-                      className="flex items-center gap-2 text-[12px] font-bold border border-white/10 hover:border-white/20 text-white/80 hover:text-white bg-white/5 hover:bg-white/10 transition-all cursor-pointer rounded-xl px-3 py-2 w-full justify-center mb-4"
+                      className="flex items-center gap-2 text-[12px] font-semibold border border-zinc-700/60 hover:border-zinc-500 text-zinc-300 hover:text-white bg-zinc-800/60 hover:bg-zinc-800 transition-all cursor-pointer rounded-xl px-3 py-2 w-full justify-center mb-4"
                     >
-                      <Layers className="w-3.5 h-3.5 text-[#e6005c]" />
+                      <Layers className="w-3.5 h-3.5 text-zinc-400" />
                       <span>여러 로그 파일 병합하기</span>
                     </button>
                   )}
@@ -3708,22 +3942,22 @@ export default function App() {
                     title="개별 탭 설정" 
                     tooltip={<div className="text-[11px] leading-relaxed w-[210px] text-left">Alt 키를 누른 채로 클릭하면 해당 항목만 남기고 모두 숨길 수 있습니다.</div>} 
                     rightElement={
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button 
                           onClick={handleRandomizeTabColors}
-                          className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5"
+                          className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5 whitespace-nowrap shrink-0"
                           title="모든 탭에 무작위 색상을 겹치지 않게 지정합니다"
                         >
-                          <Palette className="w-3 h-3" />
+                          <Palette className="w-3 h-3 shrink-0" />
                           무작위 색상 지정
                         </button>
                         <button 
                           onClick={(e) => {
                             setTabSortMode(prev => prev === 'appearance' ? 'alphabetical' : 'appearance');
                           }}
-                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5"
+                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5 whitespace-nowrap shrink-0"
                         >
-                          <ArrowUpDown className="w-3 h-3" />
+                          <ArrowUpDown className="w-3 h-3 shrink-0" />
                           {tabSortMode === 'appearance' ? '등장순' : '가나다순'}
                         </button>
                       </div>
@@ -3793,19 +4027,26 @@ export default function App() {
                                 </button>
                               </div>
                             )}
-                            <div className="flex items-center bg-black/20 rounded-md border border-white/5 p-0.5 ml-1">
-                              <button
-                                onClick={(e) => {
-                                  const next = { ...tabSettings, [tab.id]: { ...tab, applyColorToName: !tab.applyColorToName } };
-                                  setTabSettings(next);
-                                  saveToHistory({ tabSettings: next });
-                                }}
-                                className={`w-6 h-6 rounded flex items-center justify-center relative transition-colors ${tab.applyColorToName ? "bg-white/20" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
-                                title="이름에 색상 적용"
-                              >
-                                <User className="w-3.5 h-3.5 -translate-y-[1px]" style={{ color: tab.applyColorToName ? (tab.textColor || 'white') : 'currentColor' }} />
-                                <div className="absolute bottom-1 left-1.5 right-1.5 h-[2px] rounded-full transition-colors" style={{ backgroundColor: tab.textColor || 'white', opacity: tab.applyColorToName ? 1 : 0.3 }} />
-                              </button>
+                            <div className="flex items-center bg-black/20 rounded-md border border-white/5 p-0.5 ml-1 shrink-0">
+                              {(() => {
+                                const isNameColorActive = tab.applyColorToName !== undefined
+                                  ? tab.applyColorToName
+                                  : (tab.format === 'other' ? !disableOtherColor : true);
+                                return (
+                                  <button
+                                    onClick={(e) => {
+                                      const next = { ...tabSettings, [tab.id]: { ...tab, applyColorToName: !isNameColorActive } };
+                                      setTabSettings(next);
+                                      saveToHistory({ tabSettings: next });
+                                    }}
+                                    className={`w-6 h-6 rounded flex items-center justify-center relative transition-colors shrink-0 ${isNameColorActive ? "bg-white/20 text-white" : "text-white/40 hover:bg-white/10 hover:text-white"}`}
+                                    title={isNameColorActive ? "캐릭터 이름에 색상 적용 중 (클릭 시 미적용)" : "캐릭터 이름 색상 미적용 (클릭 시 적용)"}
+                                  >
+                                    <User className="w-3.5 h-3.5 -translate-y-[1px]" style={{ color: isNameColorActive ? (tab.textColor || 'white') : 'currentColor' }} />
+                                    <div className="absolute bottom-1 left-1.5 right-1.5 h-[2px] rounded-full transition-colors" style={{ backgroundColor: isNameColorActive ? (tab.textColor || 'white') : 'white', opacity: isNameColorActive ? 1 : 0.2 }} />
+                                  </button>
+                                );
+                              })()}
                               <button
                                 onClick={(e) => {
                                   if (activeColorPicker === `tab-text-${tab.id}`) {
@@ -3816,7 +4057,7 @@ export default function App() {
                                     setColorPickerRect(e.currentTarget.getBoundingClientRect());
                                   }
                                 }}
-                                className="w-6 h-6 rounded flex items-center justify-center relative hover:bg-white/10 transition-colors"
+                                className="w-6 h-6 rounded flex items-center justify-center relative hover:bg-white/10 transition-colors shrink-0"
                                 title="텍스트 색상"
                               >
                                 <span className="font-bold text-[10px]" style={{ color: tab.textColor || 'white' }}>A</span>
@@ -3828,7 +4069,7 @@ export default function App() {
                                   setTabSettings(next);
                                   saveToHistory({ tabSettings: next });
                                 }}
-                                className={`w-6 h-6 rounded flex items-center justify-center font-serif font-bold text-[10px] transition-colors ${tab.isBold ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
+                                className={`w-6 h-6 rounded flex items-center justify-center font-serif font-bold text-[10px] transition-colors shrink-0 ${tab.isBold ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
                                 title="굵게"
                               >
                                 B
@@ -3839,15 +4080,15 @@ export default function App() {
                                   setTabSettings(next);
                                   saveToHistory({ tabSettings: next });
                                 }}
-                                className={`w-6 h-6 rounded flex items-center justify-center font-serif italic text-[11px] transition-colors ${tab.isItalic ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
+                                className={`w-6 h-6 rounded flex items-center justify-center font-serif italic text-[11px] transition-colors shrink-0 ${tab.isItalic ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
                                 title="이탤릭"
                               >
                                 I
                               </button>
-                                                    </div>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-3 flex-1">
+                          <div className="flex items-center gap-2">
+                            <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-1 flex-1 min-w-0">
                               {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
                                 <button
                                   key={f}
@@ -3856,7 +4097,7 @@ export default function App() {
                                     setTabSettings(next);
                                     saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                                   }}
-                                  className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
+                                  className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all whitespace-nowrap truncate ${
                                     tab.format === f 
                                       ? 'bg-[#e6005c] text-white shadow-sm' 
                                       : 'text-white/40 hover:text-white/70'
@@ -3867,7 +4108,7 @@ export default function App() {
                               ))}
                             </div>
                             
-                            <div className="relative">
+                            <div className="relative shrink-0">
                               <button
                                 onClick={(e) => {
                                   if (activeColorPicker === `tab-${tab.id}`) {
@@ -3878,7 +4119,7 @@ export default function App() {
                                     setColorPickerRect(e.currentTarget.getBoundingClientRect());
                                   }
                                 }}
-                                className="w-6 h-6 rounded-md border border-white/10 shadow-sm transition-all hover:scale-105"
+                                className="w-6 h-6 rounded-md border border-white/10 shadow-sm transition-all hover:scale-105 shrink-0"
                                 style={{ backgroundColor: tab.color || '#ffd400' }}
                               />
                             </div>
@@ -5570,7 +5811,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/30 hover:text-white/50 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.11.2</span>
+            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.11.16</span>
           </div>
         </div>
       </aside>
@@ -5754,20 +5995,55 @@ export default function App() {
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       className="absolute right-0 mt-2 w-[320px] bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden py-2 flex flex-col"
                     >
+                      {/* Base64 Warning inside Save Menu */}
+                      {usedBase64Images.length > 0 && (
+                        <div className="mx-2 mb-2 p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-[11px] leading-relaxed flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-bold text-amber-200">용량 초과 주의</p>
+                            <p className="text-[10px] text-amber-300/90 mt-0.5">
+                              Base64(내장) 이미지가 포함되어 용량 초과가 발생할 수 있습니다. 외부 링크로의 교체를 권장합니다. ({usedBase64Images.join(', ')})
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Bulk Save Section */}
                       <div className="px-2 pb-2 border-b border-white/10 mb-2">
                         {ENABLE_MULTI_FILE_UI ? (
                           <div className="flex gap-2">
                             <button 
-                              onClick={async (e) => { try { const html = await getCombinedHtmlString(); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
-                              className="flex-1 p-2 rounded-xl hover:bg-white/5 transition-colors flex flex-col items-center justify-center gap-1 group text-white/70 hover:text-white"
+                              disabled={exportMode === 'html'}
+                              onClick={exportMode === 'html' ? undefined : async (e) => { 
+                                try { 
+                                  const html = await getCombinedHtmlString(); 
+                                  await copyToClipboard(html); 
+                                  setShowSaveMenu(false); 
+                                } catch(err: any){
+                                  alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
+                                } 
+                              }}
+                              className={cn(
+                                "flex-1 p-2 rounded-xl transition-colors flex flex-col items-center justify-center gap-1 group",
+                                exportMode === 'html'
+                                  ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
+                                  : "hover:bg-white/5 text-white/70 hover:text-white"
+                              )}
+                              title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "연속 파일 복사"}
                             >
-                              <Copy className="w-5 h-5 mb-1 text-white/50 group-hover:text-white transition-colors" />
+                              <Copy className={cn("w-5 h-5 mb-1", exportMode === 'html' ? "text-white/20" : "text-white/50 group-hover:text-white transition-colors")} />
                               <span className="text-[11px] font-bold">연속 파일 복사</span>
-                              <span className="text-[9px] opacity-60">전체 통합 복사</span>
+                              <span className={cn("text-[9px]", exportMode === 'html' ? "text-white/10" : "opacity-60")}>전체 통합 복사</span>
                             </button>
                             <button 
-                              onClick={async (e) => { await downloadCombinedHtml(); setShowDownloadMenu(false); }}
+                              onClick={async (e) => { 
+                                try {
+                                  await downloadCombinedHtml(); 
+                                  setShowSaveMenu(false); 
+                                } catch(err: any) {
+                                  alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
+                                }
+                              }}
                               className="flex-1 p-2 rounded-xl hover:bg-[#e6005c]/10 transition-colors flex flex-col items-center justify-center gap-1 group text-[#e6005c]"
                             >
                               <Download className="w-5 h-5 mb-1 opacity-70 group-hover:opacity-100 transition-opacity" />
@@ -5777,7 +6053,14 @@ export default function App() {
                           </div>
                         ) : (
                           <button 
-                            onClick={async (e) => { await downloadAllZip(); setShowDownloadMenu(false); }}
+                            onClick={async (e) => { 
+                              try {
+                                await downloadAllZip(); 
+                                setShowSaveMenu(false); 
+                              } catch(err: any) {
+                                alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
+                              }
+                            }}
                             className="w-full py-3 px-2 rounded-xl hover:bg-[#e6005c]/5 transition-colors flex items-center gap-4 text-[#e6005c] group text-left"
                           >
                             <div className="w-5 h-5 flex items-center justify-center shrink-0">
@@ -5807,14 +6090,35 @@ export default function App() {
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
                                   <button
-                                    onClick={async (e) => { try { const html = await getHtmlStringForFile(f); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
-                                    className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
-                                    title="전체 복사"
+                                    disabled={exportMode === 'html'}
+                                    onClick={exportMode === 'html' ? undefined : async (e) => { 
+                                      try { 
+                                        const html = await getHtmlStringForFile(f); 
+                                        await copyToClipboard(html); 
+                                        setShowSaveMenu(false); 
+                                      } catch(err: any){
+                                        alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
+                                      } 
+                                    }}
+                                    className={cn(
+                                      "px-2 py-1 rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1",
+                                      exportMode === 'html'
+                                        ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
+                                        : "bg-white/10 hover:bg-white/20 text-white"
+                                    )}
+                                    title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "전체 복사"}
                                   >
-                                    <Copy className="w-3 h-3" /> 복사
+                                    <Copy className={cn("w-3 h-3", exportMode === 'html' && "text-white/20")} /> 복사
                                   </button>
                                   <button
-                                    onClick={async (e) => { await downloadHtmlForFile(f); setShowDownloadMenu(false); }}
+                                    onClick={async (e) => { 
+                                      try {
+                                        await downloadHtmlForFile(f); 
+                                        setShowSaveMenu(false); 
+                                      } catch(err: any) {
+                                        alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
+                                      }
+                                    }}
                                     className="px-2 py-1 bg-[#e6005c]/20 hover:bg-[#e6005c]/80 text-[#e6005c] hover:text-white rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
                                     title="전체 저장"
                                   >
@@ -5833,14 +6137,35 @@ export default function App() {
                                       </div>
                                       <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/sec:opacity-100 transition-opacity">
                                         <button
-                                          onClick={async (e) => { try { const html = await getHtmlStringForFile(f, s.id); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
-                                          className="p-1.5 bg-white/5 hover:bg-white/20 text-white/60 hover:text-white rounded transition-colors"
-                                          title="섹션 복사"
+                                          disabled={exportMode === 'html'}
+                                          onClick={exportMode === 'html' ? undefined : async (e) => { 
+                                            try { 
+                                              const html = await getHtmlStringForFile(f, s.id); 
+                                              await copyToClipboard(html); 
+                                              setShowSaveMenu(false); 
+                                            } catch(err: any){
+                                              alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
+                                            } 
+                                          }}
+                                          className={cn(
+                                            "p-1.5 rounded transition-colors",
+                                            exportMode === 'html'
+                                              ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
+                                              : "bg-white/5 hover:bg-white/20 text-white/60 hover:text-white"
+                                          )}
+                                          title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "섹션 복사"}
                                         >
-                                          <Copy className="w-3 h-3" />
+                                          <Copy className={cn("w-3 h-3", exportMode === 'html' && "text-white/20")} />
                                         </button>
                                         <button
-                                          onClick={async (e) => { await downloadHtmlForFile(f, s); setShowDownloadMenu(false); }}
+                                          onClick={async (e) => { 
+                                            try {
+                                              await downloadHtmlForFile(f, s); 
+                                              setShowSaveMenu(false); 
+                                            } catch(err: any) {
+                                              alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
+                                            }
+                                          }}
                                           className="p-1.5 bg-[#e6005c]/10 hover:bg-[#e6005c] text-[#e6005c] hover:text-white rounded transition-colors"
                                           title="섹션 저장"
                                         >
@@ -5881,6 +6206,19 @@ export default function App() {
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       className="absolute right-0 mt-2 w-80 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-3 space-y-3"
                     >
+                      {/* Base64 Warning inside Download Menu */}
+                      {usedBase64Images.length > 0 && (
+                        <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-[11px] leading-relaxed flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-bold text-amber-200">용량 초과 주의</p>
+                            <p className="text-[10px] text-amber-300/90 mt-0.5">
+                              Base64(내장) 이미지가 포함되어 용량 초과가 발생할 수 있습니다. 외부 링크로의 교체를 권장합니다. ({usedBase64Images.join(', ')})
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {ENABLE_MULTI_FILE_UI ? (
                         <div className="bg-[#e6005c]/10 border border-[#e6005c]/30 rounded-xl p-3 space-y-2">
                           <div className="flex items-center gap-2">
@@ -5892,13 +6230,35 @@ export default function App() {
                           </div>
                           <div className="flex items-center gap-2 pt-1">
                             <button 
-                              onClick={async (e) => { try { const html = await getCombinedHtmlString(); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
-                              className="flex-1 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5"
+                              disabled={exportMode === 'html'}
+                              onClick={exportMode === 'html' ? undefined : async (e) => { 
+                                try { 
+                                  const html = await getCombinedHtmlString(); 
+                                  await copyToClipboard(html); 
+                                  setShowDownloadMenu(false); 
+                                } catch(err: any){
+                                  alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
+                                } 
+                              }}
+                              className={cn(
+                                "flex-1 py-2 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5",
+                                exportMode === 'html'
+                                  ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
+                                  : "bg-white/10 hover:bg-white/20 text-white"
+                              )}
+                              title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "연속 파일 복사"}
                             >
-                              <Copy className="w-3.5 h-3.5" /> 연속 파일 복사
+                              <Copy className={cn("w-3.5 h-3.5", exportMode === 'html' && "text-white/20")} /> 연속 파일 복사
                             </button>
                             <button 
-                              onClick={async (e) => { await downloadCombinedHtml(); setShowDownloadMenu(false); }}
+                              onClick={async (e) => { 
+                                try {
+                                  await downloadCombinedHtml(); 
+                                  setShowDownloadMenu(false); 
+                                } catch(err: any) {
+                                  alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
+                                }
+                              }}
                               className="flex-1 py-2 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
                             >
                               <Download className="w-3.5 h-3.5" /> 연속 파일 저장
@@ -5908,7 +6268,14 @@ export default function App() {
                       ) : (
                         <div className="bg-[#e6005c]/10 border border-[#e6005c]/30 rounded-xl p-3 space-y-2">
                           <button 
-                            onClick={async (e) => { await downloadAllZip(); setShowDownloadMenu(false); }}
+                            onClick={async (e) => { 
+                              try {
+                                await downloadAllZip(); 
+                                setShowDownloadMenu(false); 
+                              } catch(err: any) {
+                                alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
+                              }
+                            }}
                             className="w-full py-2 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
                           >
                             <Archive className="w-3.5 h-3.5" /> 모든 파일 ZIP 저장
@@ -5935,14 +6302,35 @@ export default function App() {
                                 </div>
                                 <div className="flex gap-1.5 shrink-0">
                                   <button
-                                    onClick={async (e) => { try { const html = await getHtmlStringForFile(f); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
-                                    className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1"
-                                    title="파일 전체 복사"
+                                    disabled={exportMode === 'html'}
+                                    onClick={exportMode === 'html' ? undefined : async (e) => { 
+                                      try { 
+                                        const html = await getHtmlStringForFile(f); 
+                                        await copyToClipboard(html); 
+                                        setShowDownloadMenu(false); 
+                                      } catch(err: any){
+                                        alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
+                                      } 
+                                    }}
+                                    className={cn(
+                                      "px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1",
+                                      exportMode === 'html'
+                                        ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
+                                        : "bg-white/10 hover:bg-white/20 text-white"
+                                    )}
+                                    title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "파일 전체 복사"}
                                   >
-                                    <Copy className="w-3 h-3" /> 복사
+                                    <Copy className={cn("w-3 h-3", exportMode === 'html' && "text-white/20")} /> 복사
                                   </button>
                                   <button
-                                    onClick={async (e) => { await downloadHtmlForFile(f); setShowDownloadMenu(false); }}
+                                    onClick={async (e) => { 
+                                      try {
+                                        await downloadHtmlForFile(f); 
+                                        setShowDownloadMenu(false); 
+                                      } catch(err: any) {
+                                        alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
+                                      }
+                                    }}
                                     className="px-2.5 py-1 bg-[#e6005c]/80 hover:bg-[#e6005c] text-white rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1 shadow-sm"
                                     title="파일 전체 저장"
                                   >
@@ -5962,14 +6350,35 @@ export default function App() {
                                       </div>
                                       <div className="flex items-center gap-1 shrink-0">
                                         <button
-                                          onClick={async (e) => { try { const html = await getHtmlStringForFile(f, s.id); copyToClipboard(html); setShowDownloadMenu(false); } catch(err){} }}
-                                          className="px-2 py-1 bg-white/5 hover:bg-white/15 text-white/80 hover:text-white rounded text-[9px] font-bold transition-colors flex items-center gap-1"
-                                          title="섹션 복사"
+                                          disabled={exportMode === 'html'}
+                                          onClick={exportMode === 'html' ? undefined : async (e) => { 
+                                            try { 
+                                              const html = await getHtmlStringForFile(f, s.id); 
+                                              await copyToClipboard(html); 
+                                              setShowDownloadMenu(false); 
+                                            } catch(err: any){
+                                              alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
+                                            } 
+                                          }}
+                                          className={cn(
+                                            "px-2 py-1 rounded text-[9px] font-bold transition-colors flex items-center gap-1",
+                                            exportMode === 'html'
+                                              ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
+                                              : "bg-white/5 hover:bg-white/15 text-white/80 hover:text-white"
+                                          )}
+                                          title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "섹션 복사"}
                                         >
-                                          <Copy className="w-2.5 h-2.5" /> 복사
+                                          <Copy className={cn("w-2.5 h-2.5", exportMode === 'html' && "text-white/20")} /> 복사
                                         </button>
                                         <button
-                                          onClick={async (e) => { await downloadHtmlForFile(f, s); setShowDownloadMenu(false); }}
+                                          onClick={async (e) => { 
+                                            try {
+                                              await downloadHtmlForFile(f, s); 
+                                              setShowDownloadMenu(false); 
+                                            } catch(err: any) {
+                                              alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
+                                            }
+                                          }}
                                           className="px-2 py-1 bg-white/5 hover:bg-[#e6005c] text-white/80 hover:text-white rounded text-[9px] font-bold transition-colors flex items-center gap-1"
                                           title="섹션 저장"
                                         >
@@ -6373,12 +6782,28 @@ export default function App() {
                         }}
                         onChange={(newColor) => {
                           const tabId = activeColorPicker.replace('tab-', '');
-                          const next = { ...tabSettings, [tabId]: { ...tabSettings[tabId], color: newColor } };
+                          const currentTab = tabSettings[tabId];
+                          const next = { 
+                            ...tabSettings, 
+                            [tabId]: { 
+                              ...currentTab, 
+                              color: newColor,
+                              ...(currentTab?.format === 'other' ? { textColor: newColor } : {})
+                            } 
+                          };
                           setTabSettings(next);
                         }}
                         onChangeComplete={(newColor) => {
                           const tabId = activeColorPicker.replace('tab-', '');
-                          const next = { ...tabSettings, [tabId]: { ...tabSettings[tabId], color: newColor } };
+                          const currentTab = tabSettings[tabId];
+                          const next = { 
+                            ...tabSettings, 
+                            [tabId]: { 
+                              ...currentTab, 
+                              color: newColor,
+                              ...(currentTab?.format === 'other' ? { textColor: newColor } : {})
+                            } 
+                          };
                           saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
                         }}
                       />
@@ -6557,27 +6982,47 @@ export default function App() {
                     /* 1단계: 캐릭터 선별 작업 */
                     <div className="flex flex-col gap-2">
                       <div className="flex items-center justify-between px-1">
-                        <span className="text-[10px] text-white/50">{bulkImages.length}개 로드됨</span>
+                        <span className="text-[11px] font-bold text-white/80">
+                          총 {bulkImages.length}개 중 <span className="text-[#e6005c]">{Object.values(bulkImageMapping).filter(Boolean).length}개</span> 매칭됨
+                        </span>
+                        <span className="text-[10px] text-white/40">확인 후 하단의 [확인 및 적용]을 눌러주세요</span>
                       </div>
                       <div className="bg-black/20 border border-white/10 rounded-xl max-h-[50vh] overflow-y-auto custom-scrollbar p-2 flex flex-col gap-1.5">
-                        {bulkImages.map((img, idx) => (
-                          <div key={idx} className="flex items-center gap-3 p-2.5 hover:bg-white/5 rounded-xl transition-colors border border-white/5 bg-white/[0.01]">
-                            <div className="w-12 h-12 shrink-0 rounded bg-black/40 border border-white/10 overflow-hidden flex items-center justify-center">
-                              <img src={img.url} className="w-full h-full object-contain" alt={img.fileName} referrerPolicy="no-referrer" />
+                        {bulkImages.map((img, idx) => {
+                          const isAssigned = !!bulkImageMapping[img.url];
+                          return (
+                            <div key={idx} className="flex items-center gap-3 p-2.5 hover:bg-white/5 rounded-xl transition-colors border border-white/5 bg-white/[0.01]">
+                              <div className="w-12 h-12 shrink-0 rounded bg-black/40 border border-white/10 overflow-hidden flex items-center justify-center">
+                                <img src={img.url} className="w-full h-full object-contain" alt={img.fileName} referrerPolicy="no-referrer" />
+                              </div>
+                              <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[11px] font-bold text-white truncate max-w-[200px]">{img.fileName}</span>
+                                  {isAssigned ? (
+                                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/15 text-white/90 border border-white/20 font-medium shrink-0">
+                                      지정됨
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/10 text-white/40 font-medium shrink-0">
+                                      미지정
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[9px] text-white/40 truncate">{img.url}</div>
+                              </div>
+                              <div className="shrink-0 w-44 flex flex-col justify-center">
+                                <SearchableSelect 
+                                  value={bulkImageMapping[img.url] || ""}
+                                  onChange={(id) => {
+                                    setBulkImageMapping(prev => ({ ...prev, [img.url]: id }));
+                                    setBulkImageTypeMapping(prev => ({ ...prev, [img.url]: id ? 'manual' : 'none' }));
+                                  }}
+                                  options={[{ label: "선택 안 함", value: "" }, ...Object.entries(charSettings).map(([id, char]) => ({ label: (char as CharSetting).name, value: id }))]}
+                                />
+                              </div>
                             </div>
-                            <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
-                              <div className="text-[11px] font-bold text-white truncate">{img.fileName}</div>
-                              <div className="text-[9px] text-white/40 truncate">{img.url}</div>
-                            </div>
-                            <div className="shrink-0 w-44 flex flex-col justify-center">
-                              <SearchableSelect 
-                                value={bulkImageMapping[img.url] || ""}
-                                onChange={(id) => setBulkImageMapping(prev => ({ ...prev, [img.url]: id }))}
-                                options={[{ label: "선택 안 함", value: "" }, ...Object.entries(charSettings).map(([id, char]) => ({ label: (char as CharSetting).name, value: id }))]}
-                              />
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   ) : (
@@ -6859,7 +7304,7 @@ export default function App() {
 
       
       {showJsonExtractor && (
-        <JsonImageExtractorModal onClose={() => setShowJsonExtractor(false)} initialFile={extractorFile} onOpenBulkImgur={() => { setIsBulkImgurModalOpen(true); }} />
+        <JsonImageExtractorModal onClose={() => setShowJsonExtractor(false)} initialFile={extractorFile} onOpenBulkImgur={() => { setIsBulkAllocatorOpen(true); }} />
       )}
       <BulkImageAllocatorModal
         isOpen={isBulkAllocatorOpen}

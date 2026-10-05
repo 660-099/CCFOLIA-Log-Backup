@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { 
   ArrowLeft, Upload, Trash2, ChevronUp, ChevronDown, 
   Layers, CheckCircle2, AlertCircle, Plus, FileText, 
@@ -22,14 +23,14 @@ interface LogMergeStudioProps {
 }
 
 const BADGE_COLORS = [
-  '#3b82f6', // blue
-  '#10b981', // emerald
-  '#f59e0b', // amber
+  '#6366f1', // indigo
+  '#0d9488', // teal
+  '#d97706', // amber
   '#8b5cf6', // purple
-  '#ec4899', // pink
-  '#06b6d4', // cyan
-  '#f97316', // orange
-  '#14b8a6', // teal
+  '#0284c7', // light blue
+  '#e11d48', // rose
+  '#4f46e5', // violet
+  '#475569', // slate
 ];
 
 export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
@@ -69,16 +70,39 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
     return sourceFiles.find(f => f.id === selectedFileId);
   }, [sourceFiles, selectedFileId]);
 
-  // When active file changes, reset selection range and step
+  // When active file changes, reset selection range and step (fallback for external file list changes)
   useEffect(() => {
     if (activeFile) {
-      setSelectionRange({
-        start: 0,
-        end: Math.max(0, activeFile.logs.length - 1)
+      setSelectionRange(prev => {
+        if (prev.start === 0 && prev.end === Math.max(0, activeFile.logs.length - 1)) {
+          return prev;
+        }
+        return {
+          start: 0,
+          end: Math.max(0, activeFile.logs.length - 1)
+        };
       });
       setSelectionStep('idle');
     }
   }, [selectedFileId, activeFile]);
+
+  // Switch selected file (or 'merged') cleanly and immediately
+  const handleSelectFile = (fileId: string) => {
+    setSelectedFileId(fileId);
+    if (fileId !== 'merged') {
+      const targetFile = sourceFiles.find(f => f.id === fileId);
+      if (targetFile) {
+        setSelectionRange({
+          start: 0,
+          end: Math.max(0, targetFile.logs.length - 1)
+        });
+        setSelectionStep('idle');
+      }
+    }
+    if (viewerScrollRef.current) {
+      viewerScrollRef.current.scrollTop = 0;
+    }
+  };
 
   // Handle uploading additional log files
   const handleAddFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -233,7 +257,9 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
   };
 
   const scrollToBottom = () => {
-    if (viewerScrollRef.current) {
+    if (itemCount > 0) {
+      rowVirtualizer.scrollToIndex(itemCount - 1, { align: 'end' });
+    } else if (viewerScrollRef.current) {
       viewerScrollRef.current.scrollTo({
         top: viewerScrollRef.current.scrollHeight,
         behavior: 'smooth'
@@ -357,6 +383,69 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
     return resultLogs;
   }, [clips, sourceFiles, autoDeduplicate]);
 
+  // Compute overlap count at each boundary between adjacent clips
+  const clipBoundaries = useMemo(() => {
+    const fileMap = new Map<string, MergeSourceFile>();
+    sourceFiles.forEach(f => fileMap.set(f.id, f));
+
+    const boundaries: { overlapCount: number }[] = [];
+    for (let i = 0; i < clips.length - 1; i++) {
+      const clipA = clips[i];
+      const clipB = clips[i + 1];
+      const sourceA = fileMap.get(clipA.sourceFileId);
+      const sourceB = fileMap.get(clipB.sourceFileId);
+
+      if (!sourceA || !sourceB) {
+        boundaries.push({ overlapCount: 0 });
+        continue;
+      }
+
+      const logsA = sourceA.logs.slice(clipA.startIndex, clipA.endIndex + 1);
+      const logsB = sourceB.logs.slice(clipB.startIndex, clipB.endIndex + 1);
+      const maxCheck = Math.min(logsA.length, logsB.length, 500);
+      let overlap = 0;
+
+      for (let len = maxCheck; len >= 1; len--) {
+        let match = true;
+        for (let k = 0; k < len; k++) {
+          if (!isIdenticalLog(logsA[logsA.length - len + k], logsB[k])) {
+            match = false;
+            break;
+          }
+        }
+        if (match) {
+          overlap = len;
+          break;
+        }
+      }
+
+      boundaries.push({ overlapCount: overlap });
+    }
+
+    return boundaries;
+  }, [clips, sourceFiles]);
+
+  // Total raw logs across all clips
+  const totalRawClipLogs = useMemo(() => {
+    return clips.reduce((sum, c) => sum + Math.max(0, c.endIndex - c.startIndex + 1), 0);
+  }, [clips]);
+
+  // Total duplicates excluded by deduplication
+  const totalDuplicatesExcluded = useMemo(() => {
+    if (!autoDeduplicate) return 0;
+    return Math.max(0, totalRawClipLogs - mergedItems.length);
+  }, [autoDeduplicate, totalRawClipLogs, mergedItems.length]);
+
+  // Virtualizer for high-speed rendering of tens of thousands of logs
+  const itemCount = selectedFileId === 'merged' ? mergedItems.length : (activeFile?.logs.length || 0);
+
+  const rowVirtualizer = useVirtualizer({
+    count: itemCount,
+    getScrollElement: () => viewerScrollRef.current,
+    estimateSize: () => 28,
+    overscan: 25,
+  });
+
   // Execute complete merge and pass to parent App.tsx
   const handleFinalMerge = () => {
     if (mergedItems.length === 0) {
@@ -444,7 +533,7 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
   const endIdx = Math.max(selectionRange.start, selectionRange.end);
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#121215] text-white flex flex-col font-sans select-none overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-[#121212] text-stone-200 flex flex-col font-sans select-none overflow-hidden">
       {/* Hidden File Input */}
       <input
         type="file"
@@ -456,58 +545,67 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
       />
 
       {/* 1. Header Bar */}
-      <header className="h-14 px-5 border-b border-white/10 bg-[#18181b] flex items-center justify-between shrink-0">
+      <header className="h-14 px-5 border-b border-white/5 bg-[#1a1a1a] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
           <button
             onClick={onCancel}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition-all text-xs font-bold border border-white/5 cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all text-xs font-semibold border border-white/10 cursor-pointer"
             title="편집기로 돌아가기"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>편집기로 돌아가기</span>
           </button>
           <div className="h-4 w-px bg-white/10" />
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-[#e6005c]" />
-            <h1 className="text-sm font-bold text-white tracking-tight">여러 로그 파일 병합하기</h1>
-            <span className="text-[11px] font-medium text-white/40 bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-[#e6005c]/10 border border-[#e6005c]/25 flex items-center justify-center shrink-0">
+              <Layers className="w-3.5 h-3.5 text-[#e6005c]" />
+            </div>
+            <h1 className="text-sm font-bold text-white tracking-tight whitespace-nowrap">로그 병합</h1>
+            <span className="text-[11px] font-medium text-white/50 bg-white/5 px-2 py-0.5 rounded-md border border-white/10 shrink-0">
               총 {sourceFiles.length}개 파일
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={handleFinalMerge}
             disabled={mergedItems.length === 0}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all shadow-lg cursor-pointer ${
+            className={`flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs transition-all border cursor-pointer shrink-0 ${
               mergedItems.length > 0
-                ? 'bg-[#e6005c] hover:bg-[#ff1a75] text-white shadow-pink-500/20'
-                : 'bg-white/10 text-white/40 cursor-not-allowed'
+                ? 'bg-[#e6005c] hover:bg-[#ff1a75] text-white border-[#e6005c] shadow-lg shadow-pink-500/20 active:scale-[0.98]'
+                : 'bg-white/5 text-white/30 border-white/5 cursor-not-allowed'
             }`}
           >
-            <CheckCircle2 className="w-4 h-4" />
-            <span>이대로 병합하여 편집 시작 ({mergedItems.length.toLocaleString()}개 로그)</span>
+            <CheckCircle2 className={`w-4 h-4 shrink-0 ${mergedItems.length > 0 ? 'text-white' : 'text-white/30'}`} />
+            <div className="flex flex-col items-start leading-none text-left whitespace-nowrap">
+              <span className="font-bold text-[12px] tracking-tight whitespace-nowrap">
+                이대로 병합하여 편집 시작 ({mergedItems.length.toLocaleString()}개 로그)
+              </span>
+              <span className={`text-[10px] mt-1 font-medium whitespace-nowrap ${mergedItems.length > 0 ? 'text-white/80' : 'text-white/30'}`}>
+                {totalDuplicatesExcluded.toLocaleString()}개 중복 제외됨
+              </span>
+            </div>
           </button>
         </div>
       </header>
 
       {/* 2. Main 3-Column Body */}
-      <div className="flex-1 flex min-h-0 divide-x divide-white/10">
+      <div className="flex-1 flex min-h-0 divide-x divide-white/5">
         {/* LEFT COLUMN: File List & Sequence (approx 280px) */}
-        <div className="w-72 bg-[#161619] flex flex-col shrink-0">
-          <div className="p-3 border-b border-white/5 flex items-center justify-between bg-[#1a1a1e]">
-            <span className="text-[11px] font-bold text-white/60 uppercase tracking-wider">파일 목록 및 순서</span>
+        <div className="w-72 bg-[#1a1a1a] flex flex-col shrink-0">
+          <div className="p-3.5 border-b border-white/5 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">파일 목록 및 순서</span>
             <span className="text-[10px] text-white/40">{sourceFiles.length}개</span>
           </div>
 
-          {/* Clean '로그 파일 추가' Button placed clearly at the top of file list */}
+          {/* Clean '로그 파일 추가' Button */}
           <div className="p-2 border-b border-white/5">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/90 hover:text-white transition-all text-xs font-bold border border-white/10 hover:border-[#e6005c]/50 hover:bg-[#e6005c]/5 cursor-pointer group"
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-[#e6005c]/10 hover:border-[#e6005c]/40 text-white/70 hover:text-white transition-all text-xs font-semibold border border-white/10 cursor-pointer group"
             >
-              <Upload className="w-3.5 h-3.5 text-white/60 group-hover:text-[#e6005c] transition-colors" />
+              <Upload className="w-3.5 h-3.5 text-white/50 group-hover:text-[#e6005c] transition-colors" />
               <span>로그 파일 추가</span>
             </button>
           </div>
@@ -515,23 +613,27 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
           <div className="flex-1 overflow-y-auto p-2 space-y-1.5 custom-scrollbar">
             {/* Master 'Preview' Tab */}
             <button
-              onClick={() => setSelectedFileId('merged')}
+              onClick={() => handleSelectFile('merged')}
               className={`w-full text-left p-3 rounded-xl border transition-all flex items-center gap-3 relative cursor-pointer ${
                 selectedFileId === 'merged'
-                  ? 'bg-[#e6005c]/15 border-[#e6005c]/50 text-white shadow-md'
+                  ? 'bg-[#e6005c]/15 border-[#e6005c]/50 text-white shadow-sm'
                   : 'bg-white/5 hover:bg-white/10 border-white/5 text-white/70'
               }`}
             >
-              <div className="w-8 h-8 rounded-lg bg-[#e6005c]/20 border border-[#e6005c]/30 flex items-center justify-center shrink-0">
-                <Layers className="w-4 h-4 text-[#e6005c]" />
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
+                selectedFileId === 'merged'
+                  ? 'bg-[#e6005c]/25 border-[#e6005c]/40 text-[#e6005c]'
+                  : 'bg-black/30 border-white/5 text-white/40'
+              }`}>
+                <Layers className="w-4 h-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-white">★ 미리보기</span>
-                  <span className="text-[10px] font-bold text-[#e6005c]">{mergedItems.length.toLocaleString()}줄</span>
+                  <span className="text-xs font-bold text-white">통합 미리보기</span>
+                  <span className="text-[10px] font-bold text-white/80 bg-black/30 px-1.5 py-0.5 rounded border border-white/5">{mergedItems.length.toLocaleString()}줄</span>
                 </div>
                 <p className="text-[10px] text-white/40 truncate mt-0.5">
-                  {clips.length > 0 ? `클립 ${clips.length}개 조합 미리보기` : '등록된 클립 없음'}
+                  {clips.length > 0 ? `시퀀스 클립 ${clips.length}개 조합` : '등록된 클립 없음'}
                 </p>
               </div>
             </button>
@@ -546,11 +648,11 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
               return (
                 <div
                   key={file.id}
-                  onClick={() => setSelectedFileId(file.id)}
+                  onClick={() => handleSelectFile(file.id)}
                   className={`w-full p-2.5 rounded-xl border transition-all cursor-pointer group relative ${
                     isSelected
-                      ? 'bg-white/10 border-white/30 text-white shadow-sm'
-                      : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/5 text-white/70'
+                      ? 'bg-white/10 border-white/20 text-white shadow-sm ring-1 ring-white/10'
+                      : 'bg-white/5 hover:bg-white/[0.08] border-white/5 text-white/70'
                   }`}
                 >
                   <div className="flex items-start gap-2.5">
@@ -611,24 +713,24 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
           </div>
         </div>
 
-        {/* CENTER COLUMN: Clean High-Speed Text Viewer (Flex-1) */}
-        <div className="flex-1 flex flex-col bg-[#0f0f11] min-w-0 overflow-hidden relative">
+        {/* CENTER COLUMN: Text Viewer (matches editor preview background) */}
+        <div className="flex-1 flex flex-col bg-[#0f0f0f] min-w-0 overflow-hidden relative">
           {/* Viewer Toolbar Header */}
-          <div className="h-11 px-4 border-b border-white/5 bg-[#141417] flex items-center justify-between shrink-0">
+          <div className="h-11 px-4 border-b border-white/5 bg-[#141414] flex items-center justify-between shrink-0 gap-2 overflow-hidden">
             <div className="flex items-center gap-3 min-w-0">
               {selectedFileId === 'merged' ? (
-                <div className="flex items-center gap-2 text-xs font-bold text-white">
-                  <Layers className="w-3.5 h-3.5 text-[#e6005c]" />
-                  <span>미리보기</span>
-                  <span className="text-[10px] font-normal text-white/40">
-                    ([순번] [파일명 뱃지] [탭] 이름: 대사)
+                <div className="flex items-center gap-2 text-xs font-semibold text-white/90 min-w-0">
+                  <Layers className="w-3.5 h-3.5 text-[#e6005c] shrink-0" />
+                  <span className="whitespace-nowrap shrink-0">병합 미리보기</span>
+                  <span className="text-[10px] font-normal text-white/40 truncate hidden sm:inline">
+                    ([순번] [파일] [탭] 이름: 대사)
                   </span>
                 </div>
               ) : activeFile ? (
-                <div className="flex items-center gap-2 text-xs font-bold text-white min-w-0">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: activeFile.badgeColor }} />
+                <div className="flex items-center gap-2 text-xs font-semibold text-white/90 min-w-0">
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: activeFile.badgeColor }} />
                   <span className="truncate">{activeFile.name}</span>
-                  <span className="text-[10px] font-normal text-white/40 hidden md:inline">
+                  <span className="text-[10px] font-normal text-white/40 hidden xl:inline truncate">
                     ({selectionStep === 'picking_start' 
                       ? '첫 대사를 클릭하세요' 
                       : selectionStep === 'picking_end' 
@@ -640,12 +742,12 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
             </div>
 
             {selectedFileId !== 'merged' && activeFile && (
-              <div className="flex items-center gap-2 text-[11px]">
+              <div className="flex items-center gap-1.5 text-[11px] shrink-0">
                 {/* 1. 전체 선택 버튼 */}
                 <button
                   type="button"
                   onClick={handleSelectAllInActiveFile}
-                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors border border-white/5 cursor-pointer font-medium"
+                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors border border-white/10 cursor-pointer font-medium whitespace-nowrap shrink-0"
                 >
                   전체 선택
                 </button>
@@ -654,18 +756,18 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
                 <button
                   type="button"
                   onClick={handleStartSelectionFlow}
-                  className={`px-2.5 py-1 rounded-lg transition-all border font-bold cursor-pointer flex items-center gap-1.5 ${
+                  className={`px-2.5 py-1 rounded-lg transition-all border font-semibold cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                     isSelectionActive
-                      ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
-                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-white/80'
+                      ? 'bg-[#e6005c]/20 border-[#e6005c] text-[#e6005c] shadow-[0_0_10px_rgba(230,0,92,0.2)]'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-white/70 hover:text-white'
                   }`}
                 >
-                  <Scissors className="w-3 h-3" />
-                  <span>
+                  <Scissors className="w-3 h-3 shrink-0" />
+                  <span className="whitespace-nowrap">
                     {selectionStep === 'picking_start' 
-                      ? '1. 첫 대사 클릭 대기...' 
+                      ? '1. 첫 대사 선택 중' 
                       : selectionStep === 'picking_end' 
-                        ? '2. 마지막 대사 클릭 대기...' 
+                        ? '2. 끝 대사 선택 중' 
                         : '구간 선택 시작'}
                   </span>
                 </button>
@@ -675,130 +777,161 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
                   type="button"
                   onClick={handleAddCurrentRangeAsClip}
                   title="지정된 구간을 우측 병합 시퀀스에 추가"
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#e6005c] hover:bg-[#ff1a75] text-white font-bold transition-all shadow-md shadow-pink-500/10 cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#e6005c] hover:bg-[#ff1a75] text-white font-bold transition-all border border-[#e6005c] shadow-md shadow-pink-500/20 cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
                 >
-                  <span>구간 추가</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <span className="whitespace-nowrap">구간 추가</span>
+                  <ArrowRight className="w-3.5 h-3.5 shrink-0" />
                 </button>
               </div>
             )}
           </div>
 
           {/* Viewer Text Area */}
-          <div ref={viewerScrollRef} className="flex-1 overflow-y-auto p-5 font-mono text-[12px] leading-relaxed select-text custom-scrollbar">
+          <div ref={viewerScrollRef} className="flex-1 overflow-y-auto px-5 py-3 font-mono text-[12px] leading-relaxed select-text custom-scrollbar relative">
             {selectedFileId === 'merged' ? (
-              /* Merged Preview View */
+              /* Merged Preview View (Virtualized) */
               mergedItems.length > 0 ? (
-                <div className="space-y-1.5">
-                  {mergedItems.map((item, idx) => {
+                <div
+                  style={{
+                    height: `${rowVirtualizer.getTotalSize()}px`,
+                    width: '100%',
+                    position: 'relative',
+                  }}
+                >
+                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const idx = virtualRow.index;
+                    const item = mergedItems[idx];
+                    if (!item) return null;
                     const log = item.log;
                     return (
                       <div 
-                        key={log.id + '_' + idx}
+                        key={`merged_${virtualRow.index}`}
+                        data-index={virtualRow.index}
+                        ref={rowVirtualizer.measureElement}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
                         className="flex items-baseline gap-2 hover:bg-white/[0.04] px-2 py-0.5 rounded transition-colors"
                       >
                         {/* 1. Sequence Number */}
-                        <span className="text-white/30 text-[10px] shrink-0 font-mono w-9 text-right">
+                        <span className="text-white/30 text-[10px] shrink-0 font-mono w-9 text-right select-none">
                           [{idx + 1}]
                         </span>
 
                         {/* 2. File Name Badge */}
                         <span
-                          className="px-1.5 py-0.2 rounded text-[10px] font-bold text-white shrink-0 tracking-tight"
-                          style={{ backgroundColor: item.badgeColor + 'cc' }}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-medium text-white/80 bg-white/5 border border-white/10 shrink-0 tracking-tight inline-flex items-center gap-1"
                           title={item.sourceFileName}
                         >
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: item.badgeColor }} />
                           {item.sourceFileName.length > 12 ? item.sourceFileName.substring(0, 10) + '..' : item.sourceFileName}
                         </span>
 
                         {/* 3. Tab Name */}
-                        <span className="text-white/40 text-[11px] shrink-0 font-semibold">
+                        <span className="text-white/40 text-[11px] shrink-0 font-medium">
                           [{log.tab || '메인'}]
                         </span>
 
                         {/* 4. Name (with color) */}
                         <span 
-                          className="font-bold shrink-0"
-                          style={{ color: log.color || '#ffffff' }}
+                          className="font-semibold shrink-0"
+                          style={{ color: log.color || '#f5f5f4' }}
                         >
                           {log.name}:
                         </span>
 
                         {/* 5. Content */}
                         <span 
-                          className="text-white/90 break-words whitespace-pre-wrap flex-1"
+                          className="text-stone-200 break-words whitespace-pre-wrap flex-1"
                           dangerouslySetInnerHTML={{ __html: log.content }}
                         />
                       </div>
                     );
                   })}
                 </div>
-              ) : (
-                <div className="text-center py-20 text-white/30">
-                  등록된 시퀀스 구간(클립)이 없습니다.<br />
-                  좌측 파일 목록에서 파일을 선택한 후 구간을 지정하여 추가해주세요.
-                </div>
-              )
+              ) : null
             ) : activeFile ? (
-              /* Single File Range Selection View */
-              <div className="space-y-1">
-                {activeFile.logs.map((log, idx) => {
+              /* Single File Range Selection View (Virtualized) */
+              <div
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const idx = virtualRow.index;
+                  const log = activeFile.logs[idx];
+                  if (!log) return null;
                   const isWithinRange = idx >= startIdx && idx <= endIdx;
                   const isStart = idx === startIdx;
                   const isEnd = idx === endIdx;
 
                   return (
                     <div
-                      key={log.id}
+                      key={log.id || `log_${idx}`}
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
                       onClick={() => handleLogClick(idx)}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
                       className={`flex items-baseline gap-2 px-2 py-0.5 rounded cursor-pointer transition-all ${
                         isWithinRange
-                          ? 'opacity-100 hover:bg-white/[0.08]'
-                          : 'opacity-30 hover:opacity-60 bg-transparent'
-                      } ${isStart ? 'ring-1 ring-blue-400 bg-blue-500/10' : ''} ${
-                        isEnd ? 'ring-1 ring-pink-400 bg-pink-500/10' : ''
+                          ? 'opacity-100 bg-white/[0.06] hover:bg-white/[0.09]'
+                          : 'opacity-35 hover:opacity-70 bg-transparent'
+                      } ${isStart ? 'border-l-2 border-[#e6005c] bg-[#e6005c]/10 text-white' : ''} ${
+                        isEnd ? 'border-r-2 border-[#e6005c] bg-[#e6005c]/10 text-white' : ''
                       }`}
                     >
                       {/* Line Number */}
-                      <span className="text-white/30 text-[10px] shrink-0 font-mono w-8 text-right">
+                      <span className="text-white/30 text-[10px] shrink-0 font-mono w-8 text-right select-none">
                         {idx + 1}
                       </span>
 
                       {/* File Name Badge */}
                       <span
-                        className="px-1.5 py-0.2 rounded text-[10px] font-bold text-white shrink-0 tracking-tight opacity-75"
-                        style={{ backgroundColor: activeFile.badgeColor + 'aa' }}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-medium text-white/80 bg-white/5 border border-white/10 shrink-0 tracking-tight inline-flex items-center gap-1"
                       >
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: activeFile.badgeColor }} />
                         {activeFile.name.length > 10 ? activeFile.name.substring(0, 8) + '..' : activeFile.name}
                       </span>
 
                       {/* Tab Name */}
-                      <span className="text-white/40 text-[11px] shrink-0 font-semibold">
+                      <span className="text-white/40 text-[11px] shrink-0 font-medium">
                         [{log.tab || '메인'}]
                       </span>
 
                       {/* Name */}
                       <span 
-                        className="font-bold shrink-0"
-                        style={{ color: log.color || '#ffffff' }}
+                        className="font-semibold shrink-0"
+                        style={{ color: log.color || '#f5f5f4' }}
                       >
                         {log.name}:
                       </span>
 
                       {/* Content */}
                       <span 
-                        className="text-white/90 break-words whitespace-pre-wrap flex-1"
+                        className="text-stone-200 break-words whitespace-pre-wrap flex-1"
                         dangerouslySetInnerHTML={{ __html: log.content }}
                       />
 
                       {/* Selection Quick Indicators */}
                       {isStart && (
-                        <span className="px-1.5 py-0.2 text-[9px] bg-blue-500/20 text-blue-300 rounded border border-blue-500/30 font-bold shrink-0">
+                        <span className="px-1.5 py-0.2 text-[9px] bg-[#e6005c]/20 text-[#e6005c] rounded border border-[#e6005c]/30 font-medium shrink-0">
                           시작
                         </span>
                       )}
                       {isEnd && (
-                        <span className="px-1.5 py-0.2 text-[9px] bg-pink-500/20 text-pink-300 rounded border border-pink-500/30 font-bold shrink-0">
+                        <span className="px-1.5 py-0.2 text-[9px] bg-[#e6005c]/20 text-[#e6005c] rounded border border-[#e6005c]/30 font-medium shrink-0">
                           끝
                         </span>
                       )}
@@ -814,7 +947,7 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
             <button
               type="button"
               onClick={scrollToTop}
-              className="w-8 h-8 rounded-full bg-[#1e1e24]/90 hover:bg-[#2d2d38] text-white/70 hover:text-white border border-white/10 shadow-lg flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95"
+              className="w-8 h-8 rounded-full bg-[#1a1a1a]/90 hover:bg-[#242424] text-white/70 hover:text-white border border-white/10 shadow-xl flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95"
               title="파일 최상단으로 이동"
             >
               <ArrowUp className="w-4 h-4" />
@@ -822,7 +955,7 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
             <button
               type="button"
               onClick={scrollToBottom}
-              className="w-8 h-8 rounded-full bg-[#1e1e24]/90 hover:bg-[#2d2d38] text-white/70 hover:text-white border border-white/10 shadow-lg flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95"
+              className="w-8 h-8 rounded-full bg-[#1a1a1a]/90 hover:bg-[#242424] text-white/70 hover:text-white border border-white/10 shadow-xl flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95"
               title="파일 최하단으로 이동"
             >
               <ArrowDown className="w-4 h-4" />
@@ -831,43 +964,38 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
         </div>
 
         {/* RIGHT COLUMN: Clips Sequence & Merge Settings (approx 340px) */}
-        <div className="w-80 bg-[#161619] flex flex-col shrink-0">
-          <div className="p-3 border-b border-white/5 bg-[#1a1a1e] flex items-center justify-between">
-            <span className="text-[11px] font-bold text-white/60 uppercase tracking-wider">병합 시퀀스 (구간 조립)</span>
+        <div className="w-80 bg-[#1a1a1a] flex flex-col shrink-0">
+          <div className="p-3.5 border-b border-white/5 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">병합 시퀀스 (구간 조립)</span>
             <span className="text-[10px] text-white/40">{clips.length}개 구간</span>
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
             {/* Active Range Inspector Box (when a single file is active) */}
             {activeFile && (
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-2">
+              <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-2.5">
                 <div className="flex items-center justify-between text-xs font-bold text-white">
                   <span>선택된 구간 범위</span>
-                  <span className="text-[10px] text-white/40">
-                    {endIdx - startIdx + 1}개 로그
+                  <span className="text-[10px] text-white/40 font-mono">
+                    #{startIdx + 1} ~ #{endIdx + 1} ({endIdx - startIdx + 1}개 로그)
                   </span>
                 </div>
 
-                <div className="space-y-1.5 text-[11px]">
-                  <div className="p-2 rounded bg-black/40 border border-white/5">
-                    <span className="text-blue-400 font-bold block text-[10px] mb-0.5">시작 대사:</span>
-                    <p className="text-white/80 font-mono text-[10px] truncate">
-                      {getSnippet(activeFile.logs[startIdx])}
-                    </p>
-                  </div>
-
-                  <div className="p-2 rounded bg-black/40 border border-white/5">
-                    <span className="text-pink-400 font-bold block text-[10px] mb-0.5">종료 대사:</span>
-                    <p className="text-white/80 font-mono text-[10px] truncate">
-                      {getSnippet(activeFile.logs[endIdx])}
-                    </p>
-                  </div>
+                <div className="text-[11px] text-stone-300 space-y-1 bg-black/40 border border-white/5 p-2.5 rounded-lg">
+                  <p className="truncate">
+                    <span className="text-white/40 font-medium">시작:</span>{' '}
+                    <span className="text-white/90 font-mono text-[10px]">{getSnippet(activeFile.logs[startIdx])}</span>
+                  </p>
+                  <p className="truncate">
+                    <span className="text-white/40 font-medium">종료:</span>{' '}
+                    <span className="text-white/90 font-mono text-[10px]">{getSnippet(activeFile.logs[endIdx])}</span>
+                  </p>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleAddCurrentRangeAsClip}
-                  className="w-full py-1.5 rounded-lg bg-[#e6005c] hover:bg-[#ff1a75] text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md shadow-pink-500/10 cursor-pointer"
+                  className="w-full py-2 rounded-xl bg-[#e6005c] hover:bg-[#ff1a75] text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 border border-[#e6005c] shadow-md shadow-pink-500/20 cursor-pointer active:scale-95 whitespace-nowrap"
                 >
                   <span>구간 시퀀스에 추가</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -877,77 +1005,109 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
 
             {/* Clips Sequence List */}
             <div className="space-y-2">
-              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block px-1">
-                조립 순서 (위에서 아래로 병합)
-              </span>
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider">
+                  조립 순서 (위에서 아래로 병합)
+                </span>
+                <span className="text-[10px] text-white/40 font-mono">
+                  {clips.length}개 구간
+                </span>
+              </div>
 
               {clips.map((clip, cIdx) => {
                 const source = sourceFiles.find(f => f.id === clip.sourceFileId);
                 const startLog = source?.logs[clip.startIndex];
                 const endLog = source?.logs[clip.endIndex];
                 const count = Math.max(0, clip.endIndex - clip.startIndex + 1);
+                const boundary = clipBoundaries[cIdx];
 
                 return (
-                  <div
-                    key={clip.id}
-                    className="p-2.5 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/20 transition-all space-y-1.5 group"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <GripVertical className="w-3.5 h-3.5 text-white/20 group-hover:text-white/50 cursor-grab" />
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ backgroundColor: source?.badgeColor || '#888' }}
-                        />
-                        <span className="text-xs font-bold text-white/90 truncate max-w-[150px]">
-                          {cIdx + 1}. {source?.name || '알 수 없음'}
-                        </span>
+                  <React.Fragment key={clip.id}>
+                    <div
+                      className="p-3 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all space-y-2 group shadow-sm"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <GripVertical className="w-3.5 h-3.5 text-white/30 group-hover:text-white/60 cursor-grab shrink-0" />
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: source?.badgeColor || '#e6005c' }}
+                          />
+                          <span className="text-xs font-semibold text-white/90 truncate max-w-[150px]">
+                            {cIdx + 1}. {source?.name || '알 수 없음'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            disabled={cIdx === 0}
+                            onClick={() => moveClipOrder(cIdx, 'up')}
+                            className="p-1 hover:bg-white/10 text-white/40 hover:text-white rounded disabled:opacity-20 transition-colors cursor-pointer"
+                            title="위로 이동"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            disabled={cIdx === clips.length - 1}
+                            onClick={() => moveClipOrder(cIdx, 'down')}
+                            className="p-1 hover:bg-white/10 text-white/40 hover:text-white rounded disabled:opacity-20 transition-colors cursor-pointer"
+                            title="아래로 이동"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleRemoveClip(clip.id)}
+                            className="p-1 text-white/30 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors ml-1 cursor-pointer"
+                            title="구간 삭제"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-1">
-                        <button
-                          disabled={cIdx === 0}
-                          onClick={() => moveClipOrder(cIdx, 'up')}
-                          className="p-1 hover:bg-white/10 rounded disabled:opacity-20 transition-colors cursor-pointer"
-                          title="위로 이동"
-                        >
-                          <ChevronUp className="w-3 h-3" />
-                        </button>
-                        <button
-                          disabled={cIdx === clips.length - 1}
-                          onClick={() => moveClipOrder(cIdx, 'down')}
-                          className="p-1 hover:bg-white/10 rounded disabled:opacity-20 transition-colors cursor-pointer"
-                          title="아래로 이동"
-                        >
-                          <ChevronDown className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => handleRemoveClip(clip.id)}
-                          className="p-1 text-white/20 hover:text-red-400 rounded transition-colors ml-1 cursor-pointer"
-                          title="구간 삭제"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                      <div className="text-[11px] text-white/60 space-y-1 bg-black/30 border border-white/5 p-2 rounded-lg">
+                        <p className="truncate">
+                          <span className="text-white/40 font-medium">시작:</span>{' '}
+                          <span className="text-white/80 font-mono text-[10px]">{getSnippet(startLog)}</span>
+                        </p>
+                        <p className="truncate">
+                          <span className="text-white/40 font-medium">종료:</span>{' '}
+                          <span className="text-white/80 font-mono text-[10px]">{getSnippet(endLog)}</span>
+                        </p>
+                        <div className="flex items-center justify-between pt-1 border-t border-white/5 text-[10px] text-white/40">
+                          <span>#{clip.startIndex + 1} ~ #{clip.endIndex + 1}</span>
+                          <span className="font-medium text-white/60">{count.toLocaleString()}개 로그</span>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="text-[10px] text-white/50 space-y-0.5 bg-black/20 p-1.5 rounded">
-                      <p className="truncate">
-                        <strong className="text-white/70">시작:</strong> {getSnippet(startLog)}
-                      </p>
-                      <p className="truncate">
-                        <strong className="text-white/70">종료:</strong> {getSnippet(endLog)}
-                      </p>
-                      <p className="text-right text-white/30 text-[9px]">
-                        포함 로그: {count.toLocaleString()}개
-                      </p>
-                    </div>
-                  </div>
+                    {/* Sequence connector between clip cIdx and cIdx + 1 */}
+                    {cIdx < clips.length - 1 && (
+                      boundary && boundary.overlapCount > 0 ? (
+                        <div
+                          className="relative flex items-center justify-center my-2.5 py-0.5"
+                          title={`${boundary.overlapCount.toLocaleString()}개 대사가 중복되어 이어집니다`}
+                        >
+                          <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                            <div className="w-full border-t border-white/10" />
+                          </div>
+                          <div className="relative z-10 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#242424] text-white/80 border border-white/10 text-[10px] font-medium shadow-sm">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#e6005c] shrink-0" />
+                            <span>{boundary.overlapCount.toLocaleString()}개 겹침</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="my-2.5 py-1 flex items-center" title="겹치지 않는 구간">
+                          <div className="w-full border-t border-white/10" />
+                        </div>
+                      )
+                    )}
+                  </React.Fragment>
                 );
               })}
 
               {clips.length === 0 && (
-                <div className="text-center py-6 text-white/30 text-xs border border-dashed border-white/10 rounded-xl">
+                <div className="text-center py-6 text-white/40 text-xs border border-dashed border-white/10 rounded-xl">
                   등록된 시퀀스 구간이 없습니다.<br />
                   구간을 선택 후 추가해주세요.
                 </div>
@@ -960,19 +1120,14 @@ export const LogMergeStudio: React.FC<LogMergeStudioProps> = ({
                 병합 옵션
               </span>
 
-              <label className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] cursor-pointer transition-colors">
+              <label className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 cursor-pointer transition-colors">
                 <input
                   type="checkbox"
                   checked={autoDeduplicate}
                   onChange={(e) => setAutoDeduplicate(e.target.checked)}
-                  className="rounded border-white/20 bg-black/40 text-[#e6005c] focus:ring-0 cursor-pointer"
+                  className="rounded border-white/20 bg-black/40 text-[#e6005c] focus:ring-0 cursor-pointer accent-[#e6005c]"
                 />
-                <div className="text-[11px]">
-                  <span className="font-bold text-white/90">중복 로그 자동 제외</span>
-                  <p className="text-[10px] text-white/40">
-                    서로 이어지는 클립 간 겹치는 시퀀스 블록을 감지해 1번만 포함합니다.
-                  </p>
-                </div>
+                <span className="text-[11px] font-medium text-white/80">중복 로그 자동 제외</span>
               </label>
             </div>
           </div>
