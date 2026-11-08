@@ -62,6 +62,14 @@ export interface TabSetting {
   isItalic?: boolean;
 }
 
+export interface NarrationSlotConfig {
+  id: string;
+  charId: string | null;
+  format: 'style1' | 'style2' | 'style3';
+  enableSentenceSpacing: boolean;
+  enableSecretNarration: boolean;
+}
+
 export interface CharacterLibraryItem {
   id: string;
   name: string;

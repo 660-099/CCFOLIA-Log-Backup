@@ -30,11 +30,11 @@ export function findSynonymGroup(word: string): string[] {
 }
 
 /**
- * 문자열 정규화: 특수문자, 괄호, 공백 제거 후 소문자 변환
+ * 문자열 정규화: 특수문자, 괄호, 공백 제거 후 소문자 변환 (한글 NFC 정규화 포함)
  */
 export function normalizeString(str: string): string {
   if (!str) return '';
-  return str.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+  return str.normalize('NFC').replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
 }
 
 /**
@@ -43,11 +43,12 @@ export function normalizeString(str: string): string {
  */
 export function cleanCharacterName(rawName: string): string {
   if (!rawName) return '';
+  const nfc = rawName.normalize('NFC');
   // 1. 대괄호, 소괄호, 특수 괄호 태그 제거 (예: "[PC1] 앨리스 오" -> "앨리스 오")
-  let cleaned = rawName.replace(/\[.*?\]|\(.*?\)|【.*?】|<.*?>/g, '').trim();
+  let cleaned = nfc.replace(/\[.*?\]|\(.*?\)|【.*?】|<.*?>/g, '').trim();
   // 2. 일반적인 접두사 (PC1:, NPC_ 등) 제거
   cleaned = cleaned.replace(/^(?:PC\d*|NPC|GM|KP|PL)\s*[:_.-]?\s*/i, '').trim();
-  return cleaned || rawName.trim();
+  return cleaned || nfc.trim();
 }
 
 export interface MatchCandidateCharacter {

@@ -46,6 +46,7 @@ import {
   AlignCenter,
   AlignRight,
   Copy,
+  Scissors,
   ExternalLink,
   ArrowUpDown,
   ChevronDown,
@@ -75,9 +76,10 @@ import {
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { twMerge } from 'tailwind-merge';
 import { clsx, type ClassValue } from 'clsx';
-import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem, Illustration, LogFile, CharImage } from './types';
+import { TabFormat, LogEntry, CharSetting, TabSetting, CharacterLibraryItem, Illustration, LogFile, CharImage, NarrationSlotConfig } from './types';
 import { getOriginDataUrl } from './utils/blobStore';
-import { parseLogFile } from './parser';
+import { parseLogFile, MultiColorCharInfo } from './parser';
+import { UnifyCharactersModal } from './components/UnifyCharactersModal';
 import { cn, r, rgbToHex, getFileNameFromUrl } from './utils';
 import { compare, applyPatch } from 'fast-json-patch';
 import { useAppHistory } from './hooks/useAppHistory';
@@ -91,6 +93,7 @@ import { AvatarImagePopup } from './components/AvatarImagePopup';
 import { BulkImageAllocatorModal } from './components/BulkImageAllocatorModal';
 import { JsonImageExtractorModal } from './components/JsonImageExtractorModal';
 import { matchImagesToCharacters } from './utils/characterMatcher';
+import { fetchImgurImagesClient } from './utils/imgurClient';
 
 import { SearchableSelect } from './components/SearchableSelect';
 import { useBulkImageState, useIllustrationBulkState } from './hooks/useBulkStates';
@@ -99,7 +102,8 @@ import { useLibraryState } from './hooks/useLibraryState';
 import { useUIState } from './hooks/useUIState';
 import { SectionNameEditor } from './components/SectionNameEditor';
 import { CharacterNameWithTooltip, ColorPickerPopup } from './components/ColorPickerPopup';
-import { generateFinalHtmlStr } from './utils/htmlGenerator';
+import { generateFinalHtmlStr, generateFinalHtmlBlogChunks, BlogHtmlChunk } from './utils/htmlGenerator';
+import { ChunkCopyModal } from './components/ChunkCopyModal';
 import { fonts } from './constants';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSettingsState } from './hooks/useSettingsState';
@@ -161,6 +165,7 @@ export default function App() {
 
   const {
     rememberSettings, setRememberSettings,
+    standingZoomed, setStandingZoomed,
     cssFormat, setCssFormat,
     fontSize, setFontSize,
     textFontSize, setTextFontSize,
@@ -279,6 +284,13 @@ export default function App() {
   const [collapsedAccordionFiles, setCollapsedAccordionFiles] = useState<Record<string, boolean>>({});
   const [isMergeStudioOpen, setIsMergeStudioOpen] = useState<boolean>(false);
   const [mergeStudioSources, setMergeStudioSources] = useState<MergeSourceFile[]>([]);
+  const [isChunkCopyModalOpen, setIsChunkCopyModalOpen] = useState<boolean>(false);
+  const [chunkCopyTarget, setChunkCopyTarget] = useState<{
+    file: LogFile | null;
+    sectionId?: string;
+    title: string;
+    totalLogs: number;
+  } | null>(null);
 
   const toggleAccordionFile = useCallback((key: string) => {
     setCollapsedAccordionFiles(prev => ({
@@ -414,6 +426,14 @@ export default function App() {
   
   const additionalFileInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [unifyModalState, setUnifyModalState] = useState<{
+    files: File[];
+    isAdditional: boolean;
+    multiColorChars: MultiColorCharInfo[];
+    prevFilesSnapshot?: LogFile[];
+    prevCharSettingsSnapshot?: Record<string, CharSetting>;
+    prevTabSettingsSnapshot?: Record<string, TabSetting>;
+  } | null>(null);
   const handleRemoveFile = (fileId: string) => {
     setFiles(prev => {
       const next = prev.filter(f => f.id !== fileId);
@@ -540,6 +560,46 @@ export default function App() {
   
 
 
+  const [showNarrationSlot2, setShowNarrationSlot2] = useState<boolean>(() => Boolean(narrationCharacter2));
+  const [additionalNarrationSlots, setAdditionalNarrationSlots] = useState<NarrationSlotConfig[]>([]);
+  const [openExtraNarrationDropdownId, setOpenExtraNarrationDropdownId] = useState<string | null>(null);
+  const [isNarrationAccordionOpen, setIsNarrationAccordionOpen] = useState<boolean>(true);
+  const [isNarrationAccordionOpen2, setIsNarrationAccordionOpen2] = useState<boolean>(true);
+  const [openExtraNarrationAccordions, setOpenExtraNarrationAccordions] = useState<Record<string, boolean>>({});
+
+  const allNarrationSlots = useMemo<NarrationSlotConfig[]>(() => {
+    const list: NarrationSlotConfig[] = [];
+    if (narrationCharacter) {
+      list.push({
+        id: 'slot_1',
+        charId: narrationCharacter,
+        format: narrationFormat,
+        enableSentenceSpacing,
+        enableSecretNarration
+      });
+    }
+    if (showNarrationSlot2 && narrationCharacter2) {
+      list.push({
+        id: 'slot_2',
+        charId: narrationCharacter2,
+        format: narrationFormat2,
+        enableSentenceSpacing: enableSentenceSpacing2,
+        enableSecretNarration: enableSecretNarration2
+      });
+    }
+    for (const s of additionalNarrationSlots) {
+      if (s.charId) {
+        list.push(s);
+      }
+    }
+    return list;
+  }, [
+    narrationCharacter, narrationFormat, enableSentenceSpacing, enableSecretNarration,
+    showNarrationSlot2, narrationCharacter2, narrationFormat2, enableSentenceSpacing2, enableSecretNarration2,
+    additionalNarrationSlots
+  ]);
+
+  const [excludeUnlinkedImages, setExcludeUnlinkedImages] = useState<boolean>(false);
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -578,6 +638,7 @@ export default function App() {
       hideAllAvatars,
       narrationCharacter,
       narrationCharacter2,
+      additionalNarrationSlots,
       enableSentenceSpacing,
       enableSentenceSpacing2,
       enableSecretNarration,
@@ -592,7 +653,7 @@ export default function App() {
     cssFormat, fontSize, textFontSize, lineHeight, letterSpacing, blockSpacing, contentPadding, avatarSizeValue,
     fontFamily, theme, darkBgColor, lightBgColor, disableOtherColor, filterBarMode, logs, insertedBlocks,
     mergeTabs, showTabNames, mergeTabStyles, hideEmptyAvatars, cropFaceTop, hideAllAvatars,
-    narrationCharacter, narrationCharacter2, enableSentenceSpacing, enableSentenceSpacing2,
+    narrationCharacter, narrationCharacter2, additionalNarrationSlots, enableSentenceSpacing, enableSentenceSpacing2,
     enableSecretNarration, enableSecretNarration2, narrationFormat, narrationFormat2, showLogDivider, pageTitle
   ]);
 
@@ -642,6 +703,7 @@ export default function App() {
     if (state.hideAllAvatars !== undefined) setHideAllAvatars(state.hideAllAvatars);
     if (state.narrationCharacter !== undefined) setNarrationCharacter(state.narrationCharacter);
     if (state.narrationCharacter2 !== undefined) setNarrationCharacter2(state.narrationCharacter2);
+    if (state.additionalNarrationSlots !== undefined) setAdditionalNarrationSlots(state.additionalNarrationSlots);
     if (state.enableSentenceSpacing !== undefined) setEnableSentenceSpacing(state.enableSentenceSpacing);
     if (state.enableSentenceSpacing2 !== undefined) setEnableSentenceSpacing2(state.enableSentenceSpacing2);
     if (state.enableSecretNarration !== undefined) setEnableSecretNarration(state.enableSecretNarration);
@@ -1002,8 +1064,10 @@ export default function App() {
     setOriginalFileName('demo.html');
     setPageTitle('데모');
     setInsertedBlocks(demo.insertedBlocks);
-    setNarrationCharacter(demo.narrationCharacter);
+    setNarrationCharacter(null);
     setNarrationCharacter2(null);
+    setShowNarrationSlot2(false);
+    setAdditionalNarrationSlots([]);
     setActiveFileId('active');
     setFiles([{
       id: 'active',
@@ -1012,6 +1076,102 @@ export default function App() {
       insertedBlocks: demo.insertedBlocks
     }]);
     clearHistory();
+  };
+
+  // Helper to apply parsed raw files into editor state
+  const applyUploadedLogs = (
+    parsedRaw: any[], 
+    isAdditional: boolean, 
+    preserveSettings: boolean
+  ) => {
+    if (!isAdditional) {
+      const { unifiedFiles, mergedChars, mergedTabs, mergedColors } = processAndUnifyLogFiles(parsedRaw, {}, {});
+      setCharSettings(mergedChars);
+      setTabSettings(mergedTabs);
+      setExtractedColors(mergedColors);
+      setFiles(unifiedFiles);
+      if (unifiedFiles.length > 0) {
+        setActiveFileId(unifiedFiles[0].id);
+      }
+      if (!preserveSettings) {
+        setMergeTabs(new Set(['main', 'secret', 'other']));
+        setMergeTabStyles(new Set(['secret']));
+        setShowTabNames(new Set(['secret']));
+        setHideEmptyAvatars(false);
+        setCssFormat('internal');
+        setFontSize(14);
+        setDisableOtherColor(true);
+        setStandingZoomed(false);
+      }
+      // Always reset narration characters to null on new log upload regardless of preserveSettings
+      setNarrationCharacter(null);
+      setNarrationCharacter2(null);
+      setShowNarrationSlot2(false);
+      setAdditionalNarrationSlots([]);
+      setPageTitle('');
+      clearHistory();
+    } else {
+      const { unifiedFiles, mergedChars, mergedTabs, mergedColors } = processAndUnifyLogFiles(
+        parsedRaw,
+        charSettings,
+        tabSettings
+      );
+      setCharSettings(mergedChars);
+      setTabSettings(mergedTabs);
+      setExtractedColors(prev => Array.from(new Set([...prev, ...mergedColors])));
+      setFiles(prev => [...prev, ...unifiedFiles]);
+      if (unifiedFiles.length > 0) {
+        setActiveFileId(unifiedFiles[0].id);
+      }
+    }
+  };
+
+  // Re-parse with unifySameNameChars = true if user confirms from popup modal
+  const handleConfirmUnifyCharacters = async () => {
+    if (!unifyModalState) return;
+    const { files: targetFiles, isAdditional, prevFilesSnapshot, prevCharSettingsSnapshot, prevTabSettingsSnapshot } = unifyModalState;
+    const parsedRaw = [];
+    for (let i = 0; i < targetFiles.length; i++) {
+      const file = targetFiles[i];
+      const fileName = file.name.replace(/\.[^/.]+$/, "");
+      try {
+        const res = await parseLogFile(
+          file, 
+          exportMode === 'html' ? 'easy' : 'high_quality',
+          { unifySameNameChars: true }
+        );
+        parsedRaw.push({
+          name: fileName,
+          trimmedLogs: res.trimmedLogs,
+          newChars: res.newChars,
+          newTabs: res.newTabs,
+          colorsFound: res.colorsFound
+        });
+      } catch (err: any) {
+        console.error("Failed to re-parse with unification:", err);
+      }
+    }
+
+    if (!isAdditional) {
+      applyUploadedLogs(parsedRaw, false, rememberSettings);
+    } else {
+      const baseChars = prevCharSettingsSnapshot || {};
+      const baseTabs = prevTabSettingsSnapshot || {};
+      const baseFiles = prevFilesSnapshot || [];
+      const { unifiedFiles, mergedChars, mergedTabs, mergedColors } = processAndUnifyLogFiles(
+        parsedRaw,
+        baseChars,
+        baseTabs
+      );
+      setCharSettings(mergedChars);
+      setTabSettings(mergedTabs);
+      setExtractedColors(prev => Array.from(new Set([...prev, ...mergedColors])));
+      setFiles([...baseFiles, ...unifiedFiles]);
+      if (unifiedFiles.length > 0) {
+        setActiveFileId(unifiedFiles[0].id);
+      }
+    }
+    setUnifyModalState(null);
   };
 
   // Parse Log (Main / First upload)
@@ -1053,11 +1213,16 @@ export default function App() {
     setPageTitle(''); // Reset custom title on new upload
 
     const parsedRaw = [];
+    const detectedMultiColorChars: MultiColorCharInfo[] = [];
+
     for (let i = 0; i < rawFiles.length; i++) {
       const file = rawFiles[i] as File;
       const fileName = file.name.replace(/\.[^/.]+$/, "");
       try {
         const res = await parseLogFile(file, exportMode === 'html' ? 'easy' : 'high_quality');
+        if (res.multiColorChars && res.multiColorChars.length > 0) {
+          detectedMultiColorChars.push(...res.multiColorChars);
+        }
         parsedRaw.push({
           name: fileName,
           trimmedLogs: res.trimmedLogs,
@@ -1072,36 +1237,24 @@ export default function App() {
       }
     }
 
-    const { unifiedFiles, mergedChars, mergedTabs, mergedColors } = processAndUnifyLogFiles(parsedRaw, {}, {});
+    applyUploadedLogs(parsedRaw, false, rememberSettings);
 
-    setCharSettings(mergedChars);
-    setTabSettings(mergedTabs);
-    setExtractedColors(mergedColors);
-    setFiles(unifiedFiles);
-    if (unifiedFiles.length > 0) {
-      setActiveFileId(unifiedFiles[0].id);
-    }
-
-    if (!rememberSettings) {
-      setMergeTabs(new Set(['main', 'secret', 'other']));
-      setMergeTabStyles(new Set(['secret']));
-      setShowTabNames(new Set(['secret']));
-      setHideEmptyAvatars(false);
-      setCssFormat('internal');
-      setFontSize(14);
-      setDisableOtherColor(true);
-      setNarrationCharacter(null);
-      setNarrationCharacter2(null);
-    } else {
-      if (narrationCharacter && !mergedChars[narrationCharacter]) {
-        setNarrationCharacter(null);
+    // If new JSON with multiple colors for same name, prompt user with card modal
+    if (detectedMultiColorChars.length > 0) {
+      const uniqueChars: MultiColorCharInfo[] = [];
+      const seen = new Set<string>();
+      for (const item of detectedMultiColorChars) {
+        if (!seen.has(item.name)) {
+          seen.add(item.name);
+          uniqueChars.push(item);
+        }
       }
-      if (narrationCharacter2 && !mergedChars[narrationCharacter2]) {
-        setNarrationCharacter2(null);
-      }
+      setUnifyModalState({
+        files: rawFiles as File[],
+        isAdditional: false,
+        multiColorChars: uniqueChars
+      });
     }
-    setPageTitle('');
-    clearHistory();
 
     e.target.value = '';
   };
@@ -1130,12 +1283,21 @@ export default function App() {
       setExtractorFile(jsonFile as File);
     }
 
+    const prevFilesSnap = [...files];
+    const prevCharSettingsSnap = { ...charSettings };
+    const prevTabSettingsSnap = { ...tabSettings };
+
     const parsedRaw = [];
+    const detectedMultiColorChars: MultiColorCharInfo[] = [];
+
     for (let i = 0; i < rawFiles.length; i++) {
       const file = rawFiles[i] as File;
       const fileName = file.name.replace(/\.[^/.]+$/, "");
       try {
         const res = await parseLogFile(file, exportMode === 'html' ? 'easy' : 'high_quality');
+        if (res.multiColorChars && res.multiColorChars.length > 0) {
+          detectedMultiColorChars.push(...res.multiColorChars);
+        }
         parsedRaw.push({
           name: fileName,
           trimmedLogs: res.trimmedLogs,
@@ -1150,18 +1312,25 @@ export default function App() {
       }
     }
 
-    const { unifiedFiles, mergedChars, mergedTabs, mergedColors } = processAndUnifyLogFiles(
-      parsedRaw,
-      charSettings,
-      tabSettings
-    );
+    applyUploadedLogs(parsedRaw, true, rememberSettings);
 
-    setCharSettings(mergedChars);
-    setTabSettings(mergedTabs);
-    setExtractedColors(prev => Array.from(new Set([...prev, ...mergedColors])));
-    setFiles(prev => [...prev, ...unifiedFiles]);
-    if (unifiedFiles.length > 0) {
-      setActiveFileId(unifiedFiles[0].id);
+    if (detectedMultiColorChars.length > 0) {
+      const uniqueChars: MultiColorCharInfo[] = [];
+      const seen = new Set<string>();
+      for (const item of detectedMultiColorChars) {
+        if (!seen.has(item.name)) {
+          seen.add(item.name);
+          uniqueChars.push(item);
+        }
+      }
+      setUnifyModalState({
+        files: rawFiles as File[],
+        isAdditional: true,
+        multiColorChars: uniqueChars,
+        prevFilesSnapshot: prevFilesSnap,
+        prevCharSettingsSnapshot: prevCharSettingsSnap,
+        prevTabSettingsSnapshot: prevTabSettingsSnap
+      });
     }
 
     e.target.value = '';
@@ -1345,6 +1514,7 @@ export default function App() {
       if (json.hideAllAvatars !== undefined) setHideAllAvatars(json.hideAllAvatars);
       if (json.narrationCharacter !== undefined) setNarrationCharacter(json.narrationCharacter);
       if (json.narrationCharacter2 !== undefined) setNarrationCharacter2(json.narrationCharacter2);
+      if (json.additionalNarrationSlots) setAdditionalNarrationSlots(json.additionalNarrationSlots);
 
       clearHistory();
       setJsonFileName(file.name);
@@ -1356,7 +1526,7 @@ export default function App() {
 
   const exportProject = () => {
     const data: any = { 
-      version: '1.11.16',
+      version: '1.11.14',
       files,
       activeFileId,
       originalFileName,
@@ -1368,6 +1538,7 @@ export default function App() {
       data.charOrder = charOrder;
       data.narrationCharacter = narrationCharacter;
       data.narrationCharacter2 = narrationCharacter2;
+      data.additionalNarrationSlots = additionalNarrationSlots;
       data.hideEmptyAvatars = hideEmptyAvatars;
       data.cropFaceTop = cropFaceTop;
       data.hideAllAvatars = hideAllAvatars;
@@ -1547,6 +1718,7 @@ export default function App() {
               mergeTabs.has(prevFormat) &&
               prevVisibleLog.name === mappedLog.name && 
               prevVisibleLog.tab === mappedLog.tab && 
+              prevVisibleLog.tabId === mappedLog.tabId &&
               !mappedLog.isCommand && 
               !prevVisibleLog.isCommand &&
               !prevHasBlock) {
@@ -1745,8 +1917,9 @@ export default function App() {
       const log = item.log;
       if (!log.isContinuation) {
          if (tabSettings[log.tabId]?.visible !== false && charSettings[log.charId]?.visible !== false) {
-           const isNarration = log.charId === narrationCharacter || log.charId === narrationCharacter2;
-           const charFmt = log.charId === narrationCharacter2 ? narrationFormat2 : narrationFormat;
+           const narrationSlot = allNarrationSlots.find(s => s.charId === log.charId);
+           const isNarration = Boolean(narrationSlot);
+           const charFmt = narrationSlot?.format || narrationFormat;
            if (hideAllAvatars || (isNarration && charFmt === 'style3')) {
              const w = ctx.measureText(log.name + ':').width;
              if (w > mw) mw = w;
@@ -1756,9 +1929,8 @@ export default function App() {
     }
     
     return Math.min(Math.max(20, Math.ceil(mw + 4)), 160);
-  }, [displayItems, textFontSize, fontFamily, narrationCharacter,
-      narrationCharacter2, hideAllAvatars, narrationFormat,
-      narrationFormat2, tabSettings, charSettings]);
+  }, [displayItems, textFontSize, fontFamily, allNarrationSlots,
+      hideAllAvatars, narrationFormat, narrationFormat2, tabSettings, charSettings]);
 
   useEffect(() => {
     if (searchQuery) {
@@ -2101,16 +2273,7 @@ export default function App() {
     if (!bulkImgurUrl.trim()) return;
     setIsBulkImgurLoading(true);
     try {
-      const res = await fetch('/api/imgur', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: bulkImgurUrl.trim() })
-      });
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Imgur 앨범 정보를 불러올 수 없습니다. 주소를 확인해주세요.');
-      }
-      const fetched = await res.json();
+      const fetched = await fetchImgurImagesClient(bulkImgurUrl.trim());
       if (!Array.isArray(fetched) || fetched.length === 0) {
         throw new Error('앨범 내에서 이미지를 찾을 수 없습니다.');
       }
@@ -2178,7 +2341,7 @@ export default function App() {
       // 정밀 매칭 엔진 실행
       const matchCandidates = fetched.map((img: any) => ({
         url: img.url,
-        fileName: img.fileName,
+        fileName: (img.fileName || '').normalize('NFC'),
         size: img.size
       }));
 
@@ -2223,16 +2386,7 @@ export default function App() {
     if (!illBulkUrl.trim()) return;
     setIsIllBulkLoading(true);
     try {
-      const res = await fetch('/api/imgur', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: illBulkUrl.trim() })
-      });
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Imgur 앨범 정보를 불러올 수 없습니다. 주소를 확인해주세요.');
-      }
-      const fetched = await res.json();
+      const fetched = await fetchImgurImagesClient(illBulkUrl.trim());
       if (!Array.isArray(fetched) || fetched.length === 0) {
         throw new Error('앨범 내에서 이미지를 찾을 수 없습니다.');
       }
@@ -2254,7 +2408,7 @@ export default function App() {
         const charId = bulkImageMapping[img.url];
         if (charId && next[charId]) {
           const arr = [...(next[charId].images || [])];
-          const rawName = (img.fileName || '').trim();
+          const rawName = (img.fileName || '').normalize('NFC').trim();
           const baseName = rawName.replace(/\.[^/.]+$/, '').trim();
           const baseNameLower = baseName.toLowerCase();
           const rawLower = rawName.toLowerCase();
@@ -2886,11 +3040,12 @@ export default function App() {
     return getUsedBase64ImagesInfo(targetExportFiles, charSettings, tabSettings, hideAllAvatars);
   }, [targetExportFiles, charSettings, tabSettings, hideAllAvatars]);
 
-  const copyToClipboard = async (text: string) => {
+  const copyToClipboard = async (text: string, customMessage?: string) => {
+    const successMsg = customMessage || '클립보드에 복사되었습니다.';
     try {
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
-        alert('클립보드에 복사되었습니다.');
+        alert(successMsg);
         return true;
       }
       throw new Error('Clipboard API unavailable');
@@ -2907,7 +3062,7 @@ export default function App() {
         const successful = document.execCommand('copy');
         document.body.removeChild(textArea);
         if (successful) {
-          alert('클립보드에 복사되었습니다.');
+          alert(successMsg);
           return true;
         }
       } catch (fallbackErr) {
@@ -2915,6 +3070,30 @@ export default function App() {
       }
       alert('클립보드 복사에 실패했습니다. 복사할 내용의 용량이 너무 크거나 브라우저 권한 제한일 수 있습니다.\n\n용량이 큰 경우 HTML 다운로드를 이용해주세요.');
       return false;
+    }
+  };
+
+  const handleCopyExportHtml = async (
+    getHtmlFn: (mode: 'html' | 'blog') => Promise<string>,
+    onSuccess?: () => void
+  ) => {
+    try {
+      const wasHtmlMode = exportMode === 'html';
+      // 복사 시에는 항상 블로그 복붙용 코드를 생성 (HTML 모드인 경우 블로그 복붙용으로 자동 전환)
+      const html = await getHtmlFn('blog');
+      
+      let message = '클립보드에 복사되었습니다.';
+      if (wasHtmlMode) {
+        setExportMode('blog');
+        message = "현재 'HTML 다운로드용' 모드로 설정되어 있어, '블로그 복붙용'으로 자동 전환하여 복사되었습니다.";
+      }
+      
+      const success = await copyToClipboard(html, message);
+      if (success && onSuccess) {
+        onSuccess();
+      }
+    } catch (err: any) {
+      alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
     }
   };
 
@@ -2963,7 +3142,7 @@ export default function App() {
     return result;
   };
 
-  const getCombinedHtmlString = async () => {
+  const getCombinedHtmlString = async (targetMode: 'html' | 'blog' = exportMode) => {
     setIsConverting(true);
     try {
       const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
@@ -2979,7 +3158,7 @@ export default function App() {
       });
 
       // Process images (convert external & imgur images to WebP data URLs for HTML mode)
-      const { charSettings: processedChars, blocks: processedBlocks, logs: processedLogs } = await processImagesForExport(charSettings, combinedBlocks, combinedLogsList, exportMode);
+      const { charSettings: processedChars, blocks: processedBlocks, logs: processedLogs } = await processImagesForExport(charSettings, combinedBlocks, combinedLogsList, targetMode, excludeUnlinkedImages);
 
       const filteredLogs = processedLogs.filter(log => 
         tabSettings[log.tabId]?.visible && 
@@ -3040,7 +3219,8 @@ export default function App() {
         showLogDivider,
         combinedIllustrations,
         processedLogs,
-        exportMode
+        targetMode,
+        allNarrationSlots
       );
     } finally {
       setIsConverting(false);
@@ -3061,7 +3241,7 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const getHtmlStringForFile = async (targetFile: LogFile, sectionId?: string) => {
+  const getHtmlStringForFile = async (targetFile: LogFile, sectionId?: string, targetMode: 'html' | 'blog' = exportMode) => {
     setIsConverting(true);
     try {
       const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
@@ -3069,7 +3249,7 @@ export default function App() {
     const fileBlocks = targetFile.insertedBlocks || {};
 
     // Process images first (converting external & imgur images to WebP data URLs for HTML mode)
-    const { charSettings: processedChars, blocks: processedBlocks, logs: processedFileLogs } = await processImagesForExport(charSettings, fileBlocks as any, fileLogs, exportMode);
+    const { charSettings: processedChars, blocks: processedBlocks, logs: processedFileLogs } = await processImagesForExport(charSettings, fileBlocks as any, fileLogs, targetMode, excludeUnlinkedImages);
 
     const fileSections = getFileSectionsList(targetFile);
     let secIdx = 0;
@@ -3143,7 +3323,8 @@ export default function App() {
       showLogDivider,
       fileIllustrations,
       targetLogs,
-      exportMode
+      targetMode,
+      allNarrationSlots
     );
     } finally {
       setIsConverting(false);
@@ -3244,7 +3425,8 @@ export default function App() {
       showLogDivider,
       illustrations,
       logs,
-      exportMode
+      exportMode,
+      allNarrationSlots
     );
   };
 
@@ -3318,7 +3500,8 @@ export default function App() {
         showLogDivider,
         illustrations,
         logs,
-        exportMode
+        exportMode,
+        allNarrationSlots
       );
       
       const finalName = s.name ? `${fileName}_${s.name}` : `${fileName}_section_${i + 1}`;
@@ -3411,6 +3594,7 @@ export default function App() {
       enableSecretNarration2,
       narrationFormat,
       narrationFormat2,
+      narrationSlots: allNarrationSlots,
       lineHeight,
       letterSpacing,
       blockSpacing,
@@ -3595,7 +3779,7 @@ export default function App() {
                     <div className="mt-2 p-3 bg-white/5 rounded-xl border border-white/5 text-[11px] leading-relaxed">
                       {exportMode === 'html' ? (
                         <div className="text-white/90">
-                          HTML 파일 속에 스탠딩/삽화 이미지가 WebP 형식으로 내장되며, 오프라인 열람이 가능합니다. (BGM 기능 사용 불가)
+                          HTML 다운로드용 모드여서 BGM은 제외됩니다. 스탠딩/삽화 이미지가 WebP 형식으로 내장되며 오프라인 열람이 가능합니다.
                         </div>
                       ) : (
                         <div className="text-white/90">
@@ -4029,21 +4213,19 @@ export default function App() {
                             )}
                             <div className="flex items-center bg-black/20 rounded-md border border-white/5 p-0.5 ml-1 shrink-0">
                               {(() => {
-                                const isNameColorActive = tab.applyColorToName !== undefined
-                                  ? tab.applyColorToName
-                                  : (tab.format === 'other' ? !disableOtherColor : true);
+                                const isNameColorOverridden = Boolean(tab.applyColorToName);
                                 return (
                                   <button
                                     onClick={(e) => {
-                                      const next = { ...tabSettings, [tab.id]: { ...tab, applyColorToName: !isNameColorActive } };
+                                      const next = { ...tabSettings, [tab.id]: { ...tab, applyColorToName: !isNameColorOverridden } };
                                       setTabSettings(next);
                                       saveToHistory({ tabSettings: next });
                                     }}
-                                    className={`w-6 h-6 rounded flex items-center justify-center relative transition-colors shrink-0 ${isNameColorActive ? "bg-white/20 text-white" : "text-white/40 hover:bg-white/10 hover:text-white"}`}
-                                    title={isNameColorActive ? "캐릭터 이름에 색상 적용 중 (클릭 시 미적용)" : "캐릭터 이름 색상 미적용 (클릭 시 적용)"}
+                                    className={`w-6 h-6 rounded flex items-center justify-center relative transition-colors shrink-0 ${isNameColorOverridden ? "bg-white/20 text-white" : "text-white/40 hover:bg-white/10 hover:text-white"}`}
+                                    title={isNameColorOverridden ? "텍스트 색상으로 캐릭터 이름색 덮어쓰기 적용 중 (클릭 시 해제)" : "캐릭터 이름 본래 색상 유지 중 (클릭 시 텍스트 색상으로 덮어쓰기)"}
                                   >
-                                    <User className="w-3.5 h-3.5 -translate-y-[1px]" style={{ color: isNameColorActive ? (tab.textColor || 'white') : 'currentColor' }} />
-                                    <div className="absolute bottom-1 left-1.5 right-1.5 h-[2px] rounded-full transition-colors" style={{ backgroundColor: isNameColorActive ? (tab.textColor || 'white') : 'white', opacity: isNameColorActive ? 1 : 0.2 }} />
+                                    <User className="w-3.5 h-3.5 -translate-y-[1px]" style={{ color: isNameColorOverridden ? (tab.textColor || 'white') : 'currentColor' }} />
+                                    <div className="absolute bottom-1 left-1.5 right-1.5 h-[2px] rounded-full transition-colors" style={{ backgroundColor: isNameColorOverridden ? (tab.textColor || 'white') : 'white', opacity: isNameColorOverridden ? 1 : 0.2 }} />
                                   </button>
                                 );
                               })()}
@@ -4189,65 +4371,87 @@ export default function App() {
                 <Section>
                   <div className="space-y-2">
                     <div className="bg-white/5 border border-white/5 rounded-xl shadow-sm transition-all flex flex-col">
-                      <div className="flex items-center justify-between p-3 relative h-11" ref={narrationDropdownRef}>
+                      <div 
+                        className={cn(
+                          "flex items-center justify-between p-3 relative h-11 rounded-t-xl transition-colors",
+                          narrationCharacter && "cursor-pointer hover:bg-white/[0.03] select-none"
+                        )} 
+                        ref={narrationDropdownRef}
+                        onClick={() => {
+                          if (narrationCharacter) setIsNarrationAccordionOpen(prev => !prev);
+                        }}
+                      >
                         <span className="text-[11px] font-bold text-white/80">나레이션 캐릭터</span>
-                      <div className="relative">
-                        <button
-                          onClick={() => setIsNarrationDropdownOpen(!isNarrationDropdownOpen)}
-                          className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/90 px-2 py-1 outline-none hover:border-white/20 transition-colors"
-                        >
-                          <div className="flex items-center gap-1.5 overflow-hidden">
-                            {narrationCharacter && charSettings[narrationCharacter] && (
-                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: charSettings[narrationCharacter].color }}></span>
-                            )}
-                            <span className="max-w-[100px] truncate">{narrationCharacter && charSettings[narrationCharacter] ? charSettings[narrationCharacter].name : '선택 안 함'}</span>
-                          </div>
-                          <ChevronDown className="w-3 h-3 opacity-50" />
-                        </button>
-                        
-                        {isNarrationDropdownOpen && (
-                          <div className="absolute right-0 top-full mt-1 w-40 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
-                            <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-1">
-                              <button
-                                onClick={(e) => {
-                                  setNarrationCharacter(null);
-                                  saveToHistory({ narrationCharacter: null });
-                                  setIsNarrationDropdownOpen(false);
-                                }}
-                                className={cn(
-                                  "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
-                                  (!narrationCharacter || !charSettings[narrationCharacter]) ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <div className="relative">
+                            <button
+                              onClick={() => setIsNarrationDropdownOpen(!isNarrationDropdownOpen)}
+                              className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/90 px-2 py-1 outline-none hover:border-white/20 transition-colors"
+                            >
+                              <div className="flex items-center gap-1.5 overflow-hidden">
+                                {narrationCharacter && charSettings[narrationCharacter] && (
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: charSettings[narrationCharacter].color }}></span>
                                 )}
-                              >
-                                선택 안 함
-                              </button>
-                              {Object.keys(charSettings).map(charId => {
-                                const char = charSettings[charId];
-                                if (!char) return null;
-                                return (
+                                <span className="max-w-[100px] truncate">{narrationCharacter && charSettings[narrationCharacter] ? charSettings[narrationCharacter].name : '선택 안 함'}</span>
+                              </div>
+                              <ChevronDown className="w-3 h-3 opacity-50" />
+                            </button>
+                            
+                            {isNarrationDropdownOpen && (
+                              <div className="absolute right-0 top-full mt-1 w-40 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                                <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-1">
                                   <button
-                                    key={charId}
                                     onClick={(e) => {
-                                      setNarrationCharacter(charId);
-                                      saveToHistory({ narrationCharacter: charId });
+                                      setNarrationCharacter(null);
+                                      saveToHistory({ narrationCharacter: null });
                                       setIsNarrationDropdownOpen(false);
                                     }}
                                     className={cn(
-                                      "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
-                                      narrationCharacter === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                      "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
+                                      (!narrationCharacter || !charSettings[narrationCharacter]) ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
                                     )}
                                   >
-                                    {char.name || '(이름 없음)'}
+                                    선택 안 함
                                   </button>
-                                );
-                              })}
-                            </div>
+                                  {Object.keys(charSettings).map(charId => {
+                                    const char = charSettings[charId];
+                                    if (!char) return null;
+                                    return (
+                                      <button
+                                        key={charId}
+                                        onClick={(e) => {
+                                          setNarrationCharacter(charId);
+                                          saveToHistory({ narrationCharacter: charId });
+                                          setIsNarrationDropdownOpen(false);
+                                          setIsNarrationAccordionOpen(true);
+                                        }}
+                                        className={cn(
+                                          "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
+                                          narrationCharacter === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                        )}
+                                      >
+                                        {char.name || '(이름 없음)'}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
+                          {narrationCharacter && (
+                            <button
+                              type="button"
+                              onClick={() => setIsNarrationAccordionOpen(prev => !prev)}
+                              className="p-1 -mr-1 text-white/40 hover:text-white/80 hover:bg-white/10 rounded transition-colors cursor-pointer"
+                              title={isNarrationAccordionOpen ? "접기" : "펼치기"}
+                            >
+                              <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-200", isNarrationAccordionOpen && "rotate-180")} />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    {narrationCharacter && (
+                    {narrationCharacter && isNarrationAccordionOpen && (
                       <div className="flex flex-col border-t border-white/5">
                         <div className="flex items-center justify-between p-3 h-11 relative">
                           <span className="text-[11px] font-bold text-white/80 shrink-0">나레이션 출력 디자인</span>
@@ -4308,127 +4512,384 @@ export default function App() {
                     )}
                     </div>
 
-                    {narrationCharacter && charSettings[narrationCharacter] && (
-                      <div className="bg-white/5 border border-white/5 rounded-xl shadow-sm transition-all flex flex-col mt-2">
-                        <div className="flex items-center justify-between p-3 relative h-11" ref={narrationDropdownRef2}>
-                          <span className="text-[11px] font-bold text-white/80">나레이션 캐릭터 2</span>
-                        <div className="relative">
-                          <button
-                            onClick={() => setIsNarrationDropdownOpen2(!isNarrationDropdownOpen2)}
-                            className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/90 px-2 py-1 outline-none hover:border-white/20 transition-colors"
+                    {!showNarrationSlot2 ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowNarrationSlot2(true)}
+                        className="w-full mt-2 py-2 px-3 border border-dashed border-white/10 hover:border-white/20 hover:bg-white/5 rounded-xl text-[11px] font-bold text-white/50 hover:text-white/80 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        나레이션 캐릭터 추가
+                      </button>
+                    ) : (
+                      <>
+                        <div className="bg-white/5 border border-white/5 rounded-xl shadow-sm transition-all flex flex-col mt-2">
+                          <div 
+                            className={cn(
+                              "flex items-center justify-between p-3 relative h-11 rounded-t-xl transition-colors",
+                              narrationCharacter2 && "cursor-pointer hover:bg-white/[0.03] select-none"
+                            )} 
+                            ref={narrationDropdownRef2}
+                            onClick={() => {
+                              if (narrationCharacter2) setIsNarrationAccordionOpen2(prev => !prev);
+                            }}
                           >
-                            <div className="flex items-center gap-1.5 overflow-hidden">
-                              {narrationCharacter2 && charSettings[narrationCharacter2] && (
-                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: charSettings[narrationCharacter2].color }}></span>
-                              )}
-                              <span className="max-w-[100px] truncate">{narrationCharacter2 && charSettings[narrationCharacter2] ? charSettings[narrationCharacter2].name : '선택 안 함'}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-bold text-white/80">나레이션 캐릭터(2)</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setNarrationCharacter2(null);
+                                  saveToHistory({ narrationCharacter2: null });
+                                  setShowNarrationSlot2(false);
+                                }}
+                                className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white/80 transition-colors"
+                                title="나레이션 캐릭터(2) 삭제"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
                             </div>
-                            <ChevronDown className="w-3 h-3 opacity-50" />
-                          </button>
-                            
-                          {isNarrationDropdownOpen2 && (
-                            <div className="absolute right-0 top-full mt-1 w-40 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
-                              <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-1">
+                            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                              <div className="relative">
                                 <button
-                                  onClick={(e) => {
-                                    setNarrationCharacter2(null);
-                                    saveToHistory({ narrationCharacter2: null });
-                                    setIsNarrationDropdownOpen2(false);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
-                                    (!narrationCharacter2 || !charSettings[narrationCharacter2]) ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
-                                  )}
+                                  onClick={() => setIsNarrationDropdownOpen2(!isNarrationDropdownOpen2)}
+                                  className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/90 px-2 py-1 outline-none hover:border-white/20 transition-colors"
                                 >
-                                  선택 안 함
+                                  <div className="flex items-center gap-1.5 overflow-hidden">
+                                    {narrationCharacter2 && charSettings[narrationCharacter2] && (
+                                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: charSettings[narrationCharacter2].color }}></span>
+                                    )}
+                                    <span className="max-w-[100px] truncate">{narrationCharacter2 && charSettings[narrationCharacter2] ? charSettings[narrationCharacter2].name : '선택 안 함'}</span>
+                                  </div>
+                                  <ChevronDown className="w-3 h-3 opacity-50" />
                                 </button>
-                                {Object.keys(charSettings).map(charId => {
-                                  const char = charSettings[charId];
-                                  if (!char) return null;
-                                  return (
-                                    <button
-                                      key={charId}
-                                      onClick={(e) => {
-                                        setNarrationCharacter2(charId);
-                                        saveToHistory({ narrationCharacter2: charId });
-                                        setIsNarrationDropdownOpen2(false);
-                                      }}
-                                      className={cn(
-                                        "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
-                                        narrationCharacter2 === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
-                                      )}
-                                    >
-                                      {char.name || '(이름 없음)'}
-                                    </button>
-                                  );
-                                })}
+                              
+                            {isNarrationDropdownOpen2 && (
+                              <div className="absolute right-0 top-full mt-1 w-40 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                                <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-1">
+                                  <button
+                                    onClick={(e) => {
+                                      setNarrationCharacter2(null);
+                                      saveToHistory({ narrationCharacter2: null });
+                                      setIsNarrationDropdownOpen2(false);
+                                    }}
+                                    className={cn(
+                                      "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
+                                      (!narrationCharacter2 || !charSettings[narrationCharacter2]) ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                    )}
+                                  >
+                                    선택 안 함
+                                  </button>
+                                  {Object.keys(charSettings).map(charId => {
+                                    const char = charSettings[charId];
+                                    if (!char) return null;
+                                    return (
+                                      <button
+                                        key={charId}
+                                        onClick={(e) => {
+                                          setNarrationCharacter2(charId);
+                                          saveToHistory({ narrationCharacter2: charId });
+                                          setIsNarrationDropdownOpen2(false);
+                                          setIsNarrationAccordionOpen2(true);
+                                        }}
+                                        className={cn(
+                                          "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
+                                          narrationCharacter2 === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                        )}
+                                      >
+                                        {char.name || '(이름 없음)'}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               </div>
-                            </div>
+                            )}
+                          </div>
+                          {narrationCharacter2 && (
+                            <button
+                              type="button"
+                              onClick={() => setIsNarrationAccordionOpen2(prev => !prev)}
+                              className="p-1 -mr-1 text-white/40 hover:text-white/80 hover:bg-white/10 rounded transition-colors cursor-pointer"
+                              title={isNarrationAccordionOpen2 ? "접기" : "펼치기"}
+                            >
+                              <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-200", isNarrationAccordionOpen2 && "rotate-180")} />
+                            </button>
                           )}
                         </div>
                       </div>
 
-                      {narrationCharacter2 && (
-                        <div className="flex flex-col border-t border-white/5">
-                          <div className="flex items-center justify-between p-3 h-11 relative">
-                            <span className="text-[11px] font-bold text-white/80 shrink-0">나레이션 2 출력 디자인</span>
-                            <div className="flex bg-black/20 border border-white/5 rounded-lg p-0.5 gap-0.5 ml-2">
-                              <button
-                                onClick={(e) => { setNarrationFormat2('style1'); saveToHistory({ narrationFormat2: 'style1' }); }}
-                                className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
-                                  narrationFormat2 === 'style1'
-                                    ? 'bg-[#e6005c] text-white shadow-sm'
-                                    : 'text-white/50 hover:text-white/80 hover:bg-white/5'
-                                }`}
-                              >
-                                기본
-                              </button>
-                              <button
-                                onClick={(e) => { setNarrationFormat2('style2'); saveToHistory({ narrationFormat2: 'style2' }); }}
-                                className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
-                                  narrationFormat2 === 'style2'
-                                    ? 'bg-[#e6005c] text-white shadow-sm'
-                                    : 'text-white/50 hover:text-white/80 hover:bg-white/5'
-                                }`}
-                              >
-                                이탤릭
-                              </button>
-                              <button
-                                onClick={(e) => { setNarrationFormat2('style3'); saveToHistory({ narrationFormat2: 'style3' }); }}
-                                className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
-                                  narrationFormat2 === 'style3'
-                                    ? 'bg-[#e6005c] text-white shadow-sm'
-                                    : 'text-white/50 hover:text-white/80 hover:bg-white/5'
-                                }`}
-                              >
-                                단락
-                              </button>
+                        {narrationCharacter2 && isNarrationAccordionOpen2 && (
+                          <div className="flex flex-col border-t border-white/5">
+                            <div className="flex items-center justify-between p-3 h-11 relative">
+                              <span className="text-[11px] font-bold text-white/80 shrink-0">나레이션(2) 출력 디자인</span>
+                              <div className="flex bg-black/20 border border-white/5 rounded-lg p-0.5 gap-0.5 ml-2">
+                                <button
+                                  onClick={(e) => { setNarrationFormat2('style1'); saveToHistory({ narrationFormat2: 'style1' }); }}
+                                  className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                    narrationFormat2 === 'style1'
+                                      ? 'bg-[#e6005c] text-white shadow-sm'
+                                      : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+                                  }`}
+                                >
+                                  기본
+                                </button>
+                                <button
+                                  onClick={(e) => { setNarrationFormat2('style2'); saveToHistory({ narrationFormat2: 'style2' }); }}
+                                  className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                    narrationFormat2 === 'style2'
+                                      ? 'bg-[#e6005c] text-white shadow-sm'
+                                      : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+                                  }`}
+                                >
+                                  이탤릭
+                                </button>
+                                <button
+                                  onClick={(e) => { setNarrationFormat2('style3'); saveToHistory({ narrationFormat2: 'style3' }); }}
+                                  className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                    narrationFormat2 === 'style3'
+                                      ? 'bg-[#e6005c] text-white shadow-sm'
+                                      : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+                                  }`}
+                                >
+                                  단락
+                                </button>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between p-3 h-11 border-t border-white/5">
+                              <span className="text-[11px] font-bold text-white/80">나레이션(2) 문단 자동 나누기</span>
+                              <Toggle 
+                                enabled={enableSentenceSpacing2} 
+                                onChange={(val) => {
+                                  setEnableSentenceSpacing2(val);
+                                  saveToHistory({ enableSentenceSpacing2: val });
+                                }} 
+                              />
+                            </div>
+                            <div className="flex items-center justify-between p-3 h-11 border-t border-white/5">
+                              <span className="text-[11px] font-bold text-white/80">비밀탭에도 적용 (나레이션(2))</span>
+                              <Toggle 
+                                enabled={enableSecretNarration2} 
+                                onChange={(val) => {
+                                  setEnableSecretNarration2(val);
+                                  saveToHistory({ enableSecretNarration2: val });
+                                }} 
+                              />
                             </div>
                           </div>
-                          <div className="flex items-center justify-between p-3 h-11 border-t border-white/5">
-                            <span className="text-[11px] font-bold text-white/80">나레이션 2 문단 자동 나누기</span>
-                            <Toggle 
-                              enabled={enableSentenceSpacing2} 
-                              onChange={(val) => {
-                                setEnableSentenceSpacing2(val);
-                                saveToHistory({ enableSentenceSpacing2: val });
-                              }} 
-                            />
+                        )}
+                      </div>
+
+                      {additionalNarrationSlots.map((extraSlot, idx) => {
+                        const slotNum = idx + 3;
+                        const isDropdownOpen = openExtraNarrationDropdownId === extraSlot.id;
+                        const isAccordionOpen = openExtraNarrationAccordions[extraSlot.id] !== false;
+                        return (
+                          <div key={extraSlot.id} className="bg-white/5 border border-white/5 rounded-xl shadow-sm transition-all flex flex-col mt-2">
+                            <div 
+                              className={cn(
+                                "flex items-center justify-between p-3 relative h-11 rounded-t-xl transition-colors",
+                                extraSlot.charId && "cursor-pointer hover:bg-white/[0.03] select-none"
+                              )}
+                              onClick={() => {
+                                if (extraSlot.charId) setOpenExtraNarrationAccordions(prev => ({ ...prev, [extraSlot.id]: !isAccordionOpen }));
+                              }}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] font-bold text-white/80">{`나레이션 캐릭터(${slotNum})`}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const next = additionalNarrationSlots.filter((_, i) => i !== idx);
+                                    setAdditionalNarrationSlots(next);
+                                    saveToHistory({ additionalNarrationSlots: next });
+                                  }}
+                                  className="p-1 hover:bg-white/10 rounded text-white/40 hover:text-white/80 transition-colors"
+                                  title={`나레이션 캐릭터(${slotNum}) 삭제`}
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                <div className="relative">
+                                <button
+                                  onClick={() => setOpenExtraNarrationDropdownId(isDropdownOpen ? null : extraSlot.id)}
+                                  className="flex items-center gap-2 bg-black/20 border border-white/10 rounded-lg text-[10px] text-white/90 px-2 py-1 outline-none hover:border-white/20 transition-colors"
+                                >
+                                  <div className="flex items-center gap-1.5 overflow-hidden">
+                                    {extraSlot.charId && charSettings[extraSlot.charId] && (
+                                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: charSettings[extraSlot.charId].color }}></span>
+                                    )}
+                                    <span className="max-w-[100px] truncate">{extraSlot.charId && charSettings[extraSlot.charId] ? charSettings[extraSlot.charId].name : '선택 안 함'}</span>
+                                  </div>
+                                  <ChevronDown className="w-3 h-3 opacity-50" />
+                                </button>
+                                  
+                                {isDropdownOpen && (
+                                  <div className="absolute right-0 top-full mt-1 w-40 bg-[#222] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                                    <div className="max-h-[50vh] overflow-y-auto custom-scrollbar p-1">
+                                      <button
+                                        onClick={(e) => {
+                                          const next = [...additionalNarrationSlots];
+                                          next[idx] = { ...next[idx], charId: null };
+                                          setAdditionalNarrationSlots(next);
+                                          saveToHistory({ additionalNarrationSlots: next });
+                                          setOpenExtraNarrationDropdownId(null);
+                                        }}
+                                        className={cn(
+                                          "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors",
+                                          (!extraSlot.charId || !charSettings[extraSlot.charId]) ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                        )}
+                                      >
+                                        선택 안 함
+                                      </button>
+                                      {Object.keys(charSettings).map(charId => {
+                                        const char = charSettings[charId];
+                                        if (!char) return null;
+                                        return (
+                                          <button
+                                            key={charId}
+                                            onClick={(e) => {
+                                              const next = [...additionalNarrationSlots];
+                                              next[idx] = { ...next[idx], charId };
+                                              setAdditionalNarrationSlots(next);
+                                              saveToHistory({ additionalNarrationSlots: next });
+                                              setOpenExtraNarrationDropdownId(null);
+                                              setOpenExtraNarrationAccordions(prev => ({ ...prev, [extraSlot.id]: true }));
+                                            }}
+                                            className={cn(
+                                              "w-full text-left px-3 py-2 text-[11px] rounded-lg transition-colors truncate",
+                                              extraSlot.charId === charId ? "bg-[#e6005c] text-white font-bold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                                            )}
+                                          >
+                                            {char.name || '(이름 없음)'}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                              {extraSlot.charId && (
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenExtraNarrationAccordions(prev => ({ ...prev, [extraSlot.id]: !isAccordionOpen }))}
+                                  className="p-1 -mr-1 text-white/40 hover:text-white/80 hover:bg-white/10 rounded transition-colors cursor-pointer"
+                                  title={isAccordionOpen ? "접기" : "펼치기"}
+                                >
+                                  <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-200", isAccordionOpen && "rotate-180")} />
+                                </button>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center justify-between p-3 h-11 border-t border-white/5">
-                            <span className="text-[11px] font-bold text-white/80">비밀탭에도 적용 (나레이션 2)</span>
-                            <Toggle 
-                              enabled={enableSecretNarration2} 
-                              onChange={(val) => {
-                                setEnableSecretNarration2(val);
-                                saveToHistory({ enableSecretNarration2: val });
-                              }} 
-                            />
+
+                            {extraSlot.charId && isAccordionOpen && (
+                              <div className="flex flex-col border-t border-white/5">
+                                <div className="flex items-center justify-between p-3 h-11 relative">
+                                  <span className="text-[11px] font-bold text-white/80 shrink-0">{`나레이션(${slotNum}) 출력 디자인`}</span>
+                                  <div className="flex bg-black/20 border border-white/5 rounded-lg p-0.5 gap-0.5 ml-2">
+                                    <button
+                                      onClick={(e) => {
+                                        const next = [...additionalNarrationSlots];
+                                        next[idx] = { ...next[idx], format: 'style1' };
+                                        setAdditionalNarrationSlots(next);
+                                        saveToHistory({ additionalNarrationSlots: next });
+                                      }}
+                                      className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                        extraSlot.format === 'style1'
+                                          ? 'bg-[#e6005c] text-white shadow-sm'
+                                          : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+                                      }`}
+                                    >
+                                      기본
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        const next = [...additionalNarrationSlots];
+                                        next[idx] = { ...next[idx], format: 'style2' };
+                                        setAdditionalNarrationSlots(next);
+                                        saveToHistory({ additionalNarrationSlots: next });
+                                      }}
+                                      className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                        extraSlot.format === 'style2'
+                                          ? 'bg-[#e6005c] text-white shadow-sm'
+                                          : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+                                      }`}
+                                    >
+                                      이탤릭
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        const next = [...additionalNarrationSlots];
+                                        next[idx] = { ...next[idx], format: 'style3' };
+                                        setAdditionalNarrationSlots(next);
+                                        saveToHistory({ additionalNarrationSlots: next });
+                                      }}
+                                      className={`px-2.5 py-1 rounded-md transition-all text-[10px] font-bold text-center whitespace-nowrap ${
+                                        extraSlot.format === 'style3'
+                                          ? 'bg-[#e6005c] text-white shadow-sm'
+                                          : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+                                      }`}
+                                    >
+                                      단락
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-between p-3 h-11 border-t border-white/5">
+                                  <span className="text-[11px] font-bold text-white/80">{`나레이션(${slotNum}) 문단 자동 나누기`}</span>
+                                  <Toggle 
+                                    enabled={extraSlot.enableSentenceSpacing} 
+                                    onChange={(val) => {
+                                      const next = [...additionalNarrationSlots];
+                                      next[idx] = { ...next[idx], enableSentenceSpacing: val };
+                                      setAdditionalNarrationSlots(next);
+                                      saveToHistory({ additionalNarrationSlots: next });
+                                    }} 
+                                  />
+                                </div>
+                                <div className="flex items-center justify-between p-3 h-11 border-t border-white/5">
+                                  <span className="text-[11px] font-bold text-white/80">{`비밀탭에도 적용 (나레이션(${slotNum}))`}</span>
+                                  <Toggle 
+                                    enabled={extraSlot.enableSecretNarration} 
+                                    onChange={(val) => {
+                                      const next = [...additionalNarrationSlots];
+                                      next[idx] = { ...next[idx], enableSecretNarration: val };
+                                      setAdditionalNarrationSlots(next);
+                                      saveToHistory({ additionalNarrationSlots: next });
+                                    }} 
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      )}
-                    </div>
-                    )}
+                        );
+                      })}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newId = `slot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+                          const next: NarrationSlotConfig[] = [
+                            ...additionalNarrationSlots,
+                            {
+                              id: newId,
+                              charId: null,
+                              format: 'style1',
+                              enableSentenceSpacing: false,
+                              enableSecretNarration: false
+                            }
+                          ];
+                          setAdditionalNarrationSlots(next);
+                          saveToHistory({ additionalNarrationSlots: next });
+                        }}
+                        className="w-full mt-2 py-2 px-3 border border-dashed border-white/10 hover:border-white/20 hover:bg-white/5 rounded-xl text-[11px] font-bold text-white/50 hover:text-white/80 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        나레이션 캐릭터 추가
+                      </button>
+                    </>
+                  )}
 
                   </div>
                 </Section>
@@ -5811,7 +6272,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/30 hover:text-white/50 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.11.16</span>
+            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.11.14</span>
           </div>
         </div>
       </aside>
@@ -5995,45 +6456,50 @@ export default function App() {
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       className="absolute right-0 mt-2 w-[320px] bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden py-2 flex flex-col"
                     >
-                      {/* Base64 Warning inside Save Menu */}
-                      {usedBase64Images.length > 0 && (
-                        <div className="mx-2 mb-2 p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-[11px] leading-relaxed flex items-start gap-2">
-                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                          <div>
-                            <p className="font-bold text-amber-200">용량 초과 주의</p>
-                            <p className="text-[10px] text-amber-300/90 mt-0.5">
-                              Base64(내장) 이미지가 포함되어 용량 초과가 발생할 수 있습니다. 외부 링크로의 교체를 권장합니다. ({usedBase64Images.join(', ')})
-                            </p>
+                      {/* Unified Notices & Settings Card */}
+                      <div className="mx-2 mb-2 p-2.5 rounded-xl border bg-white/[0.03] border-white/10 space-y-2">
+                        {exportMode === 'html' && (
+                          <div className="flex items-center gap-1.5 text-[10px] text-white/60">
+                            <Info className="w-3.5 h-3.5 shrink-0 text-white/40" />
+                            <span>HTML 다운로드용 모드여서 BGM은 제외됩니다.</span>
                           </div>
-                        </div>
-                      )}
+                        )}
+
+                        <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-white/80 hover:text-white transition-colors">
+                          <input 
+                            type="checkbox"
+                            checked={excludeUnlinkedImages}
+                            onChange={(e) => setExcludeUnlinkedImages(e.target.checked)}
+                            className="w-3.5 h-3.5 rounded border-white/20 bg-black/20 accent-[#e6005c] cursor-pointer"
+                          />
+                          <span>링크로 교체되지 않은 이미지 제외 ({usedBase64Images.length}개)</span>
+                        </label>
+
+                        {exportMode !== 'html' && usedBase64Images.length > 0 && !excludeUnlinkedImages && (
+                          <div className="pt-2 border-t border-white/5 flex items-start gap-2 text-amber-300">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-bold text-[10px] text-amber-200">용량 초과 주의</p>
+                              <p className="text-[10px] text-amber-300/80 leading-relaxed mt-0.5">
+                                Base64(내장) 이미지가 포함되어 용량 초과가 발생할 수 있습니다. 외부 링크로의 교체를 권장합니다. ({usedBase64Images.join(', ')})
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Bulk Save Section */}
                       <div className="px-2 pb-2 border-b border-white/10 mb-2">
                         {ENABLE_MULTI_FILE_UI ? (
                           <div className="flex gap-2">
                             <button 
-                              disabled={exportMode === 'html'}
-                              onClick={exportMode === 'html' ? undefined : async (e) => { 
-                                try { 
-                                  const html = await getCombinedHtmlString(); 
-                                  await copyToClipboard(html); 
-                                  setShowSaveMenu(false); 
-                                } catch(err: any){
-                                  alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
-                                } 
-                              }}
-                              className={cn(
-                                "flex-1 p-2 rounded-xl transition-colors flex flex-col items-center justify-center gap-1 group",
-                                exportMode === 'html'
-                                  ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
-                                  : "hover:bg-white/5 text-white/70 hover:text-white"
-                              )}
-                              title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "연속 파일 복사"}
+                              onClick={() => handleCopyExportHtml((mode) => getCombinedHtmlString(mode), () => setShowSaveMenu(false))}
+                              className="flex-1 p-2 rounded-xl hover:bg-white/5 text-white/70 hover:text-white transition-colors flex flex-col items-center justify-center gap-1 group"
+                              title="연속 파일 복사"
                             >
-                              <Copy className={cn("w-5 h-5 mb-1", exportMode === 'html' ? "text-white/20" : "text-white/50 group-hover:text-white transition-colors")} />
+                              <Copy className="w-5 h-5 mb-1 text-white/50 group-hover:text-white transition-colors" />
                               <span className="text-[11px] font-bold">연속 파일 복사</span>
-                              <span className={cn("text-[9px]", exportMode === 'html' ? "text-white/10" : "opacity-60")}>전체 통합 복사</span>
+                              <span className="text-[9px] opacity-60">전체 통합 복사</span>
                             </button>
                             <button 
                               onClick={async (e) => { 
@@ -6090,34 +6556,20 @@ export default function App() {
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
                                   <button
-                                    disabled={exportMode === 'html'}
-                                    onClick={exportMode === 'html' ? undefined : async (e) => { 
-                                      try { 
-                                        const html = await getHtmlStringForFile(f); 
-                                        await copyToClipboard(html); 
-                                        setShowSaveMenu(false); 
-                                      } catch(err: any){
-                                        alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
-                                      } 
-                                    }}
-                                    className={cn(
-                                      "px-2 py-1 rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1",
-                                      exportMode === 'html'
-                                        ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
-                                        : "bg-white/10 hover:bg-white/20 text-white"
-                                    )}
-                                    title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "전체 복사"}
+                                    onClick={() => handleCopyExportHtml((mode) => getHtmlStringForFile(f, undefined, mode), () => setShowSaveMenu(false))}
+                                    className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
+                                    title="전체 복사"
                                   >
-                                    <Copy className={cn("w-3 h-3", exportMode === 'html' && "text-white/20")} /> 복사
+                                    <Copy className="w-3 h-3" /> 복사
                                   </button>
                                   <button
                                     onClick={async (e) => { 
-                                      try {
+                                      try { 
                                         await downloadHtmlForFile(f); 
                                         setShowSaveMenu(false); 
                                       } catch(err: any) {
                                         alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
-                                      }
+                                      } 
                                     }}
                                     className="px-2 py-1 bg-[#e6005c]/20 hover:bg-[#e6005c]/80 text-[#e6005c] hover:text-white rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
                                     title="전체 저장"
@@ -6137,25 +6589,11 @@ export default function App() {
                                       </div>
                                       <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/sec:opacity-100 transition-opacity">
                                         <button
-                                          disabled={exportMode === 'html'}
-                                          onClick={exportMode === 'html' ? undefined : async (e) => { 
-                                            try { 
-                                              const html = await getHtmlStringForFile(f, s.id); 
-                                              await copyToClipboard(html); 
-                                              setShowSaveMenu(false); 
-                                            } catch(err: any){
-                                              alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
-                                            } 
-                                          }}
-                                          className={cn(
-                                            "p-1.5 rounded transition-colors",
-                                            exportMode === 'html'
-                                              ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
-                                              : "bg-white/5 hover:bg-white/20 text-white/60 hover:text-white"
-                                          )}
-                                          title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "섹션 복사"}
+                                          onClick={() => handleCopyExportHtml((mode) => getHtmlStringForFile(f, s.id, mode), () => setShowSaveMenu(false))}
+                                          className="p-1.5 bg-white/5 hover:bg-white/20 text-white/60 hover:text-white rounded transition-colors"
+                                          title="섹션 복사"
                                         >
-                                          <Copy className={cn("w-3 h-3", exportMode === 'html' && "text-white/20")} />
+                                          <Copy className="w-3 h-3" />
                                         </button>
                                         <button
                                           onClick={async (e) => { 
@@ -6206,18 +6644,35 @@ export default function App() {
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       className="absolute right-0 mt-2 w-80 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-3 space-y-3"
                     >
-                      {/* Base64 Warning inside Download Menu */}
-                      {usedBase64Images.length > 0 && (
-                        <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-[11px] leading-relaxed flex items-start gap-2">
-                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                          <div>
-                            <p className="font-bold text-amber-200">용량 초과 주의</p>
-                            <p className="text-[10px] text-amber-300/90 mt-0.5">
-                              Base64(내장) 이미지가 포함되어 용량 초과가 발생할 수 있습니다. 외부 링크로의 교체를 권장합니다. ({usedBase64Images.join(', ')})
-                            </p>
-                          </div>
+                      {/* Unified Notices & Settings Card */}
+                      <div className="p-2.5 rounded-xl border bg-white/[0.03] border-white/10 space-y-2">
+                        <div className="flex items-center gap-1.5 text-[10px] text-white/60">
+                          <Info className="w-3.5 h-3.5 shrink-0 text-white/40" />
+                          <span>HTML 다운로드용 모드여서 BGM은 제외됩니다.</span>
                         </div>
-                      )}
+
+                        <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-white/80 hover:text-white transition-colors">
+                          <input 
+                            type="checkbox"
+                            checked={excludeUnlinkedImages}
+                            onChange={(e) => setExcludeUnlinkedImages(e.target.checked)}
+                            className="w-3.5 h-3.5 rounded border-white/20 bg-black/20 accent-[#e6005c] cursor-pointer"
+                          />
+                          <span>링크로 교체되지 않은 이미지 제외 ({usedBase64Images.length}개)</span>
+                        </label>
+
+                        {exportMode !== 'html' && usedBase64Images.length > 0 && !excludeUnlinkedImages && (
+                          <div className="pt-2 border-t border-white/5 flex items-start gap-2 text-amber-300">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-bold text-[10px] text-amber-200">용량 초과 주의</p>
+                              <p className="text-[10px] text-amber-300/80 leading-relaxed mt-0.5">
+                                Base64(내장) 이미지가 포함되어 용량 초과가 발생할 수 있습니다. 외부 링크로의 교체를 권장합니다. ({usedBase64Images.join(', ')})
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
                       {ENABLE_MULTI_FILE_UI ? (
                         <div className="bg-[#e6005c]/10 border border-[#e6005c]/30 rounded-xl p-3 space-y-2">
@@ -6230,25 +6685,11 @@ export default function App() {
                           </div>
                           <div className="flex items-center gap-2 pt-1">
                             <button 
-                              disabled={exportMode === 'html'}
-                              onClick={exportMode === 'html' ? undefined : async (e) => { 
-                                try { 
-                                  const html = await getCombinedHtmlString(); 
-                                  await copyToClipboard(html); 
-                                  setShowDownloadMenu(false); 
-                                } catch(err: any){
-                                  alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
-                                } 
-                              }}
-                              className={cn(
-                                "flex-1 py-2 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5",
-                                exportMode === 'html'
-                                  ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
-                                  : "bg-white/10 hover:bg-white/20 text-white"
-                              )}
-                              title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "연속 파일 복사"}
+                              onClick={() => handleCopyExportHtml((mode) => getCombinedHtmlString(mode), () => setShowDownloadMenu(false))}
+                              className="flex-1 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5"
+                              title="연속 파일 복사"
                             >
-                              <Copy className={cn("w-3.5 h-3.5", exportMode === 'html' && "text-white/20")} /> 연속 파일 복사
+                              <Copy className="w-3.5 h-3.5" /> 연속 파일 복사
                             </button>
                             <button 
                               onClick={async (e) => { 
@@ -6302,34 +6743,20 @@ export default function App() {
                                 </div>
                                 <div className="flex gap-1.5 shrink-0">
                                   <button
-                                    disabled={exportMode === 'html'}
-                                    onClick={exportMode === 'html' ? undefined : async (e) => { 
-                                      try { 
-                                        const html = await getHtmlStringForFile(f); 
-                                        await copyToClipboard(html); 
-                                        setShowDownloadMenu(false); 
-                                      } catch(err: any){
-                                        alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
-                                      } 
-                                    }}
-                                    className={cn(
-                                      "px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1",
-                                      exportMode === 'html'
-                                        ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
-                                        : "bg-white/10 hover:bg-white/20 text-white"
-                                    )}
-                                    title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "파일 전체 복사"}
+                                    onClick={() => handleCopyExportHtml((mode) => getHtmlStringForFile(f, undefined, mode), () => setShowDownloadMenu(false))}
+                                    className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1"
+                                    title="파일 전체 복사"
                                   >
-                                    <Copy className={cn("w-3 h-3", exportMode === 'html' && "text-white/20")} /> 복사
+                                    <Copy className="w-3 h-3" /> 복사
                                   </button>
                                   <button
                                     onClick={async (e) => { 
-                                      try {
+                                      try { 
                                         await downloadHtmlForFile(f); 
                                         setShowDownloadMenu(false); 
                                       } catch(err: any) {
                                         alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
-                                      }
+                                      } 
                                     }}
                                     className="px-2.5 py-1 bg-[#e6005c]/80 hover:bg-[#e6005c] text-white rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1 shadow-sm"
                                     title="파일 전체 저장"
@@ -6350,39 +6777,25 @@ export default function App() {
                                       </div>
                                       <div className="flex items-center gap-1 shrink-0">
                                         <button
-                                          disabled={exportMode === 'html'}
-                                          onClick={exportMode === 'html' ? undefined : async (e) => { 
-                                            try { 
-                                              const html = await getHtmlStringForFile(f, s.id); 
-                                              await copyToClipboard(html); 
-                                              setShowDownloadMenu(false); 
-                                            } catch(err: any){
-                                              alert('내보내기 생성 중 오류가 발생했습니다: ' + (err?.message || err));
-                                            } 
-                                          }}
-                                          className={cn(
-                                            "px-2 py-1 rounded text-[9px] font-bold transition-colors flex items-center gap-1",
-                                            exportMode === 'html'
-                                              ? "bg-white/[0.02] text-white/20 cursor-not-allowed border border-white/5"
-                                              : "bg-white/5 hover:bg-white/15 text-white/80 hover:text-white"
-                                          )}
-                                          title={exportMode === 'html' ? "블로그 복붙용 모드에서만 복사할 수 있습니다" : "섹션 복사"}
+                                          onClick={() => handleCopyExportHtml((mode) => getHtmlStringForFile(f, s.id, mode), () => setShowDownloadMenu(false))}
+                                          className="p-1.5 bg-white/5 hover:bg-white/15 text-white/80 hover:text-white rounded text-[9px] font-bold transition-colors flex items-center justify-center"
+                                          title="섹션 복사"
                                         >
-                                          <Copy className={cn("w-2.5 h-2.5", exportMode === 'html' && "text-white/20")} /> 복사
+                                          <Copy className="w-3 h-3" />
                                         </button>
                                         <button
                                           onClick={async (e) => { 
-                                            try {
+                                            try { 
                                               await downloadHtmlForFile(f, s); 
                                               setShowDownloadMenu(false); 
                                             } catch(err: any) {
                                               alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
                                             }
                                           }}
-                                          className="px-2 py-1 bg-white/5 hover:bg-[#e6005c] text-white/80 hover:text-white rounded text-[9px] font-bold transition-colors flex items-center gap-1"
+                                          className="p-1.5 bg-white/5 hover:bg-[#e6005c] text-white/80 hover:text-white rounded text-[9px] font-bold transition-colors flex items-center justify-center"
                                           title="섹션 저장"
                                         >
-                                          <Download className="w-2.5 h-2.5" /> 저장
+                                          <Download className="w-3 h-3" />
                                         </button>
                                       </div>
                                     </div>
@@ -6626,9 +7039,6 @@ export default function App() {
                         const isNextSameTab = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].tab === log.tab;
                         const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
                         const originalLogIndex = logs.findIndex((l: any) => l.id === stableId);
-                        
-                        const isPrevNarration = idx > 0 && mergedLogs[idx - 1].charId === narrationCharacter && ((tabSettings[mergedLogs[idx - 1].tabId]?.format || 'main') === 'main' || (enableSecretNarration && tabSettings[mergedLogs[idx - 1].tabId]?.format === 'secret'));
-                        const isNextNarration = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].charId === narrationCharacter && ((tabSettings[mergedLogs[idx + 1].tabId]?.format || 'main') === 'main' || (enableSecretNarration && tabSettings[mergedLogs[idx + 1].tabId]?.format === 'secret'));
 
                         return (
                           <div
@@ -6693,9 +7103,7 @@ export default function App() {
                               isNextSameTab={isNextSameTab}
                               isNextContinuation={idx < mergedLogs.length - 1 && mergedLogs[idx + 1].isContinuation}
                               onAvatarClick={onAvatarClick}
-                              isPrevBlock={idx > 0 && !!insertedBlocks[mergedLogs[idx - 1].id.startsWith('merged:') ? mergedLogs[idx - 1].id.split(',').pop()! : mergedLogs[idx - 1].id]?.length}
-                              isPrevNarration={isPrevNarration}
-                              isNextNarration={isNextNarration}
+                              isPrevBlock={idx > 0 && (mergedLogs[idx - 1].isIllustration || mergedLogs[idx - 1].isBgmBlock || !!insertedBlocks[mergedLogs[idx - 1].id.startsWith('merged:') ? mergedLogs[idx - 1].id.split(',').pop()! : mergedLogs[idx - 1].id]?.length)}
                               editingLogId={editingLogId}
                               setEditingLogId={setEditingLogId}
                               isDraggingIllustration={isDraggingIllustration}
@@ -6787,8 +7195,7 @@ export default function App() {
                             ...tabSettings, 
                             [tabId]: { 
                               ...currentTab, 
-                              color: newColor,
-                              ...(currentTab?.format === 'other' ? { textColor: newColor } : {})
+                              color: newColor
                             } 
                           };
                           setTabSettings(next);
@@ -6800,8 +7207,7 @@ export default function App() {
                             ...tabSettings, 
                             [tabId]: { 
                               ...currentTab, 
-                              color: newColor,
-                              ...(currentTab?.format === 'other' ? { textColor: newColor } : {})
+                              color: newColor
                             } 
                           };
                           saveToHistory({ charSettings, tabSettings: next, cssFormat, fontSize, fontFamily, theme, disableOtherColor });
@@ -7313,55 +7719,58 @@ export default function App() {
         onSave={applyBulkAllocations}
       />
 
-            {/* Character Image Panel Popup */}
-      {(activeColorPicker?.endsWith('_panel') || pinnedCharPanel) && panelTriggerRect && (() => {
-        const charId = pinnedCharPanel || activeColorPicker?.replace('_panel', '');
-        const char = charId ? charSettings[charId] : null;
-        if (!char) return null;
-        
-        return (
-          <CharImagePanelPopup
-            charName={char.name || '(이름 없음)'}
-            images={char.images || []}
-            color={char.color || '#ffffff'}
-            triggerRect={panelTriggerRect}
-            isPinned={pinnedCharPanel === charId}
-            onMouseEnter={() => {
-              if (panelHoverTimeout.current) clearTimeout(panelHoverTimeout.current);
-            }}
-            onMouseLeave={() => {
-              if (pinnedCharPanel !== charId) {
-                panelHoverTimeout.current = setTimeout(() => {
+      {/* Character Image Panel Popup */}
+      <AnimatePresence>
+        {(activeColorPicker?.endsWith('_panel') || pinnedCharPanel) && panelTriggerRect && (() => {
+          const charId = pinnedCharPanel || activeColorPicker?.replace('_panel', '');
+          const char = charId ? charSettings[charId] : null;
+          if (!char) return null;
+          
+          return (
+            <CharImagePanelPopup
+              key={charId}
+              charName={char.name || '(이름 없음)'}
+              images={char.images || []}
+              color={char.color || '#ffffff'}
+              triggerRect={panelTriggerRect}
+              isPinned={pinnedCharPanel === charId}
+              onMouseEnter={() => {
+                if (panelHoverTimeout.current) clearTimeout(panelHoverTimeout.current);
+              }}
+              onMouseLeave={() => {
+                if (pinnedCharPanel !== charId) {
+                  panelHoverTimeout.current = setTimeout(() => {
+                    setActiveColorPicker(null);
+                    setPanelTriggerRect(null);
+                  }, 150);
+                }
+              }}
+              onThumbnailHover={(url, rect) => {
+                setHoverImgUrl(url);
+                setHoverImgRect(rect);
+                setHoverImgLabel((char.name || '(이름 없음)') + ' 스탠딩');
+              }}
+              onTogglePin={() => {
+                if (pinnedCharPanel === charId) {
+                  setPinnedCharPanel(null);
+                } else {
+                  setPinnedCharPanel(charId);
+                }
+              }}
+              onClose={() => {
+                if (pinnedCharPanel !== charId) {
                   setActiveColorPicker(null);
                   setPanelTriggerRect(null);
-                }, 150);
-              }
-            }}
-            onThumbnailHover={(url, rect) => {
-              setHoverImgUrl(url);
-              setHoverImgRect(rect);
-              setHoverImgLabel((char.name || '(이름 없음)') + ' 스탠딩');
-            }}
-            onTogglePin={() => {
-              if (pinnedCharPanel === charId) {
-                setPinnedCharPanel(null);
-              } else {
-                setPinnedCharPanel(charId);
-              }
-            }}
-            onClose={() => {
-              if (pinnedCharPanel !== charId) {
-                setActiveColorPicker(null);
-                setPanelTriggerRect(null);
-              }
-            }}
-            onAddImage={(url) => addCharacterImage(charId, url)}
-            onRemoveImage={(id) => removeCharacterImage(charId, id)}
-            onSetRepresentative={(id) => setRepresentativeImage(charId, id)}
-            onUpdateImageName={(id, name) => updateCharacterImageName(charId, id, name)}
-          />
-        );
-      })()}
+                }
+              }}
+              onAddImage={(url) => addCharacterImage(charId, url)}
+              onRemoveImage={(id) => removeCharacterImage(charId, id)}
+              onSetRepresentative={(id) => setRepresentativeImage(charId, id)}
+              onUpdateImageName={(id, name) => updateCharacterImageName(charId, id, name)}
+            />
+          );
+        })()}
+      </AnimatePresence>
 
       <Analytics />
     
@@ -7390,6 +7799,17 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Unify Characters Modal */}
+      {unifyModalState && (
+        <UnifyCharactersModal
+          isOpen={!!unifyModalState}
+          onClose={() => setUnifyModalState(null)}
+          onKeepSeparate={() => setUnifyModalState(null)}
+          onUnify={handleConfirmUnifyCharacters}
+          characters={unifyModalState.multiColorChars}
+        />
+      )}
 </div>
     </SettingsProvider>
   );

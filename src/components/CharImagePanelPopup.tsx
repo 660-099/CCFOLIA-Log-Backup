@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'motion/react';
-import { Trash2, Pin, ImageIcon, Plus, Check } from 'lucide-react';
+import { motion } from 'motion/react';
+import { Trash2, Pin, ImageIcon } from 'lucide-react';
 import { cn } from '../utils';
 import { CharImage } from '../types';
 
@@ -56,7 +56,6 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
       
       const target = e.target as HTMLElement;
       if (panelRef.current && !panelRef.current.contains(target)) {
-        // Also check if clicking on the trigger to prevent instant reopen/close conflicts
         if (triggerRect) {
           const triggerBox = new DOMRect(triggerRect.x, triggerRect.y, triggerRect.width, triggerRect.height);
           if (
@@ -72,13 +71,6 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
       }
     };
 
-    const handleGlobalMouseLeave = (e: MouseEvent) => {
-      if (!isPinned) {
-        // Optional: close on leaving the panel if not pinned, 
-        // but App.tsx handles onMouseLeave for the trigger.
-      }
-    };
-
     document.addEventListener('mousedown', handleGlobalClick);
     return () => {
       document.removeEventListener('mousedown', handleGlobalClick);
@@ -89,7 +81,7 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
 
   const PANEL_WIDTH = 300;
   
-      let left = triggerRect.right + 12;
+  let left = triggerRect.right + 12;
   if (left + PANEL_WIDTH > window.innerWidth) {
     left = triggerRect.left - PANEL_WIDTH - 12;
   }
@@ -103,10 +95,10 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
   return createPortal(
     <motion.div
       ref={panelRef}
-      initial={{ opacity: 0, scale: 0.95, x: -10 }}
-      animate={{ opacity: 1, scale: 1, x: 0 }}
-      exit={{ opacity: 0, scale: 0.95, x: -10 }}
-      transition={{ duration: 0.15 }}
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.98 }}
+      transition={{ duration: 0.12, ease: "easeOut" }}
       className="fixed z-[9999] bg-[#222] border border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col"
       style={{ left, ...verticalStyle, width: PANEL_WIDTH, maxHeight: '400px' }}
       onMouseEnter={onMouseEnter}
@@ -129,7 +121,8 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
           </button>
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[11px] font-bold truncate" style={{ color }}>{charName}</span>
-            <span className="text-[11px] font-bold text-white/40 mx-1">–</span> <span className="text-[11px] font-bold text-white/80 truncate">스탠딩 목록</span>
+            <span className="text-[11px] font-bold text-white/40 mx-1">–</span> 
+            <span className="text-[11px] font-bold text-white/80 truncate">스탠딩 목록</span>
           </div>
         </div>
         <div className="px-3 pb-2 text-[10px] text-white/50 leading-tight">
@@ -137,98 +130,94 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
         </div>
       </div>
       
-      <div className="overflow-y-auto custom-scrollbar p-2 space-y-2">
-        <AnimatePresence mode="popLayout">
-          {inputs.map((item: any, index) => {
-            const isNew = item.id === 'new-input';
-            return (
-              <motion.div
-                layout
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.2 }}
-                key={item.id}
+      <div className="overflow-y-auto custom-scrollbar p-2 space-y-1.5">
+        {inputs.map((item: any) => {
+          const isNew = item.id === 'new-input';
+          return (
+            <div
+              key={item.id}
+              className={cn(
+                "flex items-center gap-2 p-1.5 rounded-lg border transition-colors",
+                item.isRepresentative 
+                  ? "bg-[#e6005c]/10 border-[#e6005c]/30" 
+                  : isNew 
+                    ? "bg-transparent border-dashed border-white/20" 
+                    : "bg-black/20 border-white/5 hover:border-white/10"
+              )}
+            >
+              <button
+                onClick={() => {
+                  if (!isNew && !item.isRepresentative) {
+                    onSetRepresentative(item.id);
+                  }
+                }}
+                onMouseEnter={(e) => {
+                  if (!isNew && onThumbnailHover) {
+                    onThumbnailHover(item.url, e.currentTarget.getBoundingClientRect());
+                  }
+                }}
+                onMouseLeave={() => {
+                  if (!isNew && onThumbnailHover) {
+                    onThumbnailHover(null, null);
+                  }
+                }}
                 className={cn(
-                  "flex items-center gap-2 p-1.5 rounded-lg border transition-all",
-                  item.isRepresentative 
-                    ? "bg-[#e6005c]/10 border-[#e6005c]/30" 
-                    : isNew 
-                      ? "bg-transparent border-dashed border-white/20" 
-                      : "bg-black/20 border-white/5 hover:border-white/10"
+                  "w-7 h-7 shrink-0 rounded overflow-hidden flex items-center justify-center transition-all bg-black/40",
+                  item.isRepresentative
+                    ? "ring-1 ring-[#e6005c] ring-offset-1 ring-offset-[#222]"
+                    : isNew
+                      ? "bg-white/5 text-white/30 cursor-default"
+                      : "hover:bg-white/10 hover:text-white"
                 )}
+                disabled={isNew}
+                title={isNew ? "" : item.isRepresentative ? "대표 이미지" : "대표 이미지로 설정"}
               >
-                <button
-                  onClick={() => {
-                    if (!isNew && !item.isRepresentative) {
-                      onSetRepresentative(item.id);
-                    }
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isNew && onThumbnailHover) {
-                      onThumbnailHover(item.url, e.currentTarget.getBoundingClientRect());
-                    }
-                  }}
-                  onMouseLeave={() => {
-                    if (!isNew && onThumbnailHover) {
-                      onThumbnailHover(null, null);
-                    }
-                  }}
-                  className={cn(
-                    "w-7 h-7 shrink-0 rounded overflow-hidden flex items-center justify-center transition-all bg-black/40",
-                    item.isRepresentative
-                      ? "ring-1 ring-[#e6005c] ring-offset-1 ring-offset-[#222]"
-                      : isNew
-                        ? "bg-white/5 text-white/30 cursor-default"
-                        : "hover:bg-white/10 hover:text-white"
-                  )}
-                  disabled={isNew}
-                  title={isNew ? "" : item.isRepresentative ? "대표 이미지" : "대표 이미지로 설정"}
-                >
-                  {isNew ? (
-                    <ImageIcon className="w-3.5 h-3.5" />
-                  ) : (
-                    <img src={item.url} alt="" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
-                  )}
-                </button>
-                
-                <input
-                  type="text"
-                  placeholder={isNew ? "새 표정 이름" : "표정 이름"}
-                  value={isNew ? "" : (item.name || "")}
-                  onChange={(e) => {
-                    if (!isNew && onUpdateImageName) {
-                      onUpdateImageName(item.id, e.target.value);
-                    }
-                  }}
-                  readOnly={isNew}
-                  className={cn("w-16 shrink-0 bg-black/40 text-[10px] outline-none text-white/80 placeholder:text-white/20 border border-white/10 focus:border-[#e6005c] rounded px-1.5 py-1 text-center transition-colors", isNew && "opacity-0 pointer-events-none")}
-                />
-                <input
-                  type="text"
-                  placeholder={isNew ? "새로운 이미지 URL 추가..." : "이미지 URL"}
-                  value={isNew ? "" : item.url}
-                  onChange={(e) => {
-                    if (isNew) {
-                      handleInputChange(item.id, e.target.value);
-                    }
-                  }}
-                  readOnly={!isNew}
-                  className="flex-1 min-w-0 bg-black/40 text-[10px] outline-none text-white/80 placeholder:text-white/20 border border-white/10 focus:border-[#e6005c] rounded px-1.5 py-1 transition-colors"
-                />
-                
-                {!isNew && (
-                  <button
-                    onClick={() => onRemoveImage(item.id)}
-                    className="w-6 h-6 shrink-0 rounded flex items-center justify-center text-white/30 hover:bg-red-500/20 hover:text-red-400 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                {isNew ? (
+                  <ImageIcon className="w-3.5 h-3.5" />
+                ) : (
+                  <img src={item.url} alt="" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
                 )}
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
+              </button>
+              
+              <input
+                type="text"
+                placeholder={isNew ? "새 표정 이름" : "표정 이름"}
+                value={isNew ? "" : (item.name || "")}
+                onChange={(e) => {
+                  if (!isNew && onUpdateImageName) {
+                    onUpdateImageName(item.id, e.target.value);
+                  }
+                }}
+                readOnly={isNew}
+                className={cn(
+                  "w-16 shrink-0 bg-black/40 text-[10px] outline-none text-white/80 placeholder:text-white/20 border border-white/10 focus:border-[#e6005c] rounded px-1.5 py-1 text-center transition-colors", 
+                  isNew && "opacity-0 pointer-events-none"
+                )}
+              />
+              <input
+                type="text"
+                placeholder={isNew ? "새로운 이미지 URL 추가..." : "이미지 URL"}
+                value={isNew ? "" : item.url}
+                onChange={(e) => {
+                  if (isNew) {
+                    handleInputChange(item.id, e.target.value);
+                  }
+                }}
+                readOnly={!isNew}
+                className="flex-1 min-w-0 bg-black/40 text-[10px] outline-none text-white/80 placeholder:text-white/20 border border-white/10 focus:border-[#e6005c] rounded px-1.5 py-1 transition-colors"
+              />
+              
+              {!isNew && (
+                <button
+                  onClick={() => onRemoveImage(item.id)}
+                  className="w-6 h-6 shrink-0 rounded flex items-center justify-center text-white/30 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </motion.div>,
     document.body

@@ -50,8 +50,7 @@ body {
   height: 24px;
 }
 
-.boundary-wrapper:hover,
-.boundary-wrapper:focus-within {
+.boundary-wrapper:hover {
   opacity: 1;
 }
 

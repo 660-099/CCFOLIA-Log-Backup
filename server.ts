@@ -1,12 +1,18 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import imgurHandler from "./api/imgur";
-import imageProxyHandler from "./api/imageProxy";
+import imgurHandler from "./api/imgur.ts";
+import imageProxyHandler from "./api/imageProxy.ts";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const portArgIndex = process.argv.indexOf('--port');
+  const portFromArg = portArgIndex !== -1 ? parseInt(process.argv[portArgIndex + 1], 10) : undefined;
+  const PORT = Number(process.env.PORT) || portFromArg || 3000;
+
+  const hostArgIndex = process.argv.indexOf('--host');
+  const hostFromArg = hostArgIndex !== -1 ? process.argv[hostArgIndex + 1] : undefined;
+  const HOST = hostFromArg || process.env.HOST || "0.0.0.0";
 
   // JSON 파싱 미들웨어
   app.use(express.json());
@@ -30,8 +36,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`Server running on http://${HOST}:${PORT}`);
   });
 }
 

@@ -73,6 +73,8 @@ interface SettingsState {
   setNarrationCharacter2: (val: string | null) => void;
   exportMode: 'html' | 'blog';
   setExportMode: (mode: 'html' | 'blog') => void;
+  standingZoomed: boolean;
+  setStandingZoomed: (val: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -147,7 +149,9 @@ export const useSettingsStore = create<SettingsState>()(
       narrationCharacter: null,
       setNarrationCharacter: (val) => set({ narrationCharacter: val }),
       narrationCharacter2: null,
-      setNarrationCharacter2: (val) => set({ narrationCharacter2: val })
+      setNarrationCharacter2: (val) => set({ narrationCharacter2: val }),
+      standingZoomed: false,
+      setStandingZoomed: (val) => set({ standingZoomed: val })
     }),
     {
       name: 'ccfolia_settings'

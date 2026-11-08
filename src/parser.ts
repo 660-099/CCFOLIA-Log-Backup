@@ -1,6 +1,16 @@
 import { LogEntry, CharSetting, TabSetting, TabFormat } from './types';
 import { isAppProjectJson } from './utils/fileValidation';
 
+export interface ParseLogOptions {
+  unifySameNameChars?: boolean;
+}
+
+export interface MultiColorCharInfo {
+  name: string;
+  colors: string[];
+  lastColor: string;
+}
+
 const rgbToHex = (colorStr: string) => {
   if (!colorStr) return '';
   if (colorStr.startsWith('#')) return colorStr;
@@ -11,7 +21,11 @@ const rgbToHex = (colorStr: string) => {
 
 import { createBlobUrl } from './utils/blobStore';
 
-export const parseLogFile = async (file: File, uploadMode: 'easy' | 'high_quality' = 'high_quality') => {
+export const parseLogFile = async (
+  file: File, 
+  uploadMode: 'easy' | 'high_quality' = 'high_quality',
+  options?: ParseLogOptions
+) => {
   const text = await file.text();
 
   const newLogs: LogEntry[] = [];
@@ -25,6 +39,7 @@ export const parseLogFile = async (file: File, uploadMode: 'easy' | 'high_qualit
   let charCounter = 0;
   const fallbackTabIds = new Map<string, string>();
   const fallbackCharIds = new Map<string, string>();
+  let multiColorChars: MultiColorCharInfo[] = [];
 
   // Check if JSON
   if (file.name.endsWith('.json') || file.type === 'application/json') {
@@ -54,7 +69,9 @@ export const parseLogFile = async (file: File, uploadMode: 'easy' | 'high_qualit
         imgCounter++;
     });
 
-    const charIdentityMap = new Map<string, string>(); // name_color -> charId
+    const charIdentityMap = new Map<string, string>();
+    const nameToColors = new Map<string, string[]>();
+    const unifySameNameChars = !!options?.unifySameNameChars;
 
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
@@ -70,8 +87,25 @@ export const parseLogFile = async (file: File, uploadMode: 'easy' | 'high_qualit
         tabId = fallbackTabIds.get(tab)!;
       }
 
-      let name = msg.name !== undefined && msg.name !== null ? msg.name : 'Unknown';
-      const identityKey = `${name}_${color}`;
+      let name = msg.name !== undefined && msg.name !== null ? String(msg.name).trim() : 'Unknown';
+      if (!name) name = 'Unknown';
+
+      // Track colors in encounter order for character names
+      if (!nameToColors.has(name)) {
+        nameToColors.set(name, []);
+      }
+      const existingColors = nameToColors.get(name)!;
+      if (!existingColors.includes(color)) {
+        existingColors.push(color);
+      } else {
+        const idx = existingColors.indexOf(color);
+        if (idx !== -1) {
+          existingColors.splice(idx, 1);
+          existingColors.push(color);
+        }
+      }
+
+      const identityKey = unifySameNameChars ? name : `${name}_${color}`;
       let charId = charIdentityMap.get(identityKey);
       if (!charId) {
           charId = `char_${++charCounter}`;
@@ -122,7 +156,10 @@ export const parseLogFile = async (file: File, uploadMode: 'easy' | 'high_qualit
         newChars[charId] = { id: charId, name, color, imageUrl: '', images: [], visible: true };
         newCharOrder.push(charId);
       } else {
-        // Keep the last valid color if it changed? Or keep the first? We'll keep first for identity.
+        // If unified mode, keep the LAST valid color encountered!
+        if (unifySameNameChars && color && color !== '#000000') {
+          newChars[charId].color = color;
+        }
       }
 
       if (iconHash && imagesDict[iconHash]) {
@@ -165,6 +202,17 @@ export const parseLogFile = async (file: File, uploadMode: 'easy' | 'high_qualit
         newTabOrder.push(tabId);
       }
     }
+
+    // Collect characters with multiple distinct colors in this JSON log
+    nameToColors.forEach((cols, cName) => {
+      if (cols.length > 1 && cName.toLowerCase() !== 'system') {
+        multiColorChars.push({
+          name: cName,
+          colors: cols,
+          lastColor: cols[cols.length - 1]
+        });
+      }
+    });
 
   } else {
     // HTML Parsing
@@ -287,6 +335,8 @@ export const parseLogFile = async (file: File, uploadMode: 'easy' | 'high_qualit
     newCharOrder,
     newTabs,
     newTabOrder,
-    colorsFound: Array.from(colorsFound)
+    colorsFound: Array.from(colorsFound),
+    multiColorChars,
+    isNewJson: file.name.endsWith('.json') || file.type === 'application/json'
   };
 };

@@ -84,8 +84,6 @@ export const LogItem = React.memo(({
   isNextContinuation,
   isPrevBlock,
   mergedLogsCount,
-  isPrevNarration,
-  isNextNarration,
   onAvatarClick,
   editingLogId = null,
   setEditingLogId
@@ -93,7 +91,7 @@ export const LogItem = React.memo(({
   const { 
     theme, disableOtherColor, fontSize, textFontSize,
     mergeTabStyles, showTabNames, hideEmptyAvatars, cropFaceTop, hideAllAvatars,
-    narrationCharacter, narrationCharacter2, charSettings: charSettingsFromContext, tabSettings,
+    narrationCharacter, narrationCharacter2, narrationSlots, charSettings: charSettingsFromContext, tabSettings,
     enableSentenceSpacing, enableSentenceSpacing2, enableSecretNarration, enableSecretNarration2, narrationFormat, narrationFormat2,
     lineHeight = 1.6, letterSpacing = 0, blockSpacing = 2, contentPadding = 15.5, avatarSizeValue = 46,
     showLogDivider = false
@@ -630,25 +628,24 @@ export const LogItem = React.memo(({
 
   const format = tabSet?.format || 'main';
   const rawColor = char.color || log.color;
-  const tabEffectiveColor = tabSet?.textColor || (tabSet?.format === 'other' && tabSet?.color && tabSet.color !== '#ffd400' ? tabSet.color : undefined);
-  const tabTextColor = tabEffectiveColor;
+  const tabTextColor = tabSet?.textColor;
   
   // Character name color logic:
-  // - If applyColorToName is true: ALWAYS apply character's color (rawColor)
-  // - If applyColorToName is false: DO NOT apply character color (use tabTextColor or neutral text color)
-  // - If applyColorToName is undefined:
-  //     - in other (chatter/잡담): if disableOtherColor is true, default is false (grey/tabTextColor); if disableOtherColor is false, default is true (rawColor)
-  //     - in main/info/secret: default is true (rawColor)
-  const isNameColorEnabled = tabSet?.applyColorToName !== undefined
-    ? tabSet.applyColorToName
-    : (format === 'other' ? !disableOtherColor : true);
+  // 1. Person icon (applyColorToName) ON: tab's text color (or default text color) overrides the character's name color.
+  // 2. disableOtherColor ON (and format === 'other'): all character names in other tab are unified to the grey text color.
+  // 3. Otherwise: character name retains character's rawColor.
+  const isNameColorOverridden = Boolean(tabSet?.applyColorToName);
 
-  const defaultNameColor = format === 'other'
+  const defaultNeutralNameColor = format === 'other'
     ? (tabTextColor || (theme === 'dark' ? '#AAAAAA' : '#777777'))
     : (tabTextColor || (theme === 'dark' ? '#FFFFFF' : '#333333'));
 
-  let nameColor = isNameColorEnabled ? rawColor : defaultNameColor;
-  let otherNameColor = isNameColorEnabled ? rawColor : defaultNameColor;
+  let nameColor = isNameColorOverridden 
+    ? (tabTextColor || defaultNeutralNameColor) 
+    : (disableOtherColor && format === 'other')
+      ? (theme === 'dark' ? '#AAAAAA' : '#777777')
+      : rawColor;
+  let otherNameColor = nameColor;
   
   const color = nameColor;
   const nameWeight = 'bold';
@@ -669,23 +666,31 @@ export const LogItem = React.memo(({
 
   const isSecret = format === 'secret';
   const tabColor = tabSet?.color || '#ffd400';
-    const getEnableSecretNarration = (charId: string) => {
-    if (narrationCharacter && charId === narrationCharacter) return enableSecretNarration;
-    if (narrationCharacter2 && charId === narrationCharacter2) return enableSecretNarration2;
-    return enableSecretNarration;
+  const getNarrationConfig = (charId: string) => {
+    if (narrationSlots && narrationSlots.length > 0) {
+      const found = narrationSlots.find((s: any) => s.charId && s.charId === charId);
+      if (found) return found;
+    }
+    if (narrationCharacter && charId === narrationCharacter) {
+      return { charId, format: narrationFormat, enableSentenceSpacing, enableSecretNarration };
+    }
+    if (narrationCharacter2 && charId === narrationCharacter2) {
+      return { charId, format: narrationFormat2, enableSentenceSpacing: enableSentenceSpacing2, enableSecretNarration: enableSecretNarration2 };
+    }
+    return null;
   };
-  const isNarration = (log.charId === narrationCharacter || log.charId === narrationCharacter2) && (format === 'main' || (getEnableSecretNarration(log.charId) && format === 'secret'));
 
-
+  const narrationConfig = getNarrationConfig(log.charId);
+  const isNarration = Boolean(narrationConfig && (format === 'main' || (narrationConfig.enableSecretNarration && format === 'secret')));
 
   const getEnableSentenceSpacing = (charId: string) => {
-    if (charId === narrationCharacter2) return enableSentenceSpacing2;
-    return enableSentenceSpacing;
+    const cfg = getNarrationConfig(charId);
+    return cfg ? cfg.enableSentenceSpacing : enableSentenceSpacing;
   };
 
   const getNarrationFormat = (formatVal: 'main' | 'secret') => {
-    if (narrationCharacter2 && log.charId === narrationCharacter2) return narrationFormat2;
-    return narrationFormat;
+    const cfg = getNarrationConfig(log.charId);
+    return cfg ? cfg.format : narrationFormat;
   };
 
   const narrationMargin = Math.floor(effectiveBlockSpacing * 1.2 + lineHeight * 6);
@@ -771,7 +776,7 @@ export const LogItem = React.memo(({
   const isSectionStart = idx === 0 || isPrevBlock;
   const isSectionEnd = idx === mergedLogsCount - 1 || hasBlockAfter;
   
-  const mergeWithPrev = log.isContinuation || (shouldMergeStyle && isPrevSameTab && !isSectionStart);
+  const mergeWithPrev = !isPrevBlock && (log.isContinuation || (shouldMergeStyle && isPrevSameTab && !isSectionStart));
   const mergeWithNext = isNextContinuation || (shouldMergeStyle && isNextSameTab && !isSectionEnd);
 
   const shouldShowIndex = showTabNames.has(format) && (!isPrevSameTab || isPrevBlock);
@@ -782,10 +787,10 @@ export const LogItem = React.memo(({
   if (log.isCommand || format === 'secret') {
     itemMarginBottom = mergeWithNext ? '0' : `${effectiveBlockSpacing}px`;
   } else if (isNarration) {
-    itemMarginTop = log.isContinuation ? '0' : `${Math.floor(narrationMargin / 2)}px`;
+    itemMarginTop = (log.isContinuation && !isPrevBlock) ? '0' : `${Math.floor(narrationMargin / 2)}px`;
     itemMarginBottom = mergeWithNext ? '0' : `${Math.ceil(narrationMargin / 2)}px`;
   } else {
-    itemMarginTop = mergeWithPrev ? '0' : `${Math.floor(effectiveBlockSpacing / 2)}px`;
+    itemMarginTop = (mergeWithPrev && !isPrevBlock) ? '0' : `${isPrevBlock ? Math.max(Math.floor(effectiveBlockSpacing / 2), 12) : Math.floor(effectiveBlockSpacing / 2)}px`;
     itemMarginBottom = mergeWithNext ? '0' : `${Math.ceil(effectiveBlockSpacing / 2)}px`;
   }
 
@@ -814,7 +819,7 @@ export const LogItem = React.memo(({
       }
       const tabSet = tabSettings[l.tabId];
       const formatVal = tabSet?.format || 'main';
-      if ((l.charId === narrationCharacter || l.charId === narrationCharacter2) && formatVal === 'main') {
+      if (Boolean(getNarrationConfig(l.charId)) && formatVal === 'main') {
         return 'narration';
       }
       return formatVal;
@@ -901,11 +906,11 @@ export const LogItem = React.memo(({
     if (prevLog.isCommand) return 'command';
     const tabSet = tabSettings[prevLog.tabId];
     const formatVal = tabSet?.format || 'main';
-    if ((prevLog.charId === narrationCharacter || prevLog.charId === narrationCharacter2) && formatVal === 'main') {
+    if (Boolean(getNarrationConfig(prevLog.charId)) && formatVal === 'main') {
       return 'narration';
     }
     return formatVal;
-  }, [prevLog, tabSettings, narrationCharacter, narrationCharacter2]);
+  }, [prevLog, tabSettings, narrationCharacter, narrationCharacter2, narrationSlots]);
 
   const nextLog = idx < mergedLogsCount - 1 ? mergedLogs[idx + 1] : null;
   const nextFormat = useMemo(() => {
@@ -913,11 +918,11 @@ export const LogItem = React.memo(({
     if (nextLog.isCommand) return 'command';
     const tabSet = tabSettings[nextLog.tabId];
     const formatVal = tabSet?.format || 'main';
-    if ((nextLog.charId === narrationCharacter || nextLog.charId === narrationCharacter2) && formatVal === 'main') {
+    if (Boolean(getNarrationConfig(nextLog.charId)) && formatVal === 'main') {
       return 'narration';
     }
     return formatVal;
-  }, [nextLog, tabSettings, narrationCharacter, narrationCharacter2]);
+  }, [nextLog, tabSettings, narrationCharacter, narrationCharacter2, narrationSlots]);
 
   const isSpecialDividerBelow = useMemo(() => {
     if (!nextLog) return false;
@@ -1697,7 +1702,7 @@ export const LogItem = React.memo(({
               letterSpacing: letterSpacing === 0 ? 'normal' : `${scaledLetterSpacing}px`
             }}>
               {log.name !== 'system' && <span style={{ color: rawColor, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", fontSize: `${scaledTextFontSize}px` }}>[ <span dangerouslySetInnerHTML={{ __html: safeHtmlName }} /> ]</span>}
-              <span style={{ color: theme === 'dark' ? '#FFFFFF' : '#333333', fontSize: `${scaledTextFontSize}px`, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', wordBreak: 'keep-all', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
+              <span style={{ color: tabTextColor || (theme === 'dark' ? '#FFFFFF' : '#333333'), fontSize: `${scaledTextFontSize}px`, fontWeight: 'bold', fontFamily: "'NanumGothicCodingLigature', monospace", marginLeft: log.name !== 'system' ? '8px' : '0', wordBreak: 'keep-all', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: safeHtmlContent }} />
             </div>
           ) : (isNarration && getNarrationFormat(format) === 'style3') ? (
             <div key="narration-style2" className={cn(

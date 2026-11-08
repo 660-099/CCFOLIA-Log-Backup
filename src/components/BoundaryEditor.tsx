@@ -31,7 +31,8 @@ export const BoundaryEditor = React.memo(({
   const [isClicked, setIsClicked] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   
-  const handleClick = (action: () => void) => {
+  const handleClick = (e: React.MouseEvent, action: () => void) => {
+    (e.currentTarget as HTMLElement)?.blur();
     setIsClicked(true);
     action();
   };
@@ -79,7 +80,12 @@ export const BoundaryEditor = React.memo(({
         isDragOver && "is-drag-over bg-[#e6005c]/10"
       )}
       style={disabled ? { pointerEvents: 'none', opacity: 0 } : undefined}
-      onMouseLeave={() => setIsClicked(false)}
+      onMouseLeave={(e) => {
+        setIsClicked(false);
+        if (document.activeElement && e.currentTarget.contains(document.activeElement)) {
+          (document.activeElement as HTMLElement).blur();
+        }
+      }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -89,7 +95,7 @@ export const BoundaryEditor = React.memo(({
         {allowSplit && (
           <button 
             disabled={disabled || isClicked}
-            onClick={() => !disabled && handleClick(onToggleSplit)}
+            onClick={(e) => !disabled && handleClick(e, onToggleSplit)}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm border",
               isDark ? "bg-[#222] border-white/10 text-white/80 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white" : "bg-white border-stone-200 text-stone-600 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white",
@@ -103,7 +109,7 @@ export const BoundaryEditor = React.memo(({
         )}
         <button 
           disabled={disabled || isClicked}
-          onClick={() => !disabled && handleClick(onInsertImage)}
+          onClick={(e) => !disabled && handleClick(e, onInsertImage)}
           className={cn(
             "flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm border",
             isDark ? "bg-[#222] border-white/10 text-white/80 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white" : "bg-white border-stone-200 text-stone-600 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white",
@@ -117,7 +123,7 @@ export const BoundaryEditor = React.memo(({
         {onInsertBgm && (
           <button 
             disabled={disabled || isClicked}
-            onClick={() => !disabled && handleClick(onInsertBgm)}
+            onClick={(e) => !disabled && handleClick(e, onInsertBgm)}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm border",
               isDark ? "bg-[#222] border-white/10 text-white/80 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white" : "bg-white border-stone-200 text-stone-600 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white",
@@ -132,7 +138,7 @@ export const BoundaryEditor = React.memo(({
         {onInsertLog && (
           <button 
             disabled={disabled || isClicked}
-            onClick={() => !disabled && handleClick(onInsertLog)}
+            onClick={(e) => !disabled && handleClick(e, onInsertLog)}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm border",
               isDark ? "bg-[#222] border-white/10 text-white/80 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white" : "bg-white border-stone-200 text-stone-600 hover:bg-[#e6005c] hover:border-[#e6005c] hover:text-white",

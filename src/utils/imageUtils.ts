@@ -191,12 +191,48 @@ export const processImagesForExport = async (
   charSettings: Record<string, CharSetting>, 
   blocks: Record<string, any[]>, 
   logs: LogEntry[], 
-  exportMode: 'html' | 'blog'
+  exportMode: 'html' | 'blog',
+  excludeUnlinkedImages: boolean = false
 ): Promise<{ charSettings: Record<string, CharSetting>, blocks: Record<string, any[]>, logs: LogEntry[] }> => {
   // Deep copy
   const newCharSettings = JSON.parse(JSON.stringify(charSettings)) as Record<string, CharSetting>;
   const newBlocks = JSON.parse(JSON.stringify(blocks)) as Record<string, any[]>;
-  const newLogs = JSON.parse(JSON.stringify(logs)) as LogEntry[];
+  let newLogs = JSON.parse(JSON.stringify(logs)) as LogEntry[];
+
+  if (excludeUnlinkedImages) {
+    // Exclude unlinked (Base64/data/blob) images completely
+    Object.values(newCharSettings).forEach(char => {
+      if (isBase64Url(char.imageUrl)) {
+        char.imageUrl = '';
+      }
+      if (char.images) {
+        char.images = char.images.filter(img => !isBase64Url(img.url));
+        if (!char.imageUrl && char.images.length > 0) {
+          char.imageUrl = char.images[0].url;
+        }
+      }
+    });
+
+    Object.keys(newBlocks).forEach(key => {
+      newBlocks[key] = (newBlocks[key] || []).filter(block => {
+        if (block.type === 'image' || block.type === 'illustration') {
+          return !isBase64Url(block.url);
+        }
+        return true;
+      });
+      if (newBlocks[key].length === 0) {
+        delete newBlocks[key];
+      }
+    });
+
+    newLogs = newLogs.filter(log => {
+      if (log.isIllustration) {
+        const url = log.content || log.illustration?.url;
+        return !isBase64Url(url);
+      }
+      return true;
+    });
+  }
 
   // Collect ONLY actually used URLs from active logs and blocks (avoiding unused data)
   const usedUrls = new Set<string>();
@@ -231,6 +267,35 @@ export const processImagesForExport = async (
   const urlMap = new Map<string, string>();
   const failedUrls: string[] = [];
 
+  const parseWidthToPx = (w: string | number | undefined): number => {
+    if (!w) return 800;
+    const str = String(w).trim();
+    if (str.endsWith('%')) {
+      const pct = parseFloat(str) || 100;
+      return Math.round(800 * (pct / 100));
+    }
+    const num = parseFloat(str.replace(/[^0-9.]/g, ''));
+    if (!isNaN(num) && num > 0) return Math.round(num);
+    return 800;
+  };
+
+  const getIllustrationMaxWidth = (u: string): number => {
+    for (const l of newLogs) {
+      if (l.isIllustration && (l.content === u || l.illustration?.url === u)) {
+        const w = l.width || l.illustration?.width;
+        if (w) return parseWidthToPx(w);
+      }
+    }
+    for (const blockList of Object.values(newBlocks)) {
+      for (const b of blockList) {
+        if ((b.type === 'illustration' || b.type === 'image') && b.url === u) {
+          if (b.width) return parseWidthToPx(b.width);
+        }
+      }
+    }
+    return 800;
+  };
+
   const isIllustrationUrl = (u: string) => {
     if (newLogs.some(l => l.isIllustration && (l.content === u || l.illustration?.url === u))) return true;
     for (const blockList of Object.values(newBlocks)) {
@@ -245,20 +310,29 @@ export const processImagesForExport = async (
     if (!url) continue;
 
     const isIll = isIllustrationUrl(url);
-    const maxW = isIll ? 1600 : 300;
-    const maxH = isIll ? 1600 : 300;
+    // Dynamic screen-size compression:
+    // For illustrations, size slightly larger than display width (1.4x) for high-DPI/Retina crispness, capped at 900px
+    // For avatars, max 120px is crisp for ~46-50px avatars, saving substantial code space
+    let maxW = 120;
+    let maxH = 120;
+    if (isIll) {
+      const displayW = getIllustrationMaxWidth(url);
+      maxW = Math.min(900, Math.max(160, Math.round(displayW * 1.4)));
+      maxH = Math.round(maxW * 1.5);
+    }
+    const quality = isIll ? 0.76 : 0.78;
 
     try {
       if (url.startsWith('blob:')) {
         const originData = getOriginDataUrl(url);
         if (originData) {
           if (exportMode === 'html') {
-            const optimized = await fetchAndCompressImage(originData, maxW, maxH, 0.8);
+            const optimized = await fetchAndCompressImage(originData, maxW, maxH, quality);
             urlMap.set(url, optimized);
           } else {
-            // Blog mode: if origin is base64, compress it to WebP so it fits easily in blog post
+            // Blog mode: if origin is base64, compress to screen-size WebP
             if (originData.startsWith('data:')) {
-              const compressed = await compressImageToWebP(originData, maxW, maxH, 0.8);
+              const compressed = await compressImageToWebP(originData, maxW, maxH, quality);
               urlMap.set(url, compressed);
             } else {
               urlMap.set(url, originData);
@@ -268,15 +342,15 @@ export const processImagesForExport = async (
           urlMap.set(url, url);
         }
       } else if (url.startsWith('data:')) {
-        // High-compression WebP for data: URLs in both modes
-        const optimized = await compressImageToWebP(url, maxW, maxH, 0.8);
+        // High-compression WebP for data: URLs in both modes (fitted to screen size)
+        const optimized = await compressImageToWebP(url, maxW, maxH, quality);
         urlMap.set(url, optimized);
       } else if (url.startsWith('http')) {
         if (exportMode === 'blog') {
           // Do not touch external URLs for blog mode
           urlMap.set(url, url);
         } else {
-          const optimized = await fetchAndCompressImage(url, maxW, maxH, 0.8);
+          const optimized = await fetchAndCompressImage(url, maxW, maxH, quality);
           urlMap.set(url, optimized);
         }
       } else {

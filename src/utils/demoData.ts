@@ -55,6 +55,6 @@ export const getDemoData = () => {
     charOrder: ['char_gm', 'char_a', 'char_b', 'char_info'],
     logs,
     insertedBlocks,
-    narrationCharacter: 'char_gm'
+    narrationCharacter: null
   };
 };

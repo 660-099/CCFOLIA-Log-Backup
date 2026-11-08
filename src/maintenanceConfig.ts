@@ -30,8 +30,8 @@ export interface MaintenanceConfig {
 }
 
 export const MAINTENANCE_CONFIG: MaintenanceConfig = {
-  // ⚙️ 점검 알림을 끄고 싶으실 땐 아래 enabled 값을 false 로 변경하세요.
-  enabled: true,
+  // ⚙️ true: 점검 모드 켜짐 / false: 정상 서비스
+  enabled: false,
 
   // ⚙️ 차단 화면 대신 상단 배너로 바꾸고 싶으실 땐 아래 값을 'banner' 로 변경하세요.
   mode: 'block',

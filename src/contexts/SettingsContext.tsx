@@ -21,6 +21,7 @@ export type SettingsContextType = {
   enableSecretNarration: boolean;
   narrationFormat: 'style1' | 'style2' | 'style3';
   narrationFormat2: 'style1' | 'style2' | 'style3';
+  narrationSlots?: import('../types').NarrationSlotConfig[];
   lineHeight: number;
   letterSpacing: number;
   blockSpacing: number;
@@ -65,6 +66,7 @@ export const SettingsProvider: React.FC<{
     settings.enableSecretNarration,
     settings.narrationFormat,
     settings.narrationFormat2,
+    settings.narrationSlots,
     settings.lineHeight,
     settings.letterSpacing,
     settings.blockSpacing,

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Download, Upload, X, FileJson, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Download, Upload, X, FileJson, CheckCircle2, AlertCircle, Loader2, Check, ArrowUpDown, Minus } from 'lucide-react';
 import JSZip from 'jszip';
 import { cn } from '../utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -14,6 +14,7 @@ interface ImageAsset {
   url: string;
   source: string;
   type: 'character' | 'background' | 'tab' | 'other';
+  uid?: string;
 }
 
 export function JsonImageExtractorModal({ onClose, initialFile, onOpenBulkImgur }: JsonImageExtractorModalProps & { onOpenBulkImgur?: () => void }) {
@@ -21,9 +22,18 @@ export function JsonImageExtractorModal({ onClose, initialFile, onOpenBulkImgur 
   const [file, setFile] = useState<File | null>(initialFile || null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [assets, setAssets] = useState<ImageAsset[]>([]);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
+  const [sortBy, setSortBy] = useState<'appearance' | 'name'>('appearance');
   const [error, setError] = useState<string | null>(null);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const displayedAssets = React.useMemo(() => {
+    if (sortBy === 'name') {
+      return [...assets].sort((a, b) => a.id.localeCompare(b.id, 'ko', { numeric: true }));
+    }
+    return assets;
+  }, [assets, sortBy]);
 
   React.useEffect(() => {
     if (initialFile) {
@@ -212,7 +222,11 @@ export function JsonImageExtractorModal({ onClose, initialFile, onOpenBulkImgur 
       if (extractedAssets.length === 0) {
         setError("파일에서 추출할 수 있는 이미지 데이터(Base64 등)를 찾지 못했습니다.");
       } else {
+        extractedAssets.forEach((asset, idx) => {
+          asset.uid = `${asset.id}_${idx}`;
+        });
         setAssets(extractedAssets);
+        setSelectedAssetIds(new Set(extractedAssets.map(a => a.uid!)));
       }
     } catch (err: any) {
       setError(err.message || "파일 처리 중 오류가 발생했습니다.");
@@ -221,20 +235,44 @@ export function JsonImageExtractorModal({ onClose, initialFile, onOpenBulkImgur 
     }
   };
 
+  const toggleSelectAsset = (uid: string) => {
+    setSelectedAssetIds(prev => {
+      const next = new Set(prev);
+      if (next.has(uid)) {
+        next.delete(uid);
+      } else {
+        next.add(uid);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedAssetIds.size === assets.length) {
+      setSelectedAssetIds(new Set());
+    } else {
+      setSelectedAssetIds(new Set(assets.map(a => a.uid || a.id)));
+    }
+  };
+
   const handleDownloadZip = async () => {
-    if (assets.length === 0) return;
+    const assetsToDownload = assets.filter(a => selectedAssetIds.has(a.uid || a.id));
+    if (assetsToDownload.length === 0) {
+      setError("다운로드할 이미지가 선택되지 않았습니다. 1개 이상의 이미지를 선택해주세요.");
+      return;
+    }
     
     setIsProcessing(true);
     try {
       const zip = new JSZip();
 
       // Process base64 strings
-      assets.forEach((asset, idx) => {
+      assetsToDownload.forEach((asset, idx) => {
         if (asset.url.startsWith('data:image/')) {
           // Extract base64 data and mime type
           const matches = asset.url.match(/^data:image\/([a-zA-Z+]+);base64,(.+)$/);
           if (matches && matches.length === 3) {
-                        const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+            const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
             const base64Data = matches[2];
             let filename = '';
             if (asset.id && !asset.id.startsWith('asset-')) {
@@ -377,30 +415,90 @@ export function JsonImageExtractorModal({ onClose, initialFile, onOpenBulkImgur 
               )}
 
               {!isProcessing && !error && assets.length > 0 && (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-[12px] font-bold text-white">
-                      추출 완료 <span className="text-[#e6005c] ml-1">{assets.length}개</span> 이미지
-                    </h4>
+                    <div>
+                      <h4 className="text-[12px] font-bold text-white flex items-center gap-1.5">
+                        <span>추출 완료</span>
+                        <span className="text-white/90 font-bold">{assets.length}개</span>
+                        <span className="text-[11px] font-normal text-white/50">
+                          ({selectedAssetIds.size}개 선택됨)
+                        </span>
+                      </h4>
+                      <p className="text-[10px] text-white/40 mt-0.5">
+                        클릭하여 ZIP 다운로드에서 제외할 이미지를 선택 해제할 수 있습니다.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setSortBy(prev => prev === 'appearance' ? 'name' : 'appearance')}
+                        className="text-[10px] font-bold text-white/70 hover:text-white px-2.5 py-1 bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-white/10 flex items-center gap-1.5"
+                        title="정렬 방식 전환"
+                      >
+                        <ArrowUpDown className="w-3 h-3 text-white/40" />
+                        <span>{sortBy === 'appearance' ? '등장순' : '가나다순'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={toggleSelectAll}
+                        className={cn(
+                          "text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all shrink-0 border",
+                          selectedAssetIds.size === assets.length
+                            ? "bg-[#e6005c]/15 text-[#ff4d88] border-[#e6005c]/40 hover:bg-[#e6005c]/25 hover:border-[#e6005c]/60"
+                            : "bg-[#e6005c] text-white border-[#e6005c] hover:bg-[#ff0066] shadow-sm shadow-pink-500/25"
+                        )}
+                      >
+                        {selectedAssetIds.size === assets.length ? '전체 해제' : '전체 선택'}
+                      </button>
+                    </div>
                   </div>
                   
-                  {/* Thumbnails Preview */}
-                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-[240px] overflow-y-auto custom-scrollbar pr-2">
-                    {assets.slice(0, 100).map((asset, idx) => (
-                      <div key={idx} className="aspect-square bg-white/5 border border-white/10 rounded-lg overflow-hidden flex items-center justify-center relative group">
-                        <img 
-                          src={asset.url} 
-                          alt="Extracted" 
-                          className="w-full h-full object-contain"
-                          loading="lazy"
-                        />
-                      </div>
-                    ))}
-                    {assets.length > 100 && (
-                      <div className="aspect-square bg-white/5 border border-white/10 rounded-lg flex items-center justify-center text-[10px] font-bold text-white/40">
-                        +{assets.length - 100}
-                      </div>
-                    )}
+                  {/* Thumbnails Preview (Natural grid, scrolled by modal body) */}
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    {displayedAssets.map((asset) => {
+                      const uid = asset.uid || asset.id;
+                      const isSelected = selectedAssetIds.has(uid);
+                      return (
+                        <div 
+                          key={uid} 
+                          onClick={() => toggleSelectAsset(uid)}
+                          className={cn(
+                            "aspect-square rounded-lg overflow-hidden flex items-center justify-center relative cursor-pointer transition-all border select-none group",
+                            isSelected 
+                              ? "border-white/50 bg-white/[0.04] shadow-sm shadow-black/20 hover:border-white hover:bg-white/[0.08]" 
+                              : "border-white/5 bg-black/30 opacity-40 hover:opacity-75 hover:border-white/20"
+                          )}
+                          title={`${asset.id} (${isSelected ? '선택됨 - 클릭 시 제외' : '제외됨 - 클릭 시 선택'})`}
+                        >
+                          <img 
+                            src={asset.url} 
+                            alt={asset.id} 
+                            className="w-full h-full object-contain pointer-events-none"
+                            loading="lazy"
+                          />
+                          {/* Selection / Exclusion Badge */}
+                          <div className={cn(
+                            "absolute top-1.5 right-1.5 z-10 transition-all",
+                            isSelected ? "opacity-0 group-hover:opacity-100 group-hover:scale-105" : "opacity-100"
+                          )}>
+                            {isSelected ? (
+                              <div className="w-4 h-4 rounded-full bg-black/60 backdrop-blur-sm border border-white/30 text-white/90 flex items-center justify-center shadow-sm">
+                                <Check className="w-2.5 h-2.5 stroke-[2.5]" />
+                              </div>
+                            ) : (
+                              <div className="w-4 h-4 rounded-full bg-black/75 backdrop-blur-sm border border-white/30 text-white/70 group-hover:border-white/50 group-hover:text-white flex items-center justify-center shadow-sm">
+                                <Minus className="w-2.5 h-2.5 stroke-[2.5]" />
+                              </div>
+                            )}
+                          </div>
+                          {/* Semantic Name Tag */}
+                          <div className="absolute inset-x-0 bottom-0 bg-black/75 backdrop-blur-[2px] px-1 py-0.5 text-[8px] text-white/80 font-mono truncate text-center pointer-events-none">
+                            {asset.id.replace(/^asset-/, '')}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -421,17 +519,20 @@ export function JsonImageExtractorModal({ onClose, initialFile, onOpenBulkImgur 
             <>
               <button 
                 onClick={handleDownloadZip}
+                disabled={selectedAssetIds.size === 0}
                 className={cn(
                   "px-5 py-2 text-[12px] font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg",
-                  isDownloaded 
-                    ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20" 
-                    : "bg-[#e6005c] hover:bg-[#ff0066] text-white shadow-pink-500/20"
+                  selectedAssetIds.size === 0
+                    ? "bg-white/10 text-white/30 cursor-not-allowed shadow-none"
+                    : isDownloaded 
+                      ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20" 
+                      : "bg-[#e6005c] hover:bg-[#ff0066] text-white shadow-pink-500/20"
                 )}
               >
                 {isDownloaded ? (
-                  <><CheckCircle2 className="w-4 h-4" /> 다시 다운로드 (ZIP)</>
+                  <><CheckCircle2 className="w-4 h-4" /> 다시 다운로드 (ZIP, {selectedAssetIds.size}개)</>
                 ) : (
-                  <><Download className="w-4 h-4" /> ZIP 파일로 저장하기</>
+                  <><Download className="w-4 h-4" /> ZIP 파일로 저장하기 ({selectedAssetIds.size}개)</>
                 )}
               </button>
               {typeof onOpenBulkImgur !== "undefined" && onOpenBulkImgur && (
