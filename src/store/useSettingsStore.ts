@@ -154,7 +154,17 @@ export const useSettingsStore = create<SettingsState>()(
       setStandingZoomed: (val) => set({ standingZoomed: val })
     }),
     {
-      name: 'ccfolia_settings'
+      name: 'ccfolia_settings',
+      partialize: (state) => {
+        const { narrationCharacter, narrationCharacter2, ...rest } = state;
+        return rest;
+      },
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          state.narrationCharacter = null;
+          state.narrationCharacter2 = null;
+        }
+      }
     }
   )
 );

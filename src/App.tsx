@@ -11,7 +11,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { createPortal } from 'react-dom';
 import { Analytics } from "@vercel/analytics/react";
 import { 
-  Scissors,
   Check,
   X,
   Upload, 
@@ -46,7 +45,6 @@ import {
   AlignCenter,
   AlignRight,
   Copy,
-  Scissors,
   ExternalLink,
   ArrowUpDown,
   ChevronDown,
@@ -553,6 +551,11 @@ export default function App() {
   useEffect(() => {
   localStorage.setItem('characterLibrary', JSON.stringify(characterLibrary));
   }, [characterLibrary]);
+
+  useEffect(() => {
+    setNarrationCharacter(null);
+    setNarrationCharacter2(null);
+  }, []);
   
   
   
@@ -1064,7 +1067,10 @@ export default function App() {
     setOriginalFileName('demo.html');
     setPageTitle('데모');
     setInsertedBlocks(demo.insertedBlocks);
-    setNarrationCharacter(null);
+    // 데모 로그 보기에 한해서만 나레이션 캐릭터를 GM (디자인은 기본)으로 설정
+    const gmCharEntry = Object.entries(demo.chars).find(([_, c]) => c.name === 'GM');
+    setNarrationCharacter(gmCharEntry ? gmCharEntry[0] : 'char_gm');
+    setNarrationFormat('style1');
     setNarrationCharacter2(null);
     setShowNarrationSlot2(false);
     setAdditionalNarrationSlots([]);
@@ -1526,7 +1532,7 @@ export default function App() {
 
   const exportProject = () => {
     const data: any = { 
-      version: '1.11.14',
+      version: '1.12.0',
       files,
       activeFileId,
       originalFileName,
@@ -3075,9 +3081,15 @@ export default function App() {
 
   const handleCopyExportHtml = async (
     getHtmlFn: (mode: 'html' | 'blog') => Promise<string>,
-    onSuccess?: () => void
+    onSuccess?: () => void,
+    totalLogsCount?: number,
+    onOpenChunkCopy?: () => void
   ) => {
     try {
+      if (totalLogsCount && totalLogsCount >= 1500 && onOpenChunkCopy) {
+        onOpenChunkCopy();
+        return;
+      }
       const wasHtmlMode = exportMode === 'html';
       // 복사 시에는 항상 블로그 복붙용 코드를 생성 (HTML 모드인 경우 블로그 복붙용으로 자동 전환)
       const html = await getHtmlFn('blog');
@@ -3328,6 +3340,246 @@ export default function App() {
     );
     } finally {
       setIsConverting(false);
+    }
+  };
+
+  const openChunkCopyForFile = async (targetFile: LogFile, section?: { id: string; name: string }) => {
+    setShowSaveMenu(false);
+    setShowDownloadMenu(false);
+    let totalLogs = targetFile.logs.length;
+    if (section) {
+      const sections = getFileSectionsList(targetFile);
+      const match = sections.find(s => s.id === section.id);
+      if (match) {
+        totalLogs = Math.max(0, match.endBlock - match.startBlock + 1);
+      } else {
+        totalLogs = targetFile.logs.filter(l => l.sectionId === section.id).length || targetFile.logs.length;
+      }
+    }
+
+    // 1500블록 이하인 로그파일(또는 섹션)은 모달 없이 바로 복사
+    if (totalLogs <= 1500) {
+      await handleCopyExportHtml((mode) => getHtmlStringForFile(targetFile, section?.id, mode));
+      return;
+    }
+
+    setChunkCopyTarget({
+      file: targetFile,
+      sectionId: section?.id,
+      title: section ? `${targetFile.name} (${section.name})` : targetFile.name,
+      totalLogs,
+    });
+    setIsChunkCopyModalOpen(true);
+  };
+
+  const openChunkCopyForCombined = async () => {
+    setShowSaveMenu(false);
+    setShowDownloadMenu(false);
+    const fileList = files.length > 0 ? files : (activeFile ? [activeFile] : []);
+    const totalLogs = fileList.reduce((acc, f) => acc + f.logs.length, 0);
+
+    // 1500블록 이하인 연속 파일(전체 통합)은 모달 없이 바로 복사
+    if (totalLogs <= 1500) {
+      await handleCopyExportHtml((mode) => getCombinedHtmlString(mode));
+      return;
+    }
+
+    setChunkCopyTarget({
+      file: null,
+      title: '연속 파일 (전체 로그 통합)',
+      totalLogs,
+    });
+    setIsChunkCopyModalOpen(true);
+  };
+
+  const getHtmlChunksForFile = async (targetFile: LogFile, chunkSize: number = 1500, sectionId?: string): Promise<BlogHtmlChunk[]> => {
+    try {
+      const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
+      const fileLogs = targetFile.logs;
+      const fileBlocks = targetFile.insertedBlocks || {};
+
+      const { charSettings: processedChars, blocks: processedBlocks, logs: processedFileLogs } = await processImagesForExport(charSettings, fileBlocks as any, fileLogs, 'blog', excludeUnlinkedImages);
+
+      const fileSections = getFileSectionsList(targetFile);
+      let secIdx = 0;
+      const processedLogs = processedFileLogs.map((log) => {
+        const currentSecId = fileSections.length > 0 ? (fileSections[secIdx]?.id || `sec_${secIdx}`) : undefined;
+        const isSplit = (processedBlocks[log.id] as any)?.some((b: any) => b.type === 'split');
+        if (isSplit) {
+          secIdx++;
+        }
+        return {
+          ...log,
+          sectionId: currentSecId
+        };
+      });
+
+      const targetLogs = sectionId ? processedLogs.filter(log => log.sectionId === sectionId) : processedLogs;
+      const filteredLogs = targetLogs.filter(log => 
+        tabSettings[log.tabId]?.visible && 
+        (charSettings[log.charId]?.visible !== false)
+      );
+
+      const fileIllustrations: Illustration[] = targetLogs
+        .map((log, idx) => ({ log, idx }))
+        .filter(({ log }) => log.isIllustration === true)
+        .map(({ log, idx }) => ({
+          id: log.id,
+          url: log.content,
+          imageName: log.imageName,
+          afterLogIndex: log.isUnplaced ? null : idx,
+          tabOverride: log.tabOverride || 'auto',
+          width: log.width,
+          align: log.align || 'center'
+        }));
+
+      return generateFinalHtmlBlogChunks(
+        filteredLogs,
+        targetLogs,
+        processedChars,
+        tabSettings,
+        cssFormat,
+        theme,
+        darkBgColor,
+        lightBgColor,
+        filterBarMode,
+        fontSize,
+        fontFamily,
+        disableOtherColor,
+        hideEmptyAvatars,
+        cropFaceTop,
+        hideAllAvatars,
+        narrationCharacter,
+        narrationCharacter2,
+        enableSentenceSpacing,
+        enableSentenceSpacing2,
+        enableSecretNarration,
+        enableSecretNarration2,
+        narrationFormat,
+        narrationFormat2,
+        processedBlocks as unknown as Record<string, InsertedBlock[]>,
+        mergeTabs,
+        mergeTabStyles,
+        showTabNames,
+        targetFile.name || pageTitle,
+        selectedFont.value,
+        textFontSize,
+        lineHeight,
+        letterSpacing,
+        blockSpacing,
+        contentPadding,
+        avatarSizeValue,
+        showLogDivider,
+        fileIllustrations,
+        targetLogs,
+        chunkSize,
+        allNarrationSlots
+      );
+    } catch (err) {
+      console.error(err);
+      throw err;
+    }
+  };
+
+  const getCombinedHtmlChunks = async (chunkSize: number = 1500): Promise<BlogHtmlChunk[]> => {
+    try {
+      const selectedFont = fonts.find(f => f.name === fontFamily) || fonts[0];
+      const fileList = files.length > 0 ? files : (activeFile ? [activeFile] : []);
+      const combinedLogsList: LogEntry[] = [];
+      const combinedBlocks: Record<string, InsertedBlock[]> = {};
+
+      fileList.forEach(file => {
+        combinedLogsList.push(...file.logs);
+        if (file.insertedBlocks) {
+          Object.assign(combinedBlocks, file.insertedBlocks);
+        }
+      });
+
+      const { charSettings: processedChars, blocks: processedBlocks, logs: processedLogs } = await processImagesForExport(charSettings, combinedBlocks, combinedLogsList, 'blog', excludeUnlinkedImages);
+
+      const filteredLogs = processedLogs.filter(log => 
+        tabSettings[log.tabId]?.visible && 
+        (charSettings[log.charId]?.visible !== false)
+      );
+
+      const combinedIllustrations: Illustration[] = [];
+      processedLogs.forEach((log, idx) => {
+        if (log.isIllustration) {
+          combinedIllustrations.push({
+            id: log.id,
+            url: log.content,
+            imageName: log.imageName,
+            afterLogIndex: log.isUnplaced ? null : idx,
+            tabOverride: log.tabOverride || 'auto',
+            width: log.width,
+            align: log.align || 'center'
+          });
+        }
+      });
+
+      return generateFinalHtmlBlogChunks(
+        filteredLogs,
+        processedLogs,
+        processedChars,
+        tabSettings,
+        cssFormat,
+        theme,
+        darkBgColor,
+        lightBgColor,
+        filterBarMode,
+        fontSize,
+        fontFamily,
+        disableOtherColor,
+        hideEmptyAvatars,
+        cropFaceTop,
+        hideAllAvatars,
+        narrationCharacter,
+        narrationCharacter2,
+        enableSentenceSpacing,
+        enableSentenceSpacing2,
+        enableSecretNarration,
+        enableSecretNarration2,
+        narrationFormat,
+        narrationFormat2,
+        processedBlocks,
+        mergeTabs,
+        mergeTabStyles,
+        showTabNames,
+        pageTitle || (fileList[0]?.name) || '연속로그_통합',
+        selectedFont.value,
+        textFontSize,
+        lineHeight,
+        letterSpacing,
+        blockSpacing,
+        contentPadding,
+        avatarSizeValue,
+        showLogDivider,
+        combinedIllustrations,
+        processedLogs,
+        chunkSize,
+        allNarrationSlots
+      );
+    } catch (err) {
+      console.error(err);
+      throw err;
+    }
+  };
+
+  const handleGenerateModalChunks = async (chunkSize: number): Promise<BlogHtmlChunk[]> => {
+    if (!chunkCopyTarget) return [];
+    if (chunkCopyTarget.file) {
+      return getHtmlChunksForFile(chunkCopyTarget.file, chunkSize, chunkCopyTarget.sectionId);
+    } else {
+      return getCombinedHtmlChunks(chunkSize);
+    }
+  };
+
+  const handleCopyModalAllAtOnce = async () => {
+    if (!chunkCopyTarget) return;
+    if (chunkCopyTarget.file) {
+      await handleCopyExportHtml((mode) => getHtmlStringForFile(chunkCopyTarget.file!, chunkCopyTarget.sectionId, mode));
+    } else {
+      await handleCopyExportHtml((mode) => getCombinedHtmlString(mode));
     }
   };
 
@@ -3779,7 +4031,7 @@ export default function App() {
                     <div className="mt-2 p-3 bg-white/5 rounded-xl border border-white/5 text-[11px] leading-relaxed">
                       {exportMode === 'html' ? (
                         <div className="text-white/90">
-                          HTML 다운로드용 모드여서 BGM은 제외됩니다. 스탠딩/삽화 이미지가 WebP 형식으로 내장되며 오프라인 열람이 가능합니다.
+                          스탠딩/삽화 이미지가 WebP 형식으로 내장되며 오프라인 열람이 가능합니다.
                         </div>
                       ) : (
                         <div className="text-white/90">
@@ -6272,7 +6524,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/30 hover:text-white/50 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.11.14</span>
+            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.12.0</span>
           </div>
         </div>
       </aside>
@@ -6458,13 +6710,6 @@ export default function App() {
                     >
                       {/* Unified Notices & Settings Card */}
                       <div className="mx-2 mb-2 p-2.5 rounded-xl border bg-white/[0.03] border-white/10 space-y-2">
-                        {exportMode === 'html' && (
-                          <div className="flex items-center gap-1.5 text-[10px] text-white/60">
-                            <Info className="w-3.5 h-3.5 shrink-0 text-white/40" />
-                            <span>HTML 다운로드용 모드여서 BGM은 제외됩니다.</span>
-                          </div>
-                        )}
-
                         <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-white/80 hover:text-white transition-colors">
                           <input 
                             type="checkbox"
@@ -6474,6 +6719,18 @@ export default function App() {
                           />
                           <span>링크로 교체되지 않은 이미지 제외 ({usedBase64Images.length}개)</span>
                         </label>
+
+                        {exportMode === 'html' && (
+                          <div className="pt-2 border-t border-white/5 flex items-start gap-2 text-rose-300">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-bold text-[10px] text-rose-200">BGM 기능 제외 안내</p>
+                              <p className="text-[10px] text-rose-300/80 leading-relaxed mt-0.5">
+                                HTML 다운로드용 모드에서는 BGM 기능이 제외됩니다.
+                              </p>
+                            </div>
+                          </div>
+                        )}
 
                         {exportMode !== 'html' && usedBase64Images.length > 0 && !excludeUnlinkedImages && (
                           <div className="pt-2 border-t border-white/5 flex items-start gap-2 text-amber-300">
@@ -6493,7 +6750,7 @@ export default function App() {
                         {ENABLE_MULTI_FILE_UI ? (
                           <div className="flex gap-2">
                             <button 
-                              onClick={() => handleCopyExportHtml((mode) => getCombinedHtmlString(mode), () => setShowSaveMenu(false))}
+                              onClick={() => openChunkCopyForCombined()}
                               className="flex-1 p-2 rounded-xl hover:bg-white/5 text-white/70 hover:text-white transition-colors flex flex-col items-center justify-center gap-1 group"
                               title="연속 파일 복사"
                             >
@@ -6533,7 +6790,7 @@ export default function App() {
                               <span className="text-[22px] font-light leading-none mb-1">+</span>
                             </div>
                             <div>
-                              <div className="text-[13px] font-bold tracking-tight">ZIP으로 모두 저장</div>
+                              <div className="text-[13px] font-bold tracking-tight">분할된 모든 파일 ZIP 저장</div>
                               <div className="text-[11px] opacity-60 mt-0.5">모든 파일/섹션을 압축파일로 저장</div>
                             </div>
                           </button>
@@ -6556,9 +6813,9 @@ export default function App() {
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
                                   <button
-                                    onClick={() => handleCopyExportHtml((mode) => getHtmlStringForFile(f, undefined, mode), () => setShowSaveMenu(false))}
-                                    className="px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
-                                    title="전체 복사"
+                                    onClick={() => openChunkCopyForFile(f)}
+                                    className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
+                                    title="복사"
                                   >
                                     <Copy className="w-3 h-3" /> 복사
                                   </button>
@@ -6589,7 +6846,7 @@ export default function App() {
                                       </div>
                                       <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/sec:opacity-100 transition-opacity">
                                         <button
-                                          onClick={() => handleCopyExportHtml((mode) => getHtmlStringForFile(f, s.id, mode), () => setShowSaveMenu(false))}
+                                          onClick={() => openChunkCopyForFile(f, s)}
                                           className="p-1.5 bg-white/5 hover:bg-white/20 text-white/60 hover:text-white rounded transition-colors"
                                           title="섹션 복사"
                                         >
@@ -6597,14 +6854,14 @@ export default function App() {
                                         </button>
                                         <button
                                           onClick={async (e) => { 
-                                            try {
+                                            try { 
                                               await downloadHtmlForFile(f, s); 
                                               setShowSaveMenu(false); 
                                             } catch(err: any) {
                                               alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
                                             }
                                           }}
-                                          className="p-1.5 bg-[#e6005c]/10 hover:bg-[#e6005c] text-[#e6005c] hover:text-white rounded transition-colors"
+                                          className="p-1.5 bg-[#e6005c]/80 hover:bg-[#e6005c] text-white rounded transition-colors shadow-sm"
                                           title="섹션 저장"
                                         >
                                           <Download className="w-3 h-3" />
@@ -6646,11 +6903,6 @@ export default function App() {
                     >
                       {/* Unified Notices & Settings Card */}
                       <div className="p-2.5 rounded-xl border bg-white/[0.03] border-white/10 space-y-2">
-                        <div className="flex items-center gap-1.5 text-[10px] text-white/60">
-                          <Info className="w-3.5 h-3.5 shrink-0 text-white/40" />
-                          <span>HTML 다운로드용 모드여서 BGM은 제외됩니다.</span>
-                        </div>
-
                         <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-white/80 hover:text-white transition-colors">
                           <input 
                             type="checkbox"
@@ -6660,6 +6912,18 @@ export default function App() {
                           />
                           <span>링크로 교체되지 않은 이미지 제외 ({usedBase64Images.length}개)</span>
                         </label>
+
+                        {exportMode === 'html' && (
+                          <div className="pt-2 border-t border-white/5 flex items-start gap-2 text-rose-300">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-bold text-[10px] text-rose-200">BGM 기능 제외 안내</p>
+                              <p className="text-[10px] text-rose-300/80 leading-relaxed mt-0.5">
+                                HTML 다운로드용 모드에서는 BGM 기능이 제외됩니다.
+                              </p>
+                            </div>
+                          </div>
+                        )}
 
                         {exportMode !== 'html' && usedBase64Images.length > 0 && !excludeUnlinkedImages && (
                           <div className="pt-2 border-t border-white/5 flex items-start gap-2 text-amber-300">
@@ -6685,7 +6949,7 @@ export default function App() {
                           </div>
                           <div className="flex items-center gap-2 pt-1">
                             <button 
-                              onClick={() => handleCopyExportHtml((mode) => getCombinedHtmlString(mode), () => setShowDownloadMenu(false))}
+                              onClick={() => openChunkCopyForCombined()}
                               className="flex-1 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5"
                               title="연속 파일 복사"
                             >
@@ -6719,7 +6983,7 @@ export default function App() {
                             }}
                             className="w-full py-2 bg-[#e6005c] hover:bg-[#ff0066] text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
                           >
-                            <Archive className="w-3.5 h-3.5" /> 모든 파일 ZIP 저장
+                            <Archive className="w-3.5 h-3.5" /> 분할된 모든 파일 ZIP 저장
                           </button>
                         </div>
                       )}
@@ -6727,7 +6991,7 @@ export default function App() {
                       <div className="h-px bg-white/5" />
 
                       <div className="px-1">
-                        <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">개별 & 섹션별 내보내기</p>
+                        <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">전체 & 섹션별 내보내기</p>
                       </div>
 
                       <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-2.5 pr-1">
@@ -6743,9 +7007,9 @@ export default function App() {
                                 </div>
                                 <div className="flex gap-1.5 shrink-0">
                                   <button
-                                    onClick={() => handleCopyExportHtml((mode) => getHtmlStringForFile(f, undefined, mode), () => setShowDownloadMenu(false))}
+                                    onClick={() => openChunkCopyForFile(f)}
                                     className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1"
-                                    title="파일 전체 복사"
+                                    title="파일 복사"
                                   >
                                     <Copy className="w-3 h-3" /> 복사
                                   </button>
@@ -6777,7 +7041,7 @@ export default function App() {
                                       </div>
                                       <div className="flex items-center gap-1 shrink-0">
                                         <button
-                                          onClick={() => handleCopyExportHtml((mode) => getHtmlStringForFile(f, s.id, mode), () => setShowDownloadMenu(false))}
+                                          onClick={() => openChunkCopyForFile(f, s)}
                                           className="p-1.5 bg-white/5 hover:bg-white/15 text-white/80 hover:text-white rounded text-[9px] font-bold transition-colors flex items-center justify-center"
                                           title="섹션 복사"
                                         >
@@ -6792,7 +7056,7 @@ export default function App() {
                                               alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
                                             }
                                           }}
-                                          className="p-1.5 bg-white/5 hover:bg-[#e6005c] text-white/80 hover:text-white rounded text-[9px] font-bold transition-colors flex items-center justify-center"
+                                          className="p-1.5 bg-[#e6005c]/80 hover:bg-[#e6005c] text-white rounded text-[9px] font-bold transition-colors flex items-center justify-center shadow-sm"
                                           title="섹션 저장"
                                         >
                                           <Download className="w-3 h-3" />
@@ -7808,6 +8072,21 @@ export default function App() {
           onKeepSeparate={() => setUnifyModalState(null)}
           onUnify={handleConfirmUnifyCharacters}
           characters={unifyModalState.multiColorChars}
+        />
+      )}
+
+      {/* Chunk Copy Modal */}
+      {isChunkCopyModalOpen && chunkCopyTarget && (
+        <ChunkCopyModal
+          isOpen={isChunkCopyModalOpen}
+          onClose={() => {
+            setIsChunkCopyModalOpen(false);
+            setChunkCopyTarget(null);
+          }}
+          title={chunkCopyTarget.title}
+          totalLogsCount={chunkCopyTarget.totalLogs}
+          onGenerateChunks={handleGenerateModalChunks}
+          onCopyAllAtOnce={handleCopyModalAllAtOnce}
         />
       )}
 </div>
