@@ -197,7 +197,10 @@ export default function App() {
     showLogDivider, setShowLogDivider,
     narrationCharacter, setNarrationCharacter,
     narrationCharacter2, setNarrationCharacter2,
-    exportMode, setExportMode
+    exportMode, setExportMode,
+    tabSortMode, setTabSortMode,
+    charSortMode, setCharSortMode,
+    illustrationSortMode, setIllustrationSortMode
   } = useSettingsState();
 
   const {
@@ -298,8 +301,6 @@ export default function App() {
   }, []);
 
   const [mobileTab, setMobileTab] = useState<'settings' | 'preview'>('settings');
-  const [charSortMode, setCharSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
-  const [tabSortMode, setTabSortMode] = useState<'appearance' | 'alphabetical'>('appearance');
 
   const fileTabGroups = useMemo(() => {
     if (files.length <= 1) return null;
@@ -617,6 +618,7 @@ export default function App() {
       tabSettings,
       tabOrder,
       tabSortMode,
+      illustrationSortMode,
       cssFormat,
       fontSize,
       textFontSize,
@@ -652,7 +654,7 @@ export default function App() {
       pageTitle
     };
   }, [
-    charSettings, charOrder, charSortMode, tabSettings, tabOrder, tabSortMode,
+    charSettings, charOrder, charSortMode, tabSettings, tabOrder, tabSortMode, illustrationSortMode,
     cssFormat, fontSize, textFontSize, lineHeight, letterSpacing, blockSpacing, contentPadding, avatarSizeValue,
     fontFamily, theme, darkBgColor, lightBgColor, disableOtherColor, filterBarMode, logs, insertedBlocks,
     mergeTabs, showTabNames, mergeTabStyles, hideEmptyAvatars, cropFaceTop, hideAllAvatars,
@@ -668,6 +670,7 @@ export default function App() {
     if (state.tabSettings !== undefined) setTabSettings(state.tabSettings);
     if (state.tabOrder !== undefined) setTabOrder(state.tabOrder);
     if (state.tabSortMode !== undefined) setTabSortMode(state.tabSortMode);
+    if (state.illustrationSortMode !== undefined) setIllustrationSortMode(state.illustrationSortMode);
     if (state.cssFormat !== undefined) setCssFormat(state.cssFormat);
     if (state.fontSize !== undefined) setFontSize(state.fontSize);
     if (state.textFontSize !== undefined) setTextFontSize(state.textFontSize);
@@ -788,6 +791,7 @@ export default function App() {
         setShowLogDivider(false);
         setCharSortMode('appearance');
         setTabSortMode('appearance');
+        setIllustrationSortMode('appearance');
         setLibrarySortMode('newest');
         setSaveOptions({
           tabs: true,
@@ -1021,8 +1025,20 @@ export default function App() {
           }
 
           if (!mergedTabs[canonicalTabId]) {
-            const fileTabObj = fileItem.newTabs[log.tabId] || { id: canonicalTabId, name: tabName, format: 'main', visible: true, color: '#ffd400' };
-            mergedTabs[canonicalTabId] = { ...fileTabObj, id: canonicalTabId, name: tabName };
+            let defaultFormat: TabFormat = 'main';
+            const lowerTab = tabName.toLowerCase();
+            if (
+              lowerTab.includes('secret') || lowerTab.includes('비밀') || lowerTab.includes('시크릿') ||
+              lowerTab.includes('private') || lowerTab.includes('귓속말') || lowerTab.includes('whisper')
+            ) {
+              defaultFormat = 'secret';
+            } else if (lowerTab.includes('other') || lowerTab.includes('잡담')) {
+              defaultFormat = 'other';
+            } else if (lowerTab.includes('info') || lowerTab.includes('정보')) {
+              defaultFormat = 'info';
+            }
+            const fileTabObj = fileItem.newTabs[log.tabId] || Object.values(fileItem.newTabs).find(t => t.name === tabName) || { id: canonicalTabId, name: tabName, format: defaultFormat, visible: true, color: '#ffd400' };
+            mergedTabs[canonicalTabId] = { ...fileTabObj, id: canonicalTabId, name: tabName, format: fileTabObj.format || defaultFormat };
           }
         }
 
@@ -1708,23 +1724,47 @@ export default function App() {
       }
 
       if (mappedLog) {
-        const tabSet = tabSettings[mappedLog.tabId];
-        const format = tabSet?.format || 'main';
+        const tabSet = tabSettings[mappedLog.tabId] || Object.values(tabSettings).find(t => t.id === mappedLog.tabId || t.name === mappedLog.tab);
+        let format = tabSet?.format;
+        if (!format) {
+          const lower = (mappedLog.tab || '').toLowerCase();
+          if (lower.includes('secret') || lower.includes('비밀') || lower.includes('시크릿') || lower.includes('private') || lower.includes('귓속말') || lower.includes('whisper')) {
+            format = 'secret';
+          } else if (lower.includes('other') || lower.includes('잡담')) {
+            format = 'other';
+          } else if (lower.includes('info') || lower.includes('정보')) {
+            format = 'info';
+          } else {
+            format = 'main';
+          }
+        }
         const stableId = mappedLog.id.startsWith('merged:') ? mappedLog.id.split(',').pop()! : mappedLog.id;
         const prevStableId = prevVisibleLog && !prevVisibleLog.isIllustration && !prevVisibleLog.isBgmBlock ? (prevVisibleLog.id.startsWith('merged:') ? prevVisibleLog.id.split(',').pop()! : prevVisibleLog.id) : '';
         const prevHasBlock = prevVisibleLog && !prevVisibleLog.isIllustration && !prevVisibleLog.isBgmBlock && !!insertedBlocks[prevStableId]?.length;
 
         let isContinuation = false;
         if (prevVisibleLog && !prevVisibleLog.isIllustration && !prevVisibleLog.isBgmBlock) {
-          const prevFormat = tabSettings[prevVisibleLog.tabId]?.format || 'main';
+          const prevTabSet = tabSettings[prevVisibleLog.tabId] || Object.values(tabSettings).find(t => t.id === prevVisibleLog.tabId || t.name === prevVisibleLog.tab);
+          let prevFormat = prevTabSet?.format;
+          if (!prevFormat) {
+            const prevLower = (prevVisibleLog.tab || '').toLowerCase();
+            if (prevLower.includes('secret') || prevLower.includes('비밀') || prevLower.includes('시크릿') || prevLower.includes('private') || prevLower.includes('귓속말') || prevLower.includes('whisper')) {
+              prevFormat = 'secret';
+            } else if (prevLower.includes('other') || prevLower.includes('잡담')) {
+              prevFormat = 'other';
+            } else if (prevLower.includes('info') || prevLower.includes('정보')) {
+              prevFormat = 'info';
+            } else {
+              prevFormat = 'main';
+            }
+          }
           const isPrevHidden = prevVisibleLog.isHiddenContent;
           if (!mappedLog.isHiddenContent && 
               !isPrevHidden &&
               mergeTabs.has(format) && 
               mergeTabs.has(prevFormat) &&
               prevVisibleLog.name === mappedLog.name && 
-              prevVisibleLog.tab === mappedLog.tab && 
-              prevVisibleLog.tabId === mappedLog.tabId &&
+              (prevVisibleLog.tab === mappedLog.tab || prevVisibleLog.tabId === mappedLog.tabId) && 
               !mappedLog.isCommand && 
               !prevVisibleLog.isCommand &&
               !prevHasBlock) {
@@ -1923,8 +1963,8 @@ export default function App() {
       const log = item.log;
       if (!log.isContinuation) {
          if (tabSettings[log.tabId]?.visible !== false && charSettings[log.charId]?.visible !== false) {
-           const narrationSlot = allNarrationSlots.find(s => s.charId === log.charId);
-           const isNarration = Boolean(narrationSlot);
+           const narrationSlot = allNarrationSlots.find(s => s.charId === log.charId || (s.name && log.name && s.name === log.name));
+           const isNarration = Boolean(narrationSlot || log.charId === 'system' || (log.name && (log.name.toLowerCase() === 'system' || log.name === '시스템')));
            const charFmt = narrationSlot?.format || narrationFormat;
            if (hideAllAvatars || (isNarration && charFmt === 'style3')) {
              const w = ctx.measureText(log.name + ':').width;
@@ -2155,6 +2195,14 @@ export default function App() {
       const placed = fileIlls.filter(ill => ill.afterLogIndex !== null);
       const unplaced = fileIlls.filter(ill => ill.afterLogIndex === null);
 
+      if (illustrationSortMode === 'alphabetical') {
+        placed.sort((a, b) => {
+          const nameA = a.imageName || a.url || '';
+          const nameB = b.imageName || b.url || '';
+          return nameA.localeCompare(nameB, 'ko', { sensitivity: 'base', numeric: true });
+        });
+      }
+
       if (placed.length > 0) {
         groups.push({
           fileId: file.id,
@@ -2174,8 +2222,16 @@ export default function App() {
       });
     });
 
+    if (illustrationSortMode === 'alphabetical') {
+      unplacedItems.sort((a, b) => {
+        const nameA = a.item.imageName || a.item.url || '';
+        const nameB = b.item.imageName || b.item.url || '';
+        return nameA.localeCompare(nameB, 'ko', { sensitivity: 'base', numeric: true });
+      });
+    }
+
     return { groups, unplacedItems, totalCount: groups.reduce((acc, g) => acc + g.items.length, 0) + unplacedItems.length };
-  }, [files, logs, originalFileName, pageTitle]);
+  }, [files, logs, originalFileName, pageTitle, illustrationSortMode]);
 
 
   const applyBulkAllocations = (
@@ -4389,7 +4445,9 @@ export default function App() {
                         </button>
                         <button 
                           onClick={(e) => {
-                            setTabSortMode(prev => prev === 'appearance' ? 'alphabetical' : 'appearance');
+                            const nextMode = tabSortMode === 'appearance' ? 'alphabetical' : 'appearance';
+                            setTabSortMode(nextMode);
+                            saveToHistory({ tabSortMode: nextMode });
                           }}
                           className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5 whitespace-nowrap shrink-0"
                         >
@@ -5469,6 +5527,7 @@ export default function App() {
                           onClick={(e) => {
                             if (charSortMode === 'appearance') {
                               setCharSortMode('alphabetical');
+                              saveToHistory({ charSortMode: 'alphabetical' });
                             } else {
                               const allCharIds = Object.keys(charSettings);
                               const seen = new Set<string>();
@@ -5833,24 +5892,37 @@ export default function App() {
                       </div>
                     }
                     rightElement={
-                      logs.length > 0 ? (
-                        <div className="flex items-center gap-1.5 min-w-0 max-w-[180px] sm:max-w-[240px]">
-                          <input
-                            type="text"
-                            placeholder="Imgur 앨범 주소"
-                            value={illBulkUrl}
-                            onChange={(e) => setIllBulkUrl(e.target.value)}
-                            className="flex-1 min-w-0 text-[9px] px-2 py-1.5 bg-black/40 border border-white/10 rounded-lg outline-none focus:border-[#e6005c] text-white/90 transition-colors placeholder:text-white/30"
-                          />
-                          <button
-                            onClick={handleIllBulkFetch}
-                            disabled={isIllBulkLoading || !illBulkUrl}
-                            className="px-2.5 py-1.5 bg-[#e6005c] hover:bg-[#ff0066] disabled:bg-white/5 disabled:cursor-not-allowed disabled:text-white/30 text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap active:scale-95 flex items-center gap-1"
-                          >
-                            {isIllBulkLoading ? '불러오는 중...' : '불러오기'}
-                          </button>
-                        </div>
-                      ) : undefined
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button 
+                          onClick={() => {
+                            const nextMode = illustrationSortMode === 'appearance' ? 'alphabetical' : 'appearance';
+                            setIllustrationSortMode(nextMode);
+                            saveToHistory({ illustrationSortMode: nextMode });
+                          }}
+                          className="flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded-lg text-[9px] font-bold text-white/50 hover:text-white transition-all border border-white/5 whitespace-nowrap shrink-0"
+                        >
+                          <ArrowUpDown className="w-3 h-3 shrink-0" />
+                          {illustrationSortMode === 'appearance' ? '등장순' : '가나다순'}
+                        </button>
+                        {logs.length > 0 && (
+                          <div className="flex items-center gap-1.5 min-w-0 max-w-[170px] sm:max-w-[210px]">
+                            <input
+                              type="text"
+                              placeholder="Imgur 앨범 주소"
+                              value={illBulkUrl}
+                              onChange={(e) => setIllBulkUrl(e.target.value)}
+                              className="flex-1 min-w-0 text-[9px] px-2 py-1.5 bg-black/40 border border-white/10 rounded-lg outline-none focus:border-[#e6005c] text-white/90 transition-colors placeholder:text-white/30"
+                            />
+                            <button
+                              onClick={handleIllBulkFetch}
+                              disabled={isIllBulkLoading || !illBulkUrl}
+                              className="px-2.5 py-1.5 bg-[#e6005c] hover:bg-[#ff0066] disabled:bg-white/5 disabled:cursor-not-allowed disabled:text-white/30 text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap active:scale-95 flex items-center gap-1"
+                            >
+                              {isIllBulkLoading ? '불러오는 중...' : '불러오기'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     }
                   />
 
@@ -7299,8 +7371,8 @@ export default function App() {
                         const displayItem = displayItems[virtualItem.index];
                         const { log, isMatched, originalIndex: globalIdx } = displayItem;
                         const idx = globalIdx;
-                        const isPrevSameTab = idx > 0 && mergedLogs[idx - 1].tab === log.tab;
-                        const isNextSameTab = idx < mergedLogs.length - 1 && mergedLogs[idx + 1].tab === log.tab;
+                        const isPrevSameTab = idx > 0 && (mergedLogs[idx - 1].tabId === log.tabId || mergedLogs[idx - 1].tab === log.tab);
+                        const isNextSameTab = idx < mergedLogs.length - 1 && (mergedLogs[idx + 1].tabId === log.tabId || mergedLogs[idx + 1].tab === log.tab);
                         const stableId = log.id.startsWith('merged:') ? log.id.split(',').pop()! : log.id;
                         const originalLogIndex = logs.findIndex((l: any) => l.id === stableId);
 

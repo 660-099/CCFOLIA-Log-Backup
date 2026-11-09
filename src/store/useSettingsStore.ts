@@ -75,6 +75,12 @@ interface SettingsState {
   setExportMode: (mode: 'html' | 'blog') => void;
   standingZoomed: boolean;
   setStandingZoomed: (val: boolean) => void;
+  tabSortMode: 'appearance' | 'alphabetical';
+  setTabSortMode: (val: 'appearance' | 'alphabetical' | ((prev: 'appearance' | 'alphabetical') => 'appearance' | 'alphabetical')) => void;
+  charSortMode: 'appearance' | 'alphabetical';
+  setCharSortMode: (val: 'appearance' | 'alphabetical' | ((prev: 'appearance' | 'alphabetical') => 'appearance' | 'alphabetical')) => void;
+  illustrationSortMode: 'appearance' | 'alphabetical';
+  setIllustrationSortMode: (val: 'appearance' | 'alphabetical' | ((prev: 'appearance' | 'alphabetical') => 'appearance' | 'alphabetical')) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -151,7 +157,13 @@ export const useSettingsStore = create<SettingsState>()(
       narrationCharacter2: null,
       setNarrationCharacter2: (val) => set({ narrationCharacter2: val }),
       standingZoomed: false,
-      setStandingZoomed: (val) => set({ standingZoomed: val })
+      setStandingZoomed: (val) => set({ standingZoomed: val }),
+      tabSortMode: 'appearance',
+      setTabSortMode: (val) => set((state) => ({ tabSortMode: typeof val === 'function' ? val(state.tabSortMode) : val })),
+      charSortMode: 'appearance',
+      setCharSortMode: (val) => set((state) => ({ charSortMode: typeof val === 'function' ? val(state.charSortMode) : val })),
+      illustrationSortMode: 'appearance',
+      setIllustrationSortMode: (val) => set((state) => ({ illustrationSortMode: typeof val === 'function' ? val(state.illustrationSortMode) : val }))
     }),
     {
       name: 'ccfolia_settings',

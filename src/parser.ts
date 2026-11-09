@@ -69,17 +69,59 @@ export const parseLogFile = async (
         imgCounter++;
     });
 
+    // Extract root channels/tabs definitions if available in JSON
+    const channelMap = new Map<string, { name: string; format?: TabFormat }>();
+    if (Array.isArray(data.channels)) {
+      data.channels.forEach((c: any) => {
+        if (!c) return;
+        const id = String(c.id ?? c.channel ?? c.channelId ?? '').trim();
+        const name = String(c.name ?? c.channelName ?? c.tabName ?? '').trim();
+        if (id && name) channelMap.set(id, { name, format: c.format || c.type });
+      });
+    } else if (data.channels && typeof data.channels === 'object') {
+      Object.entries(data.channels).forEach(([k, v]: [string, any]) => {
+        if (typeof v === 'string') channelMap.set(k.trim(), { name: v.trim() });
+        else if (v && typeof v === 'object') channelMap.set(k.trim(), { name: String(v.name || '').trim(), format: v.format || v.type });
+      });
+    }
+    if (Array.isArray(data.tabs)) {
+      data.tabs.forEach((t: any) => {
+        if (!t) return;
+        const id = String(t.id ?? t.tabId ?? t.name ?? '').trim();
+        const name = String(t.name ?? t.tabName ?? '').trim();
+        if (id && name) channelMap.set(id, { name, format: t.format || t.type });
+      });
+    } else if (data.tabs && typeof data.tabs === 'object') {
+      Object.entries(data.tabs).forEach(([k, v]: [string, any]) => {
+        if (typeof v === 'string') channelMap.set(k.trim(), { name: v.trim() });
+        else if (v && typeof v === 'object') channelMap.set(k.trim(), { name: String(v.name || '').trim(), format: v.format || v.type });
+      });
+    }
+
     const charIdentityMap = new Map<string, string>();
     const nameToColors = new Map<string, string[]>();
     const unifySameNameChars = !!options?.unifySameNameChars;
+
+    const isSecretKeyword = (s: string) => 
+      s.includes('secret') || s.includes('비밀') || s.includes('시크릿') || s.includes('private') || s.includes('귓속말');
+    const isInfoKeyword = (s: string) => 
+      s.includes('info') || s.includes('정보');
+    const isOtherKeyword = (s: string) => 
+      s.includes('other') || s.includes('잡담');
 
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
       const color = msg.color ? msg.color.toUpperCase() : '#888888';
       if (color && color !== '#000000') colorsFound.add(color);
 
-      const tab = msg.channelName || msg.channel || 'Unknown Tab';
-      let tabId = msg.channel;
+      const channelIdRaw = msg.channel ?? msg.channelId ?? msg.tabId;
+      const channelIdStr = (channelIdRaw !== undefined && channelIdRaw !== null) ? String(channelIdRaw).trim() : '';
+      const channelObj = channelIdStr ? channelMap.get(channelIdStr) : undefined;
+
+      const rawTabName = msg.channelName || msg.tabName || msg.tab || channelObj?.name || (channelIdStr && !fallbackTabIds.has(channelIdStr) ? channelIdStr : '') || 'Unknown Tab';
+      const tab = String(rawTabName).trim() || 'Unknown Tab';
+
+      let tabId = channelIdStr || msg.tabId || msg.channelId;
       if (!tabId) {
         if (!fallbackTabIds.has(tab)) {
           fallbackTabIds.set(tab, `tab_${++tabCounter}`);
@@ -129,7 +171,7 @@ export const parseLogFile = async (
 
       let isCommand = content.includes('|') || content.includes('＞') || content.includes('→') || content.includes('choice[');
       if (isCommand) {
-        content = content.replace(/シークレットダイス\s*\?\?\?/g, 'Secret dice 🎲');
+        content = content.replace(/シークレットダイ스\s*\?\?\?/g, 'Secret dice 🎲');
       }
       
       let overrideImageId = undefined;
@@ -193,10 +235,13 @@ export const parseLogFile = async (
       if (!newTabs[tabId]) {
         let format: TabFormat = 'main';
         const lowerTab = tab.toLowerCase();
-        const lowerChannel = (msg.channel || '').toLowerCase();
-        if (lowerTab.includes('other') || lowerTab.includes('잡담') || lowerChannel.includes('other')) format = 'other';
-        if (lowerTab.includes('info') || lowerTab.includes('정보') || lowerChannel.includes('info')) format = 'info';
-        if (lowerTab.includes('secret') || lowerTab.includes('비밀') || lowerChannel.includes('private')) format = 'secret';
+        const lowerChannel = channelIdStr.toLowerCase();
+        const lowerTabId = String(tabId).toLowerCase();
+        const explicitFormat = String(msg.format || msg.tabFormat || msg.tabType || msg.type || channelObj?.format || '').toLowerCase();
+
+        if (isOtherKeyword(lowerTab) || isOtherKeyword(lowerChannel) || isOtherKeyword(lowerTabId) || isOtherKeyword(explicitFormat)) format = 'other';
+        if (isInfoKeyword(lowerTab) || isInfoKeyword(lowerChannel) || isInfoKeyword(lowerTabId) || isInfoKeyword(explicitFormat)) format = 'info';
+        if (isSecretKeyword(lowerTab) || isSecretKeyword(lowerChannel) || isSecretKeyword(lowerTabId) || isSecretKeyword(explicitFormat) || Boolean(msg.isSecret)) format = 'secret';
         
         newTabs[tabId] = { id: tabId, name: tab, format, visible: true, color: '#ffd400' };
         newTabOrder.push(tabId);
@@ -246,7 +291,13 @@ export const parseLogFile = async (
       if (color && color !== '#000000') colorsFound.add(color.toUpperCase());
       const tabRaw = spans[0].textContent?.trim() || '';
       const tabMatch = tabRaw.match(/\[(.*?)\]/);
-      const tab = tabMatch ? tabMatch[1].trim() : '';
+      let tab = tabMatch ? tabMatch[1].trim() : (p.getAttribute('data-tab-name') || p.getAttribute('data-tab') || '');
+      if (!tab && tabRaw && spans.length >= 3) {
+        tab = tabRaw.replace(/^[\[\(【]/, '').replace(/[\]\)】]$/, '').trim();
+      }
+      if (!tab) {
+        tab = '메인';
+      }
           
       let name = 'Unknown';
       let content = '';
@@ -267,12 +318,12 @@ export const parseLogFile = async (
       }
       
       // Identity Extraction
-      let tabId = p.getAttribute('data-tab-id');
+      let tabId = p.getAttribute('data-tab-id') || p.getAttribute('data-channel-id');
       if (!tabId) {
-        if (tab && !fallbackTabIds.has(tab)) {
+        if (!fallbackTabIds.has(tab)) {
           fallbackTabIds.set(tab, `tab_${++tabCounter}`);
         }
-        tabId = tab ? fallbackTabIds.get(tab)! : '';
+        tabId = fallbackTabIds.get(tab)!;
       }
       let charId = p.getAttribute('data-char-id');
       if (!charId) {
@@ -300,9 +351,19 @@ export const parseLogFile = async (
       if (tabId && !newTabs[tabId]) {
         let format: TabFormat = 'main';
         const lowerTab = tab.toLowerCase();
-        if (lowerTab.includes('other') || lowerTab.includes('잡담')) format = 'other';
-        if (lowerTab.includes('info') || lowerTab.includes('정보')) format = 'info';
-        if (lowerTab.includes('secret') || lowerTab.includes('비밀')) format = 'secret';
+        const tabAttrFormat = p.getAttribute('data-tab-format')?.toLowerCase() || '';
+        const classNames = (p.getAttribute('class') || '').toLowerCase();
+        if (
+          lowerTab.includes('secret') || lowerTab.includes('비밀') || lowerTab.includes('시크릿') ||
+          lowerTab.includes('private') || lowerTab.includes('귓속말') || lowerTab.includes('whisper') ||
+          tabAttrFormat === 'secret' || classNames.includes('secret')
+        ) {
+          format = 'secret';
+        } else if (lowerTab.includes('other') || lowerTab.includes('잡담') || tabAttrFormat === 'other') {
+          format = 'other';
+        } else if (lowerTab.includes('info') || lowerTab.includes('정보') || tabAttrFormat === 'info') {
+          format = 'info';
+        }
         newTabs[tabId] = { id: tabId, name: tab, format, visible: true, color: '#ffd400' };
         newTabOrder.push(tabId);
       }

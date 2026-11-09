@@ -79,36 +79,72 @@ const generateFinalHtmlInternal = (
   narrationSlots?: Array<{ charId: string; format: 'style1' | 'style2' | 'style3'; enableSentenceSpacing: boolean; enableSecretNarration: boolean; }>,
   chunkSize?: number
 ) => {
-  const getNarrationConfig = (charId?: string) => {
-    if (!charId) return null;
+  const getTabSetting = (tabId?: string, tabName?: string): TabSetting | undefined => {
+    if (tabId && tabSettings[tabId]) return tabSettings[tabId];
+    if (tabId) {
+      const foundById = Object.values(tabSettings).find(t => t.id === tabId);
+      if (foundById) return foundById;
+    }
+    if (tabName) {
+      const trimmed = tabName.trim().toLowerCase();
+      const foundByName = Object.values(tabSettings).find(t => t.name && t.name.trim().toLowerCase() === trimmed);
+      if (foundByName) return foundByName;
+    }
+    return undefined;
+  };
+
+  const resolveTabFormat = (tabId?: string, tabName?: string): TabFormat => {
+    const ts = getTabSetting(tabId, tabName);
+    if (ts?.format) return ts.format;
+    const tName = (tabName || '').toLowerCase();
+    if (
+      tName.includes('secret') || tName.includes('비밀') || tName.includes('시크릿') ||
+      tName.includes('private') || tName.includes('귓속말') || tName.includes('whisper')
+    ) {
+      return 'secret';
+    }
+    if (tName.includes('other') || tName.includes('잡담')) return 'other';
+    if (tName.includes('info') || tName.includes('정보')) return 'info';
+    return 'main';
+  };
+
+  const getNarrationConfig = (charId?: string, charName?: string) => {
     if (narrationSlots && narrationSlots.length > 0) {
-      const found = narrationSlots.find(s => s.charId && s.charId === charId);
+      const found = narrationSlots.find(s => (s.charId && s.charId === charId) || ((s as any).name && charName && (s as any).name === charName));
       if (found) return found;
     }
-    if (narrationCharacter && charId === narrationCharacter) {
-      return { charId, format: narrationFormat, enableSentenceSpacing, enableSecretNarration };
+    if (narrationCharacter && (charId === narrationCharacter || (charName && charName === narrationCharacter))) {
+      return { charId, format: narrationFormat, enableSentenceSpacing, enableSecretNarration: true };
     }
-    if (narrationCharacter2 && charId === narrationCharacter2) {
-      return { charId, format: narrationFormat2, enableSentenceSpacing: enableSentenceSpacing2, enableSecretNarration: enableSecretNarration2 };
+    if (narrationCharacter2 && (charId === narrationCharacter2 || (charName && charName === narrationCharacter2))) {
+      return { charId, format: narrationFormat2, enableSentenceSpacing: enableSentenceSpacing2, enableSecretNarration: true };
+    }
+    if (charId === 'system' || (charName && (charName.toLowerCase() === 'system' || charName === '시스템'))) {
+      return { charId: charId || 'system', format: narrationFormat || 'style1', enableSentenceSpacing, enableSecretNarration: true };
     }
     return null;
   };
 
-  const isNarrationChar = (charId?: string) => Boolean(getNarrationConfig(charId));
+  const isNarrationChar = (charId?: string, charName?: string) => {
+    if (charId === 'system' || (charName && (charName.toLowerCase() === 'system' || charName === '시스템'))) {
+      return true;
+    }
+    return Boolean(getNarrationConfig(charId, charName));
+  };
 
-  const getNarrationFormat = (formatVal?: TabFormat | 'main' | 'secret', charId?: string) => {
-    const cfg = getNarrationConfig(charId);
+  const getNarrationFormat = (formatVal?: TabFormat | 'main' | 'secret', charId?: string, charName?: string) => {
+    const cfg = getNarrationConfig(charId, charName);
     return cfg ? cfg.format : narrationFormat;
   };
 
-  const getEnableSentenceSpacing = (charId?: string) => {
-    const cfg = getNarrationConfig(charId);
+  const getEnableSentenceSpacing = (charId?: string, charName?: string) => {
+    const cfg = getNarrationConfig(charId, charName);
     return cfg ? cfg.enableSentenceSpacing : enableSentenceSpacing;
   };
 
-  const getEnableSecretNarration = (charId?: string) => {
-    const cfg = getNarrationConfig(charId);
-    return cfg ? cfg.enableSecretNarration : enableSecretNarration;
+  const getEnableSecretNarration = (charId?: string, charName?: string) => {
+    const cfg = getNarrationConfig(charId, charName);
+    return cfg ? cfg.enableSecretNarration : true;
   };
 
   const isDark = theme === 'dark';
@@ -227,8 +263,8 @@ const generateFinalHtmlInternal = (
     if (!isFilterEnabled) {
       return forceClass ? ` class="${forceClass}"` : '';
     }
-    const isMainTab = (tabSettings[logEntry.tabId]?.format || 'main') === 'main';
-    const isNarrationCharacterTag = isNarrationChar(logEntry.charId);
+    const isMainTab = resolveTabFormat(logEntry.tabId, logEntry.tab) === 'main';
+    const isNarrationCharacterTag = isNarrationChar(logEntry.charId, logEntry.name);
     const isCommandFlag = logEntry.isCommand;
 
     let attrs = ` d-t="${shortenId(logEntry.tabId)}" d-c="${shortenId(logEntry.charId)}"`;
@@ -495,8 +531,8 @@ const generateFinalHtmlInternal = (
       let mw = 0;
       for (const log of filteredLogs) {
         if (!log.isContinuation) {
-          const isNarration = isNarrationChar(log.charId);
-          const charFormat = getNarrationFormat('main', log.charId);
+          const isNarration = isNarrationChar(log.charId, log.name);
+          const charFormat = getNarrationFormat('main', log.charId, log.name);
           if (hideAllAvatars || (isNarration && charFormat === 'style3')) {
             const w = ctx.measureText(log.name + ':').width;
             if (w > mw) mw = w;
@@ -587,7 +623,7 @@ const generateFinalHtmlInternal = (
   const renderedUnits: { html: string; logCount: number }[] = [];
 
   const firstVisible = mergedLogs.find(l => {
-    const ts = tabSettings[l.tabId];
+    const ts = getTabSetting(l.tabId, l.tab);
     const cs = charSettings[l.charId];
     return ts?.visible && (cs?.visible !== false);
   });
@@ -742,23 +778,22 @@ const generateFinalHtmlInternal = (
     }
 
     if (mappedLog) {
-      const tabSet = tabSettings[mappedLog.tabId];
-      const format = tabSet?.format || 'main';
+      const tabSet = getTabSetting(mappedLog.tabId, mappedLog.tab);
+      const format = resolveTabFormat(mappedLog.tabId, mappedLog.tab);
       const stableId = mappedLog.id.startsWith('merged:') ? mappedLog.id.split(',').pop()! : mappedLog.id;
       const prevStableId = prevLogForContinuation && !prevLogForContinuation.isIllustration ? (prevLogForContinuation.id.startsWith('merged:') ? prevLogForContinuation.id.split(',').pop()! : prevLogForContinuation.id) : '';
       const prevHasBlock = prevLogForContinuation && !prevLogForContinuation.isIllustration && !!(insertedBlocks[prevStableId] || []).filter(b => b.type === 'split' || (b.type === 'image' && isValidUrl(b.url)) || (b.type === 'bgm' && isValidBgm(b) && exportMode !== 'html')).length;
 
       let isContinuation = false;
       if (prevLogForContinuation && !prevLogForContinuation.isIllustration) {
-        const prevFormat = tabSettings[prevLogForContinuation.tabId]?.format || 'main';
+        const prevFormat = resolveTabFormat(prevLogForContinuation.tabId, prevLogForContinuation.tab);
         const isPrevHidden = prevLogForContinuation.isHiddenContent;
         if (!mappedLog.isHiddenContent && 
             !isPrevHidden &&
             mergeTabs.has(format) && 
             mergeTabs.has(prevFormat) &&
             prevLogForContinuation.name === mappedLog.name && 
-            prevLogForContinuation.tab === mappedLog.tab && 
-            prevLogForContinuation.tabId === mappedLog.tabId &&
+            (prevLogForContinuation.tab === mappedLog.tab || prevLogForContinuation.tabId === mappedLog.tabId) && 
             !mappedLog.isCommand && 
             !prevLogForContinuation.isCommand &&
             !prevHasBlock) {
@@ -858,12 +893,11 @@ const generateFinalHtmlInternal = (
       if (l.isIllustration) {
         const ill = l.illustration || { tabOverride: l.tabOverride || 'auto' };
         const resolvedTabOverride = ill.tabOverride === 'auto' || !ill.tabOverride ? (l.tabId || 'main') : ill.tabOverride;
-        const illTabSet = tabSettings[resolvedTabOverride] || tabSettings['main'];
+        const illTabSet = getTabSetting(resolvedTabOverride) || tabSettings['main'];
         return illTabSet?.format || 'main';
       }
-      const tabSet = tabSettings[l.tabId];
-      const formatVal = tabSet?.format || 'main';
-      if (isNarrationChar(l.charId) && formatVal === 'main') {
+      const formatVal = resolveTabFormat(l.tabId, l.tab);
+      if (isNarrationChar(l.charId, l.name) && formatVal === 'main') {
         return 'narration';
       }
       return formatVal;
@@ -944,12 +978,11 @@ const generateFinalHtmlInternal = (
       if (l.isIllustration) {
         const ill = l.illustration || { tabOverride: l.tabOverride || 'auto' };
         const resolvedTabOverride = ill.tabOverride === 'auto' || !ill.tabOverride ? (l.tabId || 'main') : ill.tabOverride;
-        const illTabSet = tabSettings[resolvedTabOverride] || tabSettings['main'];
+        const illTabSet = getTabSetting(resolvedTabOverride) || tabSettings['main'];
         return illTabSet?.format || 'main';
       }
-      const tabSet = tabSettings[l.tabId];
-      const formatVal = tabSet?.format || 'main';
-      if ((l.charId === narrationCharacter || l.charId === narrationCharacter2) && formatVal === 'main') {
+      const formatVal = resolveTabFormat(l.tabId, l.tab);
+      if (isNarrationChar(l.charId, l.name) && formatVal === 'main') {
         return 'narration';
       }
       return formatVal;
@@ -1009,8 +1042,8 @@ const generateFinalHtmlInternal = (
     
     const { logs: groupedLogs, blocksAfter, isHidden, stableId } = chunk;
 
-    const tabSet = tabSettings[log.tabId];
-    const format = tabSet?.format || 'main';
+    const tabSet = getTabSetting(log.tabId, log.tab);
+    const format = resolveTabFormat(log.tabId, log.tab);
     const char = charSettings[log.charId];
     const color = char?.color || log.color;
     const tabTextColor = tabSet?.textColor;
@@ -1055,8 +1088,8 @@ const generateFinalHtmlInternal = (
     }
     const prevVisibleChunk = prevVisibleChunkIdx >= 0 ? chunks[prevVisibleChunkIdx] : null;
 
-    const isPrevSameTab = prevVisibleChunk ? prevVisibleChunk.logs[0].tab === log.tab : false;
-    const isNextSameTab = nextVisibleChunk ? nextVisibleChunk.logs[0].tab === log.tab : false;
+    const isPrevSameTab = prevVisibleChunk ? (prevVisibleChunk.logs[0].tabId === log.tabId || prevVisibleChunk.logs[0].tab === log.tab) : false;
+    const isNextSameTab = nextVisibleChunk ? (nextVisibleChunk.logs[0].tabId === log.tabId || nextVisibleChunk.logs[0].tab === log.tab) : false;
     
     const hasBlockAfter = blocksAfter.length > 0;
     const isFilterEnabled = filterBarMode !== 'none';
@@ -1068,10 +1101,10 @@ const generateFinalHtmlInternal = (
     const isSectionEndOuter = !nextVisibleChunk || isNextSameTab === false || hasBlockAfter;
     const mergeWithNextOuter = shouldMergeStyle && isNextSameTab && !isSectionEndOuter;
 
-    const isNarration = isNarrationChar(log.charId) && (format === 'main' || (getEnableSecretNarration(log.charId) && format === 'secret'));
-    const charNarrationFmt = getNarrationFormat(format, log.charId);
-    const isPrevNarration = prevVisibleChunk ? (!hasBlockBefore && isNarrationChar(prevVisibleChunk.logs[0].charId) && ((tabSettings[prevVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' || (getEnableSecretNarration(prevVisibleChunk.logs[0].charId) && tabSettings[prevVisibleChunk.logs[0].tabId]?.format === 'secret'))) : false;
-    const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && isNarrationChar(nextVisibleChunk.logs[0].charId) && ((tabSettings[nextVisibleChunk.logs[0].tabId]?.format || 'main') === 'main' || (getEnableSecretNarration(nextVisibleChunk.logs[0].charId) && tabSettings[nextVisibleChunk.logs[0].tabId]?.format === 'secret'))) : false;
+    const isNarration = isNarrationChar(log.charId, log.name) && (format === 'main' || format === 'secret');
+    const charNarrationFmt = getNarrationFormat(format, log.charId, log.name);
+    const isPrevNarration = prevVisibleChunk ? (!hasBlockBefore && isNarrationChar(prevVisibleChunk.logs[0].charId, prevVisibleChunk.logs[0].name) && (resolveTabFormat(prevVisibleChunk.logs[0].tabId, prevVisibleChunk.logs[0].tab) === 'main' || resolveTabFormat(prevVisibleChunk.logs[0].tabId, prevVisibleChunk.logs[0].tab) === 'secret')) : false;
+    const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && isNarrationChar(nextVisibleChunk.logs[0].charId, nextVisibleChunk.logs[0].name) && (resolveTabFormat(nextVisibleChunk.logs[0].tabId, nextVisibleChunk.logs[0].tab) === 'main' || resolveTabFormat(nextVisibleChunk.logs[0].tabId, nextVisibleChunk.logs[0].tab) === 'secret')) : false;
 
     // Calculate divider presence and visual properties early
     const hasDividerBelow = nextVisibleChunk ? getHasDividerBetween(chunk, nextVisibleChunk) : false;
@@ -1086,9 +1119,8 @@ const generateFinalHtmlInternal = (
       if (prevLogObj.isCommand) {
         prevFormat = 'command';
       } else {
-        const tabSetVal = tabSettings[prevLogObj.tabId];
-        const formatVal = tabSetVal?.format || 'main';
-        if (isNarrationChar(prevLogObj.charId) && formatVal === 'main') {
+        const formatVal = resolveTabFormat(prevLogObj.tabId, prevLogObj.tab);
+        if (isNarrationChar(prevLogObj.charId, prevLogObj.name) && formatVal === 'main') {
           prevFormat = 'narration';
         } else {
           prevFormat = formatVal;
@@ -1104,9 +1136,8 @@ const generateFinalHtmlInternal = (
       if (nextLogObj.isCommand) {
         nextFormat = 'command';
       } else {
-        const tabSetVal = tabSettings[nextLogObj.tabId];
-        const formatVal = tabSetVal?.format || 'main';
-        if (isNarrationChar(nextLogObj.charId) && formatVal === 'main') {
+        const formatVal = resolveTabFormat(nextLogObj.tabId, nextLogObj.tab);
+        if (isNarrationChar(nextLogObj.charId, nextLogObj.name) && formatVal === 'main') {
           nextFormat = 'narration';
         } else {
           nextFormat = formatVal;
@@ -1457,7 +1488,7 @@ const generateFinalHtmlInternal = (
 
       const fullFilterAttrs = getFilterAttrs(log);
         
-      if (isNarration && charNarrationFmt === 'style3') {
+      if (isNarration && charNarrationFmt === 'style3' && format !== 'secret') {
         blockHtml += `<div${fullFilterAttrs} style="position:relative;margin-bottom:${itemMarginBottom};margin-top:${itemMarginTop};">`;
         const wrapperStyle = `display:flex;gap:16px;padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;align-items:flex-start;`;
         const flatPieces = finalHtmlContentPieces.flat();
@@ -1486,14 +1517,14 @@ const generateFinalHtmlInternal = (
           blockHtml += dividerHtml;
         }
         blockHtml += `</div>`;
-      } else if (isNarration) {
+      } else if (isNarration && format !== 'secret') {
         const narrStyle = `padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;text-align:${'center'};`;
         blockHtml += `<div${fullFilterAttrs} style="position:relative;margin-bottom:${itemMarginBottom};margin-top:${itemMarginTop};">`;
         blockHtml += `<div style="${cleanStyle(narrStyle)}">`;
         const flatPieces = finalHtmlContentPieces.flat();
         blockHtml += flatPieces.map((piece, pIdx) => {
           const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
-          return `${prefix}<div style="white-space:pre-wrap;word-break:break-all;${tabTextColor ? `color:${tabTextColor};` : ''}"><b>${getNarrationFormat('main', log.charId) === 'style2' ? `<i>${piece}</i>` : piece}</b></div>`;
+          return `${prefix}<div style="white-space:pre-wrap;word-break:break-all;${tabTextColor ? `color:${tabTextColor};` : ''}"><b>${getNarrationFormat('main', log.charId, log.name) === 'style2' ? `<i>${piece}</i>` : piece}</b></div>`;
         }).join('');
         blockHtml += `</div>`;
         if (blocksAfterHtml) {
@@ -1553,10 +1584,30 @@ const generateFinalHtmlInternal = (
           const borderTopStyle = secretBorderTop ? `border-top:${secretBorderTop};` : '';
           const borderBottomStyle = secretBorderBottom ? `border-bottom:${secretBorderBottom};` : '';
 
-          if (isNarration) {
-            const wrapperStyle = `padding:${paddingVertical}px ${paddingHorizontal}px;background:${secretBg};border-left:4px solid ${tabColor};margin:${secretMargin};border-radius:${secretRadius};${borderTopStyle}${borderBottomStyle}`;
+          if (isNarration && charNarrationFmt === 'style3') {
+            const wrapperStyle = `display:flex;gap:16px;padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;align-items:flex-start;background:${secretBg};border-left:4px solid ${tabColor};margin:${secretMargin};border-radius:${secretRadius};${borderTopStyle}${borderBottomStyle}`;
             const flatPieces = finalHtmlContentPieces.flat();
-            let innerContent = `<div style="${cleanStyle(`text-align:${'center'};font-weight:bold;font-style:${getNarrationFormat('main', log.charId) === 'style2' ? 'italic' : 'normal'};color:${tabTextColor || textColor};width:100%;`)}">`;
+            let nameHtml = '';
+            if (!log.isContinuation) {
+                nameHtml = `<b><span class="${nameCharClass}" style="${cleanStyle(`font-size:0.96em;${nameColorStyle}`)}">${log.name}:</span></b>`;
+            }
+            let innerContent = flatPieces.map((piece, pIdx) => {
+              const prefix = pIdx > 0 ? `<div style="height:${Math.max(lineHeight * textFontSize, 8)}px;"></div>` : '';
+              return `${prefix}<div style="white-space:pre-wrap;word-break:keep-all;overflow-wrap:break-word;font-weight:bold;${tabTextColor ? `color:${tabTextColor};` : ''}">${piece}</div>`;
+            }).join('');
+            blockHtml += `
+            <div style="${cleanStyle(wrapperStyle)}">
+              <div style="${cleanStyle(`width:${computedNameWidth}px;flex-shrink:0;text-align:right;`)}">
+                ${nameHtml}
+              </div>
+              <div style="${cleanStyle(`flex:1;min-width:0;line-height:${lineHeight};font-size:${textFontSize}px;`)}">
+                ${innerContent}
+              </div>
+            </div>`;
+          } else if (isNarration) {
+            const wrapperStyle = `padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;background:${secretBg};border-left:4px solid ${tabColor};margin:${secretMargin};border-radius:${secretRadius};${borderTopStyle}${borderBottomStyle}`;
+            const flatPieces = finalHtmlContentPieces.flat();
+            let innerContent = `<div style="${cleanStyle(`text-align:center;font-weight:bold;font-style:${getNarrationFormat('main', log.charId, log.name) === 'style2' ? 'italic' : 'normal'};color:${tabTextColor || textColor};width:100%;`)}">`;
             innerContent += flatPieces.map((piece, pIdx) => {
               const prefix = pIdx > 0 ? `<div style="height:${Math.max(lineHeight * textFontSize, 8)}px;"></div>` : '';
               return `${prefix}<div style="white-space:pre-wrap;word-break:keep-all;overflow-wrap:break-word;">${piece}</div>`;
@@ -1652,7 +1703,7 @@ const generateFinalHtmlInternal = (
         } else {
           blockHtml += `<div class="c-bx" style="display: flex; align-items: center; flex-wrap: wrap;">${nameHtml}<span class="c-tx"${cmdStyleAttr}>${finalHtmlContent}</span></div>`;
         }
-      } else if (isNarration && charNarrationFmt === 'style3') {
+      } else if (isNarration && charNarrationFmt === 'style3' && format !== 'secret') {
         const flatPieces = finalHtmlContentPieces.flat();
         let nameHtml = '';
         if (!log.isContinuation) {
@@ -1662,7 +1713,7 @@ const generateFinalHtmlInternal = (
           const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
           return `${prefix}<div style="white-space: pre-wrap; word-break: keep-all; overflow-wrap: break-word;">${piece}</div>`;
         }).join('')}</div></div></div>`;
-      } else if (isNarration) {
+      } else if (isNarration && format !== 'secret') {
         const flatPieces = finalHtmlContentPieces.flat();
         blockHtml += `<div class="n-r" style="padding: ${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;${tabTextColor ? ` color:${tabTextColor};` : ''}">`;
         blockHtml += flatPieces.map((piece, pIdx) => {
@@ -1709,8 +1760,8 @@ const generateFinalHtmlInternal = (
           }).join('')}</div></div></div>`;
         } else if (isNarration) {
           const flatPieces = finalHtmlContentPieces.flat();
-          blockHtml += `<div class="s-r" style="${st} padding:${paddingVertical}px ${paddingHorizontal}px;">`;
-          blockHtml += `<div style="text-align:${'center'};font-weight:bold;font-style:${charNarrationFmt === 'style2' ? 'italic' : 'normal'};color:${tabTextColor || textColor};width:100%;">`;
+          blockHtml += `<div class="s-r" style="${st} padding:${isPrevNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px ${isNextNarration ? '0.4em' : `${paddingVertical}px`} ${paddingHorizontal}px;">`;
+          blockHtml += `<div style="text-align:center;font-weight:bold;font-style:${charNarrationFmt === 'style2' ? 'italic' : 'normal'};color:${tabTextColor || textColor};width:100%;">`;
           blockHtml += flatPieces.map((piece, pIdx) => {
             const prefix = pIdx > 0 ? `<div class="s-p-ob"></div>` : '';
             return `${prefix}<div style="white-space: pre-wrap; word-break: keep-all; overflow-wrap: break-word;">${piece}</div>`;

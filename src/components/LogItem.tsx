@@ -14,6 +14,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { splitNarration } from '../utils/textTokenizer';
 import { SearchableSelect } from './SearchableSelect';
 import { highlightCommandCharacterNames } from '../utils/commandHighlighter';
+import { TabFormat } from '../types';
 // @ts-ignore
 import ReactQuill, { Quill } from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
@@ -106,7 +107,33 @@ export const LogItem = React.memo(({
     effectiveBlockSpacing = 0;
   }
   
-  const tabSet = tabSettings[log.tabId];
+  const getTabSetting = (tabId?: string, tabName?: string): any => {
+    if (tabId && tabSettings[tabId]) return tabSettings[tabId];
+    if (tabId) {
+      const foundById = Object.values(tabSettings).find((t: any) => t.id === tabId);
+      if (foundById) return foundById;
+    }
+    if (tabName) {
+      const trimmed = tabName.trim().toLowerCase();
+      const foundByName = Object.values(tabSettings).find((t: any) => t.name && t.name.trim().toLowerCase() === trimmed);
+      if (foundByName) return foundByName;
+    }
+    return undefined;
+  };
+
+  const resolveTabFormat = (tabId?: string, tabName?: string): TabFormat => {
+    const ts = getTabSetting(tabId, tabName);
+    if (ts?.format) return ts.format;
+    const tName = (tabName || '').toLowerCase();
+    if (tName.includes('secret') || tName.includes('비밀') || tName.includes('시크릿') || tName.includes('private') || tName.includes('귓속말') || tName.includes('whisper')) {
+      return 'secret';
+    }
+    if (tName.includes('other') || tName.includes('잡담')) return 'other';
+    if (tName.includes('info') || tName.includes('정보')) return 'info';
+    return 'main';
+  };
+
+  const tabSet = getTabSetting(log.tabId, log.tab);
   const char = charSettings[log.charId] || { id: log.charId, name: log.name, color: log.color, visible: true, imageUrl: '', images: [] };
 
   const isEditing = editingLogId === log.id;
@@ -626,7 +653,7 @@ export const LogItem = React.memo(({
     );
   };
 
-  const format = tabSet?.format || 'main';
+  const format = resolveTabFormat(log.tabId, log.tab);
   const rawColor = char.color || log.color;
   const tabTextColor = tabSet?.textColor;
   
@@ -666,30 +693,38 @@ export const LogItem = React.memo(({
 
   const isSecret = format === 'secret';
   const tabColor = tabSet?.color || '#ffd400';
-  const getNarrationConfig = (charId: string) => {
+  const getNarrationConfig = (charId: string, charName?: string) => {
     if (narrationSlots && narrationSlots.length > 0) {
-      const found = narrationSlots.find((s: any) => s.charId && s.charId === charId);
+      const found = narrationSlots.find((s: any) => (s.charId && s.charId === charId) || (s.name && charName && s.name === charName));
       if (found) return found;
     }
-    if (narrationCharacter && charId === narrationCharacter) {
-      return { charId, format: narrationFormat, enableSentenceSpacing, enableSecretNarration };
+    if (narrationCharacter && (charId === narrationCharacter || (charName && charName === narrationCharacter))) {
+      return { charId, format: narrationFormat, enableSentenceSpacing, enableSecretNarration: true };
     }
-    if (narrationCharacter2 && charId === narrationCharacter2) {
-      return { charId, format: narrationFormat2, enableSentenceSpacing: enableSentenceSpacing2, enableSecretNarration: enableSecretNarration2 };
+    if (narrationCharacter2 && (charId === narrationCharacter2 || (charName && charName === narrationCharacter2))) {
+      return { charId, format: narrationFormat2, enableSentenceSpacing: enableSentenceSpacing2, enableSecretNarration: true };
+    }
+    if (charId === 'system' || (charName && (charName.toLowerCase() === 'system' || charName === '시스템'))) {
+      return { charId: charId || 'system', format: narrationFormat || 'style1', enableSentenceSpacing, enableSecretNarration: true };
     }
     return null;
   };
 
-  const narrationConfig = getNarrationConfig(log.charId);
-  const isNarration = Boolean(narrationConfig && (format === 'main' || (narrationConfig.enableSecretNarration && format === 'secret')));
+  const narrationConfig = getNarrationConfig(log.charId, log.name);
+  const isNarrationChar = Boolean(
+    narrationConfig ||
+    log.charId === 'system' ||
+    (log.name && (log.name.toLowerCase() === 'system' || log.name === '시스템'))
+  );
+  const isNarration = Boolean(isNarrationChar && (format === 'main' || format === 'secret'));
 
   const getEnableSentenceSpacing = (charId: string) => {
-    const cfg = getNarrationConfig(charId);
+    const cfg = getNarrationConfig(charId, log.name);
     return cfg ? cfg.enableSentenceSpacing : enableSentenceSpacing;
   };
 
-  const getNarrationFormat = (formatVal: 'main' | 'secret') => {
-    const cfg = getNarrationConfig(log.charId);
+  const getNarrationFormat = (formatVal?: TabFormat | 'main' | 'secret') => {
+    const cfg = getNarrationConfig(log.charId, log.name);
     return cfg ? cfg.format : narrationFormat;
   };
 
@@ -814,12 +849,11 @@ export const LogItem = React.memo(({
       if (l.isIllustration) {
         const ill = l.illustration || { tabOverride: l.tabOverride || 'auto' };
         const resolvedTabOverride = ill.tabOverride === 'auto' || !ill.tabOverride ? (l.tabId || 'main') : ill.tabOverride;
-        const illTabSet = tabSettings[resolvedTabOverride] || tabSettings['main'];
+        const illTabSet = getTabSetting(resolvedTabOverride) || tabSettings['main'];
         return illTabSet?.format || 'main';
       }
-      const tabSet = tabSettings[l.tabId];
-      const formatVal = tabSet?.format || 'main';
-      if (Boolean(getNarrationConfig(l.charId)) && formatVal === 'main') {
+      const formatVal = resolveTabFormat(l.tabId, l.tab);
+      if (Boolean(getNarrationConfig(l.charId, l.name)) && formatVal === 'main') {
         return 'narration';
       }
       return formatVal;
@@ -904,9 +938,8 @@ export const LogItem = React.memo(({
   const prevFormat = useMemo(() => {
     if (!prevLog) return null;
     if (prevLog.isCommand) return 'command';
-    const tabSet = tabSettings[prevLog.tabId];
-    const formatVal = tabSet?.format || 'main';
-    if (Boolean(getNarrationConfig(prevLog.charId)) && formatVal === 'main') {
+    const formatVal = resolveTabFormat(prevLog.tabId, prevLog.tab);
+    if (Boolean(getNarrationConfig(prevLog.charId, prevLog.name)) && formatVal === 'main') {
       return 'narration';
     }
     return formatVal;
@@ -916,9 +949,8 @@ export const LogItem = React.memo(({
   const nextFormat = useMemo(() => {
     if (!nextLog) return null;
     if (nextLog.isCommand) return 'command';
-    const tabSet = tabSettings[nextLog.tabId];
-    const formatVal = tabSet?.format || 'main';
-    if (Boolean(getNarrationConfig(nextLog.charId)) && formatVal === 'main') {
+    const formatVal = resolveTabFormat(nextLog.tabId, nextLog.tab);
+    if (Boolean(getNarrationConfig(nextLog.charId, nextLog.name)) && formatVal === 'main') {
       return 'narration';
     }
     return formatVal;
