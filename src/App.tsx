@@ -607,6 +607,7 @@ export default function App() {
   const [imageInputIdx, setImageInputIdx] = useState<string | null>(null);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  const pendingMoveLogRef = useRef<{ id: string; targetTop: number } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [listOffset, setListOffset] = useState(0);
 
@@ -1641,12 +1642,47 @@ export default function App() {
       if (log.isUnplaced) return;
 
       if (log.isBgmBlock) {
-        const bgmLogEntry: any = {
-          ...log,
-          sectionId: currentSectionId
-        };
-        result.push(bgmLogEntry);
-        prevVisibleLog = bgmLogEntry;
+        let resolvedTabId = log.tabOverride;
+        if (resolvedTabId === 'auto' || !resolvedTabId || !tabSettings[resolvedTabId]) {
+          // 직후 로그 블록 탐색 (기본적으로는 직후의 블록을 따라감)
+          let nextTabId = null;
+          for (let i = idx + 1; i < logs.length; i++) {
+            if (logs[i] && !logs[i].isBgmBlock && !logs[i].isIllustration) {
+              const tabId = logs[i].tabId;
+              if (tabSettings[tabId] && tabSettings[tabId].visible !== false) {
+                nextTabId = tabId;
+                break;
+              }
+            }
+          }
+          if (nextTabId) {
+            resolvedTabId = nextTabId;
+          } else {
+            // 맨 마지막 블록이라면 직전 로그 블록 탐색
+            let prevTabId = null;
+            for (let i = idx - 1; i >= 0; i--) {
+              if (logs[i] && !logs[i].isBgmBlock && !logs[i].isIllustration) {
+                const tabId = logs[i].tabId;
+                if (tabSettings[tabId] && tabSettings[tabId].visible !== false) {
+                  prevTabId = tabId;
+                  break;
+                }
+              }
+            }
+            resolvedTabId = prevTabId || Object.keys(tabSettings)[0] || 'main';
+          }
+        }
+        const isBgmVisible = tabSettings[resolvedTabId]?.visible !== false;
+        if (isBgmVisible) {
+          const bgmLogEntry: any = {
+            ...log,
+            tabId: resolvedTabId,
+            tab: tabSettings[resolvedTabId]?.name || '메인',
+            sectionId: currentSectionId
+          };
+          result.push(bgmLogEntry);
+          prevVisibleLog = bgmLogEntry;
+        }
         return;
       }
 
@@ -2940,7 +2976,7 @@ export default function App() {
     setAvatarPopupInfo(null);
   }, [saveToHistory]);
 
-  const onBatchUpdateLog = useCallback((id: string, updates: { content?: string; charId?: string; tabId?: string; bgmData?: any }) => {
+  const onBatchUpdateLog = useCallback((id: string, updates: { content?: string; charId?: string; tabId?: string; tabOverride?: string; bgmData?: any }) => {
     const newChar = updates.charId ? charSettings[updates.charId] : null;
     const newTab = updates.tabId ? tabSettings[updates.tabId] : null;
 
@@ -2954,6 +2990,7 @@ export default function App() {
         const updated = { ...l };
         if (updates.content !== undefined) updated.content = updates.content;
         if (updates.bgmData !== undefined) updated.bgmData = updates.bgmData;
+        if (updates.tabOverride !== undefined) updated.tabOverride = updates.tabOverride;
         if (newChar) {
           updated.charId = newChar.id;
           updated.name = newChar.name;
@@ -2973,6 +3010,7 @@ export default function App() {
         const updated = { ...l };
         if (updates.content !== undefined) updated.content = updates.content;
         if (updates.bgmData !== undefined) updated.bgmData = updates.bgmData;
+        if (updates.tabOverride !== undefined) updated.tabOverride = updates.tabOverride;
         if (newChar) {
           updated.charId = newChar.id;
           updated.name = newChar.name;
@@ -2996,11 +3034,31 @@ export default function App() {
     if (targetIdx < 0 || targetIdx >= mergedLogs.length) return;
     const targetId = mergedLogs[targetIdx].id;
 
-    const elementB = document.querySelector(`[data-index="${targetIdx}"]`) as HTMLElement;
-    const heightB = elementB ? elementB.getBoundingClientRect().height : 0;
-
-    setIsMovingBlock(true);
-    setTimeout(() => setIsMovingBlock(false), 250);
+    // Record the exact viewport position of the moved block before state update
+    const container = previewContainerRef.current;
+    if (container) {
+      let sourceElement: HTMLElement | null = null;
+      try {
+        sourceElement = container.querySelector(`[data-log-id="${CSS.escape(id)}"]`) as HTMLElement;
+      } catch (e) {
+        // fallback
+      }
+      if (!sourceElement) {
+        const rows = container.querySelectorAll('.virtualize-row');
+        for (let i = 0; i < rows.length; i++) {
+          if ((rows[i] as HTMLElement).dataset.logId === id) {
+            sourceElement = rows[i] as HTMLElement;
+            break;
+          }
+        }
+      }
+      if (sourceElement) {
+        pendingMoveLogRef.current = {
+          id,
+          targetTop: sourceElement.getBoundingClientRect().top
+        };
+      }
+    }
 
     setLogs(prevLogs => {
       const newLogs = [...prevLogs];
@@ -3016,18 +3074,50 @@ export default function App() {
 
       return newLogs;
     });
-
-    if (previewContainerRef.current && heightB > 0) {
-      requestAnimationFrame(() => {
-        if (previewContainerRef.current) {
-          previewContainerRef.current.scrollBy({ 
-            top: direction === 'up' ? -heightB : heightB,
-            behavior: 'smooth'
-          });
-        }
-      });
-    }
   }, [mergedLogs, saveToHistory]);
+
+  useLayoutEffect(() => {
+    if (!pendingMoveLogRef.current) return;
+    const { id, targetTop } = pendingMoveLogRef.current;
+    const container = previewContainerRef.current;
+    if (!container) return;
+
+    const syncScroll = () => {
+      let el: HTMLElement | null = null;
+      try {
+        el = container.querySelector(`[data-log-id="${CSS.escape(id)}"]`) as HTMLElement;
+      } catch (e) {
+        // fallback
+      }
+      if (!el) {
+        const rows = container.querySelectorAll('.virtualize-row');
+        for (let i = 0; i < rows.length; i++) {
+          if ((rows[i] as HTMLElement).dataset.logId === id) {
+            el = rows[i] as HTMLElement;
+            break;
+          }
+        }
+      }
+      if (el) {
+        const currentTop = el.getBoundingClientRect().top;
+        const delta = currentTop - targetTop;
+        if (Math.abs(delta) > 0.5) {
+          container.scrollTop += delta;
+        }
+      }
+    };
+
+    // Immediate sync before paint
+    syncScroll();
+
+    // Secondary sync on next animation frame after virtualizer layout/measurement updates
+    const rafId = requestAnimationFrame(() => {
+      syncScroll();
+      pendingMoveLogRef.current = null;
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [logs]);
 
   const onDeleteLog = useCallback((id: string) => {
     // Find index in mergedLogs before deleting
@@ -7379,8 +7469,9 @@ export default function App() {
                         return (
                           <div
                             key={virtualItem.key}
-                             id={`log-item-${originalLogIndex}`}
+                            id={`log-item-${originalLogIndex}`}
                             data-index={virtualItem.index}
+                            data-log-id={log.id}
                             ref={rowVirtualizer.measureElement}
                             className="virtualize-row"
                             style={{
@@ -7439,7 +7530,11 @@ export default function App() {
                               isNextSameTab={isNextSameTab}
                               isNextContinuation={idx < mergedLogs.length - 1 && mergedLogs[idx + 1].isContinuation}
                               onAvatarClick={onAvatarClick}
-                              isPrevBlock={idx > 0 && (mergedLogs[idx - 1].isIllustration || mergedLogs[idx - 1].isBgmBlock || !!insertedBlocks[mergedLogs[idx - 1].id.startsWith('merged:') ? mergedLogs[idx - 1].id.split(',').pop()! : mergedLogs[idx - 1].id]?.length)}
+                              isPrevBlock={idx > 0 && (
+                                (mergedLogs[idx - 1].isIllustration && mergedLogs[idx - 1].tabId !== log.tabId) ||
+                                (mergedLogs[idx - 1].isBgmBlock && mergedLogs[idx - 1].tabId !== log.tabId) ||
+                                !!insertedBlocks[mergedLogs[idx - 1].id.startsWith('merged:') ? mergedLogs[idx - 1].id.split(',').pop()! : mergedLogs[idx - 1].id]?.length
+                              )}
                               editingLogId={editingLogId}
                               setEditingLogId={setEditingLogId}
                               isDraggingIllustration={isDraggingIllustration}

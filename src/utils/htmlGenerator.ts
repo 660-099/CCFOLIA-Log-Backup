@@ -1,5 +1,5 @@
 import { LogEntry, CharSetting, TabSetting, Illustration, TabFormat } from '../types';
-import { cn, r, linkifyAndFormat } from '../utils';
+import { cn, r, linkifyAndFormat, getContrastTextColor } from '../utils';
 import DOMPurify from 'dompurify';
 import { fonts } from '../constants';
 import { splitNarration } from './textTokenizer';
@@ -114,13 +114,13 @@ const generateFinalHtmlInternal = (
       if (found) return found;
     }
     if (narrationCharacter && (charId === narrationCharacter || (charName && charName === narrationCharacter))) {
-      return { charId, format: narrationFormat, enableSentenceSpacing, enableSecretNarration: true };
+      return { charId, format: narrationFormat, enableSentenceSpacing, enableSecretNarration };
     }
     if (narrationCharacter2 && (charId === narrationCharacter2 || (charName && charName === narrationCharacter2))) {
-      return { charId, format: narrationFormat2, enableSentenceSpacing: enableSentenceSpacing2, enableSecretNarration: true };
+      return { charId, format: narrationFormat2, enableSentenceSpacing, enableSentenceSpacing2, enableSecretNarration: enableSecretNarration2 };
     }
     if (charId === 'system' || (charName && (charName.toLowerCase() === 'system' || charName === '시스템'))) {
-      return { charId: charId || 'system', format: narrationFormat || 'style1', enableSentenceSpacing, enableSecretNarration: true };
+      return { charId: charId || 'system', format: narrationFormat || 'style1', enableSentenceSpacing, enableSecretNarration };
     }
     return null;
   };
@@ -144,7 +144,7 @@ const generateFinalHtmlInternal = (
 
   const getEnableSecretNarration = (charId?: string, charName?: string) => {
     const cfg = getNarrationConfig(charId, charName);
-    return cfg ? cfg.enableSecretNarration : true;
+    return cfg ? cfg.enableSecretNarration : false;
   };
 
   const isDark = theme === 'dark';
@@ -224,9 +224,9 @@ const generateFinalHtmlInternal = (
   const narrationMargin = Math.floor(effectiveBlockSpacing * 1.2 + lineHeight * 6);
 
   const getSecretBg = (tabColor?: string) => {
-    if (!tabColor) return isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)';
+    if (!tabColor) return isDark ? 'rgba(142, 68, 173, 0.18)' : 'rgba(142, 68, 173, 0.08)';
     let hex = tabColor.trim();
-    if (!hex.startsWith('#')) return isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)';
+    if (!hex.startsWith('#')) return isDark ? 'rgba(142, 68, 173, 0.18)' : 'rgba(142, 68, 173, 0.08)';
     if (hex.length === 4) {
       hex = `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
     }
@@ -234,9 +234,9 @@ const generateFinalHtmlInternal = (
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
     if (isNaN(r) || isNaN(g) || isNaN(b)) {
-      return isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.03)';
+      return isDark ? 'rgba(142, 68, 173, 0.18)' : 'rgba(142, 68, 173, 0.08)';
     }
-    return isDark ? `rgba(${r}, ${g}, ${b}, 0.15)` : `rgba(${r}, ${g}, ${b}, 0.08)`;
+    return isDark ? `rgba(${r}, ${g}, ${b}, 0.18)` : `rgba(${r}, ${g}, ${b}, 0.08)`;
   };
 
   const getTabBorderColor = (tabColor?: string) => {
@@ -688,13 +688,44 @@ const generateFinalHtmlInternal = (
 
     if (log.isBgmBlock) {
       if (exportMode === 'html') return; // Absolutely no BGM trace in HTML export
+      let resolvedTabId = log.tabOverride;
+      if (resolvedTabId === 'auto' || !resolvedTabId || !tabSettings[resolvedTabId]) {
+        let nextTabId = null;
+        for (let i = idx + 1; i < (originalLogs || []).length; i++) {
+          if (originalLogs[i] && !originalLogs[i].isIllustration && !originalLogs[i].isBgmBlock) {
+            const tabId = originalLogs[i].tabId;
+            if (tabSettings[tabId] && tabSettings[tabId].visible !== false) {
+              nextTabId = tabId;
+              break;
+            }
+          }
+        }
+        if (nextTabId) {
+          resolvedTabId = nextTabId;
+        } else {
+          let prevTabId = null;
+          for (let i = idx - 1; i >= 0; i--) {
+            if (originalLogs[i] && !originalLogs[i].isIllustration && !originalLogs[i].isBgmBlock) {
+              const tabId = originalLogs[i].tabId;
+              if (tabSettings[tabId] && tabSettings[tabId].visible !== false) {
+                prevTabId = tabId;
+                break;
+              }
+            }
+          }
+          resolvedTabId = prevTabId || Object.keys(tabSettings)[0] || 'main';
+        }
+      }
+      const isBgmVisible = tabSettings[resolvedTabId]?.visible !== false;
+      if (!isBgmVisible) return;
+
       const bgmLogEntry: any = {
         id: log.id,
         isBgmBlock: true,
         bgmData: log.bgmData,
         color: '',
-        tabId: 'main',
-        tab: tabSettings['main']?.name || '메인',
+        tabId: resolvedTabId,
+        tab: tabSettings[resolvedTabId]?.name || '메인',
         charId: 'system',
         name: '',
         content: '',
@@ -1008,6 +1039,12 @@ const generateFinalHtmlInternal = (
     }
     const nextVisibleChunk = nextVisibleChunkIdx < chunks.length ? chunks[nextVisibleChunkIdx] : null;
 
+    let prevVisibleChunkIdx = chunkIdx - 1;
+    while (prevVisibleChunkIdx >= 0 && chunks[prevVisibleChunkIdx].isHidden) {
+      prevVisibleChunkIdx--;
+    }
+    const prevVisibleChunk = prevVisibleChunkIdx >= 0 ? chunks[prevVisibleChunkIdx] : null;
+
     if (log.isBgmBlock) {
       if (exportMode === 'html') return;
       const bgmData = log.bgmData || {};
@@ -1015,11 +1052,28 @@ const generateFinalHtmlInternal = (
       const videoId = bgmData.videoId || parsed.videoId;
       const startTime = bgmData.startTime || parsed.startTime || 0;
       if (videoId) {
+        const tabSet = getTabSetting(log.tabId, log.tab);
+        const format = resolveTabFormat(log.tabId, log.tab);
+        const tabColor = tabSet?.color || '#ffd400';
+        const secretBg = getSecretBg(tabColor);
+        const tabTextColor = tabSet?.textColor;
+
         const isFilterEnabled = filterBarMode !== 'none';
-        const bgmAttrs = isFilterEnabled ? ` d-t="main" d-c="system" class="c-e"` : '';
+        const isMainTab = format === 'main';
+        const bgmAttrs = isFilterEnabled 
+          ? ` d-t="${shortenId(log.tabId)}" d-c="system"${isMainTab ? ' d-mt="1"' : ''} class="c-e"` 
+          : '';
         const bgmTitle = bgmData.title || '🎧 BGM';
         const safeTitle = bgmTitle.replace(/"/g, '&quot;').replace(/'/g, "\\'");
         
+        const isPrevSameTab = prevVisibleChunk ? (prevVisibleChunk.logs[0].tabId === log.tabId || prevVisibleChunk.logs[0].tab === log.tab) : false;
+        const isNextSameTab = nextVisibleChunk ? (nextVisibleChunk.logs[0].tabId === log.tabId || nextVisibleChunk.logs[0].tab === log.tab) : false;
+        const isSectionStart = !isPrevSameTab;
+        const isSectionEnd = !isNextSameTab;
+        const shouldMergeStyle = mergeTabStyles.has(format) && (isPrevSameTab || isNextSameTab);
+        const mergeWithPrev = shouldMergeStyle && isPrevSameTab && !isSectionStart;
+        const mergeWithNext = shouldMergeStyle && isNextSameTab && !isSectionEnd;
+
         const hasDividerBelow = getHasDividerBetween(chunk, nextVisibleChunk);
         let dividerHtml = '';
         if (hasDividerBelow) {
@@ -1028,14 +1082,73 @@ const generateFinalHtmlInternal = (
           dividerHtml = `<div class="c-dv" style="${cleanStyle(`display:flex;align-items:center;justify-content:stretch;pointer-events:none;margin-top:0px;margin-bottom:0px;`)}"><div class="c-dv-in" style="${cleanStyle(dividerInStyle)}"></div></div>`;
         }
 
-        blockHtml += `<div${bgmAttrs} style="${cleanStyle(`position:relative;margin-top:0px;margin-bottom:0px;`)}">
-          <div class="c-i bgm-center-wrapper" style="display:flex;justify-content:center;align-items:center;width:100%;margin:12px 0;">
-            <div class="custom-bgm" data-vid="${videoId}" data-start="${startTime}" data-title="${safeTitle}" onclick="triggerBGM(event, this)">
-              <svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> <span>${bgmTitle}</span>
+        let headerHtml = '';
+        if (showTabNames.has(format) && isSectionStart) {
+          headerHtml = `<div style="${cleanStyle(`margin:12px ${paddingHorizontal}px 8px ${paddingHorizontal}px;display:flex;`)}">
+            <div style="${cleanStyle(`background:${format === 'secret' ? secretBg : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)')};color:${tabColor};padding:2px 10px;border-radius:4px;font-size:${s(nameSize * 0.8)}px;font-weight:bold;border:1px solid ${tabColor}44;`)}">
+              ${tabSet?.name || 'Unknown'}
             </div>
-          </div>
-          ${hasDividerBelow ? dividerHtml : ''}
-        </div>`;
+          </div>`;
+        }
+
+        if (format === 'secret') {
+          const secretMarginTop = mergeWithPrev ? '0' : '4px';
+          const secretMarginBottomVal = mergeWithNext ? '0' : '4px';
+          const secretMargin = `${secretMarginTop} ${paddingHorizontal}px ${secretMarginBottomVal} ${paddingHorizontal}px`;
+          const secretRadius = shouldMergeStyle 
+            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+            : '4px';
+          const borderTopStyle = (shouldMergeStyle && isPrevSameTab && !isSectionStart) ? 'border-top:none;' : '';
+          const borderBottomStyle = (shouldMergeStyle && isNextSameTab && !isSectionEnd) ? 'border-bottom:none;' : '';
+          
+          const defaultHighContrastTextColor = isDark ? '#FFFFFF' : '#1F2937';
+          const buttonTextColor = tabTextColor || defaultHighContrastTextColor;
+          const bgmCapsuleBg = isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.85)';
+          const bgmShadow = isDark ? `box-shadow:0 2px 8px ${tabColor}15;` : 'box-shadow:0 1px 4px rgba(0,0,0,0.06);';
+          
+          blockHtml += `<div${bgmAttrs} style="${cleanStyle(`position:relative;margin-top:0px;margin-bottom:0px;`)}">
+            ${headerHtml}
+            <div style="${cleanStyle(`padding:10px ${paddingHorizontal}px;background:${secretBg};border-left:4px solid ${tabColor};margin:${secretMargin};border-radius:${secretRadius};${borderTopStyle}${borderBottomStyle};display:flex;justify-content:center;`)}">
+              <div class="custom-bgm" style="border-color:${tabColor}88;color:${buttonTextColor};background:${bgmCapsuleBg};${bgmShadow}" data-vid="${videoId}" data-start="${startTime}" data-title="${safeTitle}" onclick="triggerBGM(event, this)">
+                <svg class="icon" style="fill:${tabColor};" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> <span style="font-weight:600;color:${buttonTextColor};">${bgmTitle}</span>
+              </div>
+            </div>
+            ${hasDividerBelow ? dividerHtml : ''}
+          </div>`;
+        } else if (format === 'info') {
+          const infoMarginTop = mergeWithPrev ? '0' : '4px';
+          const infoMarginBottomVal = mergeWithNext ? '0' : '4px';
+          const infoMargin = `${infoMarginTop} ${paddingHorizontal}px ${infoMarginBottomVal} ${paddingHorizontal}px`;
+          const infoRadius = shouldMergeStyle 
+            ? `${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isPrevSameTab && !isSectionStart) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'} ${(isNextSameTab && !isSectionEnd) ? '0' : '4px'}`
+            : '4px';
+          const borderTopStyle = (shouldMergeStyle && isPrevSameTab && !isSectionStart) ? 'border-top:none;' : '';
+          const borderBottomStyle = (shouldMergeStyle && isNextSameTab && !isSectionEnd) ? 'border-bottom:none;' : '';
+          
+          const defaultHighContrastTextColor = isDark ? '#FFFFFF' : '#1F2937';
+          const buttonTextColor = tabTextColor || defaultHighContrastTextColor;
+          const bgmCapsuleBg = isDark ? 'rgba(0, 0, 0, 0.35)' : 'rgba(255, 255, 255, 0.85)';
+          const bgmBorder = isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)';
+          
+          blockHtml += `<div${bgmAttrs} style="${cleanStyle(`position:relative;margin-top:0px;margin-bottom:0px;`)}">
+            ${headerHtml}
+            <div style="${cleanStyle(`padding:10px ${paddingHorizontal}px;background:${infoBg};border-left:4px solid ${borderColor};margin:${infoMargin};border-radius:${infoRadius};${borderTopStyle}${borderBottomStyle};display:flex;justify-content:center;`)}">
+              <div class="custom-bgm" style="border-color:${bgmBorder};color:${buttonTextColor};background:${bgmCapsuleBg};" data-vid="${videoId}" data-start="${startTime}" data-title="${safeTitle}" onclick="triggerBGM(event, this)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> <span style="font-weight:600;color:${buttonTextColor};">${bgmTitle}</span>
+              </div>
+            </div>
+            ${hasDividerBelow ? dividerHtml : ''}
+          </div>`;
+        } else {
+          blockHtml += `<div${bgmAttrs} style="${cleanStyle(`position:relative;margin-top:0px;margin-bottom:0px;`)}">
+            <div class="c-i bgm-center-wrapper" style="display:flex;justify-content:center;align-items:center;width:100%;margin:12px 0;">
+              <div class="custom-bgm" data-vid="${videoId}" data-start="${startTime}" data-title="${safeTitle}" onclick="triggerBGM(event, this)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> <span>${bgmTitle}</span>
+              </div>
+            </div>
+            ${hasDividerBelow ? dividerHtml : ''}
+          </div>`;
+        }
       }
       return;
     }
@@ -1082,18 +1195,12 @@ const generateFinalHtmlInternal = (
     const prevChunk = chunkIdx > 0 ? chunks[chunkIdx - 1] : null;
     const isLastVisibleChunk = nextVisibleChunk === null;
 
-    let prevVisibleChunkIdx = chunkIdx - 1;
-    while (prevVisibleChunkIdx >= 0 && chunks[prevVisibleChunkIdx].isHidden) {
-      prevVisibleChunkIdx--;
-    }
-    const prevVisibleChunk = prevVisibleChunkIdx >= 0 ? chunks[prevVisibleChunkIdx] : null;
-
     const isPrevSameTab = prevVisibleChunk ? (prevVisibleChunk.logs[0].tabId === log.tabId || prevVisibleChunk.logs[0].tab === log.tab) : false;
     const isNextSameTab = nextVisibleChunk ? (nextVisibleChunk.logs[0].tabId === log.tabId || nextVisibleChunk.logs[0].tab === log.tab) : false;
     
     const hasBlockAfter = blocksAfter.length > 0;
     const isFilterEnabled = filterBarMode !== 'none';
-    const prevIsIllOrBgm = prevVisibleChunk ? (prevVisibleChunk.logs[0].isIllustration || prevVisibleChunk.logs[0].isBgmBlock) : false;
+    const prevIsIllOrBgm = prevVisibleChunk ? ((prevVisibleChunk.logs[0].isIllustration || prevVisibleChunk.logs[0].isBgmBlock) && prevVisibleChunk.logs[0].tabId !== log.tabId) : false;
     const hasBlockBefore = (prevChunk ? prevChunk.blocksAfter.length > 0 : false) || prevIsIllOrBgm;
     
     const shouldMergeStyle = mergeTabStyles.has(format) && (isPrevSameTab || isNextSameTab);
@@ -1101,7 +1208,7 @@ const generateFinalHtmlInternal = (
     const isSectionEndOuter = !nextVisibleChunk || isNextSameTab === false || hasBlockAfter;
     const mergeWithNextOuter = shouldMergeStyle && isNextSameTab && !isSectionEndOuter;
 
-    const isNarration = isNarrationChar(log.charId, log.name) && (format === 'main' || format === 'secret');
+    const isNarration = isNarrationChar(log.charId, log.name) && (format === 'main' || (format === 'secret' && getEnableSecretNarration(log.charId, log.name)));
     const charNarrationFmt = getNarrationFormat(format, log.charId, log.name);
     const isPrevNarration = prevVisibleChunk ? (!hasBlockBefore && isNarrationChar(prevVisibleChunk.logs[0].charId, prevVisibleChunk.logs[0].name) && (resolveTabFormat(prevVisibleChunk.logs[0].tabId, prevVisibleChunk.logs[0].tab) === 'main' || resolveTabFormat(prevVisibleChunk.logs[0].tabId, prevVisibleChunk.logs[0].tab) === 'secret')) : false;
     const isNextNarration = nextVisibleChunk ? (!hasBlockAfter && isNarrationChar(nextVisibleChunk.logs[0].charId, nextVisibleChunk.logs[0].name) && (resolveTabFormat(nextVisibleChunk.logs[0].tabId, nextVisibleChunk.logs[0].tab) === 'main' || resolveTabFormat(nextVisibleChunk.logs[0].tabId, nextVisibleChunk.logs[0].tab) === 'secret')) : false;
@@ -1420,31 +1527,30 @@ const generateFinalHtmlInternal = (
       const hasSpecialDividerAboveAndNoBadge = hasSpecialDividerAbove && !(showTabNames.has(format) && !isPrevSameTab);
       if (showTabNames.has(format) && !isPrevSameTab) {
         const tabName = log.tab;
-      const isSecret = format === 'secret';
-      const tabColor = tabSet?.color || '#ffd400';
-      const tabBg = getSecretBg(tabColor);
-      
-      const isMainTab = format === 'main' ? 'true' : 'false';
-      if (isInline) {
-        const fAttrs = isFilterEnabled ? ` d-t="${shortenId(log.tabId)}"${isMainTab === 'true' ? ' d-mt="1"' : ''} class="c-e"` : '';
-        const tabMarginTop = hasSpecialDividerAbove ? '0' : `${s(12)}px`;
-        const outerStyle = `margin: ${tabMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px; display: flex;`;
-        const badgeStyle = `background: ${tabBg}; color: ${tabColor}; padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; border: 1px solid ${getTabBorderColor(tabColor)}; display: inline-block; white-space: nowrap;`;
-        blockHtml += `<div${fAttrs} style="${cleanStyle(outerStyle)}">
-          <div style="${cleanStyle(badgeStyle)}">
-            ${tabName}
-          </div>
-        </div>`;
-      } else {
-        const fAttrs = isFilterEnabled ? ` d-t="${shortenId(log.tabId)}"${isMainTab === 'true' ? ' d-mt="1"' : ''} class="t-bl c-e"` : ` class="t-bl"`;
-        const badgeStyle = hasSpecialDividerAbove ? ' style="margin-top: 0 !important;"' : '';
-        blockHtml += `<div${fAttrs}${badgeStyle}>
-          <div class="t-bd" style="background: ${tabBg}; color: ${tabColor}; border: 1px solid ${getTabBorderColor(tabColor)};">
-            ${tabName}
-          </div>
-        </div>`;
+        const tabColor = tabSet?.color || '#ffd400';
+        const tabBg = getSecretBg(tabColor);
+        
+        const isMainTab = format === 'main' ? 'true' : 'false';
+        if (isInline) {
+          const fAttrs = isFilterEnabled ? ` d-t="${shortenId(log.tabId)}"${isMainTab === 'true' ? ' d-mt="1"' : ''} class="c-e"` : '';
+          const tabMarginTop = hasSpecialDividerAbove ? '0' : `${s(12)}px`;
+          const outerStyle = `margin: ${tabMarginTop} ${paddingHorizontal}px ${s(8)}px ${paddingHorizontal}px; display: flex;`;
+          const badgeStyle = `background: ${tabBg}; color: ${tabColor}; padding: 2px 10px; border-radius: 4px; font-size: 0.74em; font-weight: bold; border: 1px solid ${getTabBorderColor(tabColor)}; display: inline-block; white-space: nowrap;`;
+          blockHtml += `<div${fAttrs} style="${cleanStyle(outerStyle)}">
+            <div style="${cleanStyle(badgeStyle)}">
+              ${tabName}
+            </div>
+          </div>`;
+        } else {
+          const fAttrs = isFilterEnabled ? ` d-t="${shortenId(log.tabId)}"${isMainTab === 'true' ? ' d-mt="1"' : ''} class="t-bl c-e"` : ` class="t-bl"`;
+          const badgeStyle = hasSpecialDividerAbove ? ' style="margin-top: 0 !important;"' : '';
+          blockHtml += `<div${fAttrs}${badgeStyle}>
+            <div class="t-bd" style="background: ${tabBg}; color: ${tabColor}; border: 1px solid ${getTabBorderColor(tabColor)};">
+              ${tabName}
+            </div>
+          </div>`;
+        }
       }
-    }
 
     if (isInline) {
       const charClass = shortenId(log.charId);
@@ -1803,10 +1909,10 @@ const generateFinalHtmlInternal = (
 
   const bgmPlayerCSS = hasValidBgm ? `
     .bgm-center-wrapper { display: flex; justify-content: center; margin: 16px 0; }
-    .custom-bgm { cursor: pointer; display: inline-flex; align-items: center; gap: 10px; font-size: 13px; background: rgba(255, 255, 255, 0.05); padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1); color: #AAAAAA; user-select: none; transition: 0.2s; }
+    .custom-bgm { cursor: pointer; display: inline-flex; align-items: center; gap: 10px; font-size: 13px; background: ${isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'}; padding: 8px 16px; border-radius: 20px; border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)'}; color: ${isDark ? '#E5E7EB' : '#374151'}; user-select: none; transition: 0.2s; }
     .custom-bgm span { text-align: left; word-break: keep-all; overflow-wrap: break-word; line-height: 1.4; }
-    .custom-bgm:hover { background: rgba(255, 255, 255, 0.1); color: #EEEEEE; }
-    .custom-bgm.active { border-color: #EEEEEE; color: #EEEEEE; background: rgba(255, 255, 255, 0.15); }
+    .custom-bgm:hover { background: ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)'}; color: ${isDark ? '#FFFFFF' : '#111827'}; }
+    .custom-bgm.active { border-color: ${isDark ? '#EEEEEE' : '#374151'}; color: ${isDark ? '#EEEEEE' : '#111827'}; background: ${isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'}; }
     .custom-bgm svg { width: 12px; height: 12px; fill: currentColor; flex-shrink: 0; }
 
     .global-wrapper { position: fixed !important; bottom: 20px !important; right: 20px !important; z-index: 1000000 !important; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; }

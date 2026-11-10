@@ -29,6 +29,7 @@ export const LogImage = React.memo(({
   onUpdateTabOverride
 }: any) => {
   const [hasError, setHasError] = useState(false);
+  const [isTabOpen, setIsTabOpen] = useState(false);
   const { num: initialNum, unit: initialUnit } = parseWidthAndUnit(width);
   const [widthNum, setWidthNum] = useState(initialNum);
   const [widthUnit, setWidthUnit] = useState(initialUnit);
@@ -90,7 +91,12 @@ export const LogImage = React.memo(({
       )}
       
       {/* 툴바 - 무조건 좌측 상단에 고정, Hover시 표시 */}
-      <div className="absolute top-1 left-1 right-1 flex justify-between opacity-0 group-hover/img:opacity-100 transition-opacity z-20 items-center pointer-events-none">
+      <div className={cn(
+        "absolute top-1 left-1 right-1 flex justify-between transition-opacity z-40 focus-within:z-50 items-center pointer-events-none",
+        isTabOpen 
+          ? "opacity-100 pointer-events-auto z-50" 
+          : "opacity-0 group-hover/img:opacity-100 focus-within:opacity-100"
+      )}>
         <div className="flex gap-1 items-center pointer-events-auto">
           {onUpdateTabOverride && (
             <div className="h-7 px-2 flex items-center bg-stone-950 text-white rounded-lg border border-white/20 shadow-xl gap-1 shrink-0">
@@ -98,6 +104,7 @@ export const LogImage = React.memo(({
               <div className="w-[84px] h-full flex items-center [&_input]:bg-stone-950 [&_input]:border-none [&_input]:p-0 [&_input]:h-full [&_input]:w-full [&_input]:text-white">
                 <SearchableSelect
                   value={tabOverride || 'auto'}
+                  onOpenChange={setIsTabOpen}
                   onChange={onUpdateTabOverride}
                   options={[
                     { label: '자동', value: 'auto', color: '#a3a3a3' },

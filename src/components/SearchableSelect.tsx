@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '../utils';
 
@@ -12,6 +13,7 @@ interface Option {
 interface SearchableSelectProps {
   value: string;
   onChange: (value: string) => void;
+  onOpenChange?: (isOpen: boolean) => void;
   options: Option[];
   placeholder?: string;
   className?: string;
@@ -22,6 +24,7 @@ interface SearchableSelectProps {
 export const SearchableSelect = ({ 
   value, 
   onChange, 
+  onOpenChange,
   options,
   placeholder = "선택 안 함",
   className,
@@ -35,28 +38,58 @@ export const SearchableSelect = ({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [dropUp, setDropUp] = useState(false);
+  const [coords, setCoords] = useState<{ top?: number; bottom?: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
-    if (isOpen && wrapperRef.current) {
-      const rect = wrapperRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      if (spaceBelow < 250 && rect.top > spaceBelow) {
-        setDropUp(true);
-      } else {
-        setDropUp(false);
-      }
+    onOpenChange?.(isOpen);
+  }, [isOpen, onOpenChange]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setCoords(null);
+      return;
     }
+
+    const updatePosition = () => {
+      if (wrapperRef.current) {
+        const rect = wrapperRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const isUp = spaceBelow < 250 && rect.top > spaceBelow;
+        setDropUp(isUp);
+        setCoords({
+          left: rect.left,
+          width: Math.max(120, rect.width),
+          top: isUp ? undefined : rect.bottom + 4,
+          bottom: isUp ? (window.innerHeight - rect.top) + 4 : undefined,
+        });
+      }
+    };
+
+    updatePosition();
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
   }, [isOpen]);
 
+  const listboxRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
+    if (!isOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        wrapperRef.current && !wrapperRef.current.contains(target) &&
+        listboxRef.current && !listboxRef.current.contains(target)
+      ) {
         setIsOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [isOpen]);
 
   const selectedOption = options.find(opt => opt.value === value);
   const displayValue = isOpen ? searchTerm : (selectedOption ? selectedOption.label : '');
@@ -112,7 +145,6 @@ export const SearchableSelect = ({
   }, [searchTerm]);
 
   // Handle scrolling of highlighted item
-  const listboxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (isOpen && listboxRef.current && highlightedIndex >= 0) {
       const highlightedEl = listboxRef.current.children[highlightedIndex] as HTMLElement;
@@ -123,7 +155,7 @@ export const SearchableSelect = ({
   }, [highlightedIndex, isOpen]);
 
   return (
-    <div ref={wrapperRef} className={cn("relative w-full", className)}>
+    <div ref={wrapperRef} className={cn("relative w-full", isOpen && "z-50", className)}>
       <div className="relative">
         <input
           ref={inputRef}
@@ -147,7 +179,7 @@ export const SearchableSelect = ({
           className={cn(
             "w-full text-[10px] px-2 py-1.5 pr-6 rounded-lg outline-none focus:border-[#e6005c] transition-colors font-medium",
             theme === 'dark'
-              ? "bg-black/40 border border-white/10 text-white/90 placeholder:text-white/40"
+              ? "bg-stone-900 border border-white/20 text-white placeholder:text-white/40"
               : "bg-white border border-stone-250 text-stone-800 placeholder:text-stone-400",
             disabled && "opacity-40 cursor-not-allowed pointer-events-none"
           )}
@@ -160,15 +192,26 @@ export const SearchableSelect = ({
           disabled && "opacity-40"
         )} />
       </div>
-      {isOpen && (
+      {isOpen && coords && (typeof document !== 'undefined' ? createPortal(
         <div 
           ref={listboxRef}
+          onMouseDown={(e) => {
+            // Prevent input from losing focus when clicking options or scrollbar
+            e.preventDefault();
+          }}
+          style={{
+            position: 'fixed',
+            left: `${coords.left}px`,
+            top: coords.top !== undefined ? `${coords.top}px` : undefined,
+            bottom: coords.bottom !== undefined ? `${coords.bottom}px` : undefined,
+            width: `${coords.width}px`,
+            zIndex: 99999,
+          }}
           className={cn(
-            "absolute z-50 w-full border rounded-lg shadow-xl max-h-64 max-h-[min(260px,50vh)] overflow-y-auto custom-scrollbar",
-            dropUp ? "bottom-full mb-1" : "top-full mt-1",
+            "border rounded-lg shadow-2xl max-h-64 max-h-[min(260px,50vh)] overflow-y-auto custom-scrollbar select-none",
             theme === 'dark'
-              ? "bg-[#1a1a1a] border-white/10"
-              : "bg-white border-stone-200"
+              ? "bg-stone-900 border-white/20 text-white"
+              : "bg-white border-stone-200 text-stone-900"
           )}
         >
           {filteredOptions.map((opt, idx) => (
@@ -198,8 +241,9 @@ export const SearchableSelect = ({
               theme === 'dark' ? "text-white/50" : "text-stone-400"
             )}>결과 없음</div>
           )}
-        </div>
-      )}
+        </div>,
+        document.body
+      ) : null)}
     </div>
   );
 };

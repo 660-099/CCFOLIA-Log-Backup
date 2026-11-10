@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import DOMPurify from 'dompurify';
-import { Pencil, Trash2, Plus, X, Image as ImageIcon, Palette, Highlighter, ArrowUp, ArrowDown } from 'lucide-react';
-import { cn, r, linkifyAndFormat, markdownToHtml, htmlToMarkdown } from '../utils';
+import { Pencil, Trash2, Plus, X, Image as ImageIcon, Palette, Highlighter, ArrowUp, ArrowDown, ChevronDown } from 'lucide-react';
+import { cn, r, linkifyAndFormat, markdownToHtml, htmlToMarkdown, getContrastTextColor } from '../utils';
 import { ColorPickerPopup } from './ColorPickerPopup';
 import { EditorColorPickerPopup } from './EditorColorPickerPopup';
 import { LogImage } from './LogImage';
@@ -142,6 +142,7 @@ export const LogItem = React.memo(({
   const [editCharId, setEditCharId] = useState(log.charId);
   const [editTabId, setEditTabId] = useState(log.tabId);
   const [isHoveringButton, setIsHoveringButton] = useState(false);
+  const [isBgmTabOpen, setIsBgmTabOpen] = useState(false);
   const [editingInsertedBlockId, setEditingInsertedBlockId] = useState<string | null>(null);
 
   const [customColorPickerTarget, setCustomColorPickerTarget] = useState<'foreColor' | 'backColor' | null>(null);
@@ -294,7 +295,7 @@ export const LogItem = React.memo(({
   };
 
   // Define how blocks are rendered
-  const renderBlocks = (blocks: any[], logId: string, isTopLevel: boolean = false) => {
+  const renderBlocks = (blocks: any[], logId: string, isTopLevel: boolean = false, isShiftDown: boolean = false) => {
     const isLastLog = idx === mergedLogsCount - 1;
     return (
       <>
@@ -306,6 +307,7 @@ export const LogItem = React.memo(({
           onInsertLog={() => insertLogBlock(log.id, isTopLevel)}
           allowSplit={!isTopLevel && !(isLastLog && blocks.length === 0)}
           isTopLevel={isTopLevel}
+          isShiftDown={isShiftDown}
           disabled={isAnyEditing}
           onDropIllustration={(illId) => onUpdateIllustration(illId, { targetLogId: stableId, position: 'before' })}
         />
@@ -699,13 +701,13 @@ export const LogItem = React.memo(({
       if (found) return found;
     }
     if (narrationCharacter && (charId === narrationCharacter || (charName && charName === narrationCharacter))) {
-      return { charId, format: narrationFormat, enableSentenceSpacing, enableSecretNarration: true };
+      return { charId, format: narrationFormat, enableSentenceSpacing, enableSecretNarration };
     }
     if (narrationCharacter2 && (charId === narrationCharacter2 || (charName && charName === narrationCharacter2))) {
-      return { charId, format: narrationFormat2, enableSentenceSpacing: enableSentenceSpacing2, enableSecretNarration: true };
+      return { charId, format: narrationFormat2, enableSentenceSpacing: enableSentenceSpacing2, enableSecretNarration: enableSecretNarration2 };
     }
     if (charId === 'system' || (charName && (charName.toLowerCase() === 'system' || charName === '시스템'))) {
-      return { charId: charId || 'system', format: narrationFormat || 'style1', enableSentenceSpacing, enableSecretNarration: true };
+      return { charId: charId || 'system', format: narrationFormat || 'style1', enableSentenceSpacing, enableSecretNarration };
     }
     return null;
   };
@@ -716,7 +718,8 @@ export const LogItem = React.memo(({
     log.charId === 'system' ||
     (log.name && (log.name.toLowerCase() === 'system' || log.name === '시스템'))
   );
-  const isNarration = Boolean(isNarrationChar && (format === 'main' || format === 'secret'));
+  const isSecretNarrationActive = narrationConfig ? Boolean(narrationConfig.enableSecretNarration) : Boolean(enableSecretNarration);
+  const isNarration = Boolean(isNarrationChar && (format === 'main' || (format === 'secret' && isSecretNarrationActive)));
 
   const getEnableSentenceSpacing = (charId: string) => {
     const cfg = getNarrationConfig(charId, log.name);
@@ -777,10 +780,11 @@ export const LogItem = React.memo(({
   const safeHtmlName = useMemo(() => DOMPurify.sanitize(displayName, { ADD_ATTR: ['style'] }), [displayName]);
   
   const getSecretBg = (hex: string) => {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return theme === 'dark' ? `rgba(${r}, ${g}, ${b}, 0.15)` : `rgba(${r}, ${g}, ${b}, 0.08)`;
+    if (!hex || hex.length < 7) return theme === 'dark' ? 'rgba(142, 68, 173, 0.18)' : 'rgba(142, 68, 173, 0.08)';
+    const r = parseInt(hex.slice(1, 3), 16) || 0;
+    const g = parseInt(hex.slice(3, 5), 16) || 0;
+    const b = parseInt(hex.slice(5, 7), 16) || 0;
+    return theme === 'dark' ? `rgba(${r}, ${g}, ${b}, 0.18)` : `rgba(${r}, ${g}, ${b}, 0.08)`;
   };
 
   const scale = fontSize / 14;
@@ -956,6 +960,10 @@ export const LogItem = React.memo(({
     return formatVal;
   }, [nextLog, tabSettings, narrationCharacter, narrationCharacter2, narrationSlots]);
 
+  const isChatToMainOrSecret = format === 'other' && Boolean(
+    nextFormat && (nextFormat === 'main' || nextFormat === 'secret' || nextFormat === 'narration' || nextFormat === 'info')
+  );
+
   const isSpecialDividerBelow = useMemo(() => {
     if (!nextLog) return false;
     if (log.tabId === nextLog.tabId) return false;
@@ -1017,6 +1025,82 @@ export const LogItem = React.memo(({
   if (log.isBgmBlock) {
     const bgmData = log.bgmData || {};
     
+    // Resolve BGM tabId
+    let resolvedBgmTabId = log.tabOverride;
+    if (resolvedBgmTabId === 'auto' || !resolvedBgmTabId || !tabSettings[resolvedBgmTabId]) {
+      let nextTabId = null;
+      for (let i = idx + 1; i < mergedLogs.length; i++) {
+        const candidate = mergedLogs[i];
+        if (candidate && !candidate.isBgmBlock && !candidate.isIllustration) {
+          if (candidate.tabId && tabSettings[candidate.tabId] && tabSettings[candidate.tabId].visible !== false) {
+            nextTabId = candidate.tabId;
+            break;
+          }
+        }
+      }
+      if (nextTabId) {
+        resolvedBgmTabId = nextTabId;
+      } else {
+        let prevTabId = null;
+        for (let i = idx - 1; i >= 0; i--) {
+          const candidate = mergedLogs[i];
+          if (candidate && !candidate.isBgmBlock && !candidate.isIllustration) {
+            if (candidate.tabId && tabSettings[candidate.tabId] && tabSettings[candidate.tabId].visible !== false) {
+              prevTabId = candidate.tabId;
+              break;
+            }
+          }
+        }
+        resolvedBgmTabId = prevTabId || Object.keys(tabSettings)[0] || 'main';
+      }
+    }
+
+    let autoResolvedTabId = 'main';
+    for (let i = idx + 1; i < mergedLogs.length; i++) {
+      const candidate = mergedLogs[i];
+      if (candidate && !candidate.isBgmBlock && !candidate.isIllustration) {
+        if (candidate.tabId && tabSettings[candidate.tabId]) {
+          autoResolvedTabId = candidate.tabId;
+          break;
+        }
+      }
+    }
+    if (autoResolvedTabId === 'main') {
+      for (let i = idx - 1; i >= 0; i--) {
+        const candidate = mergedLogs[i];
+        if (candidate && !candidate.isBgmBlock && !candidate.isIllustration) {
+          if (candidate.tabId && tabSettings[candidate.tabId]) {
+            autoResolvedTabId = candidate.tabId;
+            break;
+          }
+        }
+      }
+    }
+    const autoTabName = tabSettings[autoResolvedTabId]?.name || '메인';
+
+    const bgmTabSet = tabSettings[resolvedBgmTabId] || tabSettings['main'] || Object.values(tabSettings)[0];
+    const bgmFormat = bgmTabSet?.format || 'main';
+    const bgmIsSecret = bgmFormat === 'secret';
+    const bgmIsInfo = bgmFormat === 'info';
+    const bgmTabColor = bgmTabSet?.color || '#ffd400';
+    const bgmTabTextColor = bgmTabSet?.textColor;
+
+    const isFirstInSection = !isPrevSameTab;
+    const isLastInSection = !isNextSameTab;
+    const shouldMergeStyle = mergeTabStyles.has(bgmFormat) && (isPrevSameTab || isNextSameTab);
+    const bgmMergeWithPrev = shouldMergeStyle && isPrevSameTab && !isSectionStart;
+    const bgmMergeWithNext = shouldMergeStyle && isNextSameTab && !isSectionEnd;
+
+    let contentPaddingValue = contentPadding;
+    if (typeof contentPaddingValue !== 'number') {
+      contentPaddingValue = parseFloat(contentPaddingValue) || 15.5;
+    }
+    const scale = fontSize / 14;
+    const paddingHorizontal = contentPaddingValue * scale;
+    const paddingVertical = basePaddingVertical * scale;
+
+    const renderHeader = showTabNames.has(bgmFormat) && isFirstInSection;
+
     if (isEditing) {
       return (
         <div className="w-full relative">
@@ -1044,8 +1128,12 @@ export const LogItem = React.memo(({
           dragOverPart === 'bottom' && "is-drag-over-bottom"
         )}
         style={{
-          marginTop: `${Math.floor(effectiveBlockSpacing / 2)}px`,
-          marginBottom: `${Math.ceil(effectiveBlockSpacing / 2)}px`
+          marginTop: (bgmIsSecret || bgmIsInfo) 
+            ? (isFirstInSection ? `${Math.round(paddingVertical)}px` : '0px') 
+            : `${Math.floor(effectiveBlockSpacing / 2)}px`,
+          marginBottom: (bgmIsSecret || bgmIsInfo) 
+            ? (isLastInSection ? `${Math.round(paddingVertical)}px` : '0px') 
+            : `${Math.ceil(effectiveBlockSpacing / 2)}px`
         }}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -1060,23 +1148,182 @@ export const LogItem = React.memo(({
         {isCurrentMatch && (
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#e6005c] shadow-[0_0_10px_rgba(230,0,92,0.5)] z-10" />
         )}
-        <div className="w-full flex justify-center py-2 relative group/img">
-          <BgmItem
-            id={bgmData.id || log.id}
-            title={bgmData.title || '🎧 BGM'}
-            url={bgmData.url || ''}
-            videoId={bgmData.videoId}
-            startTime={bgmData.startTime}
-            useTimestamp={bgmData.useTimestamp}
-            isPlaying={currentPlayingBgmId === (bgmData.id || log.id) && isGlobalBgmPlaying}
-            onSelectBgm={(track) => onSelectBgmTrack && onSelectBgmTrack(track)}
-          />
-        </div>
+
+        {idx === 0 && renderBlocks(startBlocks, '__start__', true)}
+
+        {renderHeader && (
+          <div style={{ margin: `${hasSpecialDividerAbove ? 0 : 12}px ${r(paddingHorizontal)}px 8px ${r(paddingHorizontal)}px`, display: 'flex' }}>
+            <div style={{ 
+              background: bgmIsSecret ? getSecretBg(bgmTabColor) : (theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'), 
+              color: bgmTabColor,
+              padding: '2px 10px',
+              borderRadius: '4px',
+              fontSize: `${r(nameSize * 0.8)}px`,
+              fontWeight: 'bold',
+              border: `1px solid ${bgmTabColor}44`,
+            }}>
+              {bgmTabSet?.name || 'Unknown'}
+            </div>
+          </div>
+        )}
+
+        {/* 좌측 탭 선택 (삽화와 동일한 툴바 - 호버 시 표시) */}
+        {!isAnyEditing && (
+          <div className={cn(
+            "absolute top-2 left-4 flex items-center gap-1 transition-opacity z-40 focus-within:z-50 pointer-events-none",
+            isBgmTabOpen
+              ? "opacity-100 pointer-events-auto z-50"
+              : "opacity-0 group-hover/item:opacity-100 focus-within:opacity-100"
+          )}>
+            <div className="h-7 px-2 flex items-center bg-stone-950 text-white rounded-lg border border-white/20 shadow-xl gap-1 shrink-0 pointer-events-auto">
+              <span className="text-[10px] text-white/50 font-bold shrink-0">탭:</span>
+              <div className="w-[84px] h-full flex items-center [&_input]:bg-stone-950 [&_input]:border-none [&_input]:p-0 [&_input]:h-full [&_input]:w-full [&_input]:text-white">
+                <SearchableSelect
+                  value={log.tabOverride || 'auto'}
+                  onOpenChange={setIsBgmTabOpen}
+                  onChange={(newTabVal) => {
+                    if (onBatchUpdateLog) {
+                      onBatchUpdateLog(log.id, {
+                        tabId: newTabVal === 'auto' ? undefined : newTabVal,
+                        tabOverride: newTabVal
+                      });
+                    }
+                  }}
+                  options={[
+                    { label: '자동', value: 'auto', color: '#a3a3a3' },
+                    ...(tabOrder || Object.keys(tabSettings)).map((tId: string) => {
+                      const tab = tabSettings[tId];
+                      return { label: tab?.name || tId, value: tId, color: tab?.color };
+                    })
+                  ]}
+                  className="text-[10px]"
+                  theme="dark"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* BGM 메인 뷰어 */}
+        {bgmIsSecret ? (
+          <div
+            style={{
+              background: getSecretBg(bgmTabColor),
+              borderLeft: `4px solid ${bgmTabColor}`,
+              marginTop: bgmMergeWithPrev ? '0' : (hasSpecialDividerAboveAndNoBadge ? '0' : '4px'),
+              marginBottom: bgmMergeWithNext ? '0' : (hasSpecialDividerBelow ? '0' : '4px'),
+              marginLeft: `${r(paddingHorizontal)}px`,
+              marginRight: `${r(paddingHorizontal)}px`,
+              borderTopLeftRadius: bgmMergeWithPrev ? '0' : '4px',
+              borderTopRightRadius: bgmMergeWithPrev ? '0' : '4px',
+              borderBottomLeftRadius: bgmMergeWithNext ? '0' : '4px',
+              borderBottomRightRadius: bgmMergeWithNext ? '0' : '4px',
+              paddingTop: bgmMergeWithPrev ? '6px' : '10px',
+              paddingBottom: bgmMergeWithNext ? '6px' : '10px',
+              paddingLeft: `${r(paddingHorizontal)}px`,
+              paddingRight: `${r(paddingHorizontal)}px`,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center'
+            }}
+          >
+            <BgmItem
+              id={bgmData.id || log.id}
+              title={bgmData.title || '🎧 BGM'}
+              url={bgmData.url || ''}
+              videoId={bgmData.videoId}
+              startTime={bgmData.startTime}
+              useTimestamp={bgmData.useTimestamp}
+              isPlaying={currentPlayingBgmId === (bgmData.id || log.id) && isGlobalBgmPlaying}
+              onSelectBgm={(track) => onSelectBgmTrack && onSelectBgmTrack(track)}
+              tabFormat={bgmFormat}
+              tabColor={bgmTabColor}
+              tabTextColor={bgmTabTextColor}
+            />
+          </div>
+        ) : bgmIsInfo ? (
+          <div
+            style={{
+              background: theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+              borderLeft: `4px solid ${theme === 'dark' ? '#444' : '#DDD'}`,
+              marginTop: bgmMergeWithPrev ? '0' : (hasSpecialDividerAboveAndNoBadge ? '0' : '4px'),
+              marginBottom: bgmMergeWithNext ? '0' : (hasSpecialDividerBelow ? '0' : '4px'),
+              marginLeft: `${r(paddingHorizontal)}px`,
+              marginRight: `${r(paddingHorizontal)}px`,
+              borderTopLeftRadius: bgmMergeWithPrev ? '0' : '4px',
+              borderTopRightRadius: bgmMergeWithPrev ? '0' : '4px',
+              borderBottomLeftRadius: bgmMergeWithNext ? '0' : '4px',
+              borderBottomRightRadius: bgmMergeWithNext ? '0' : '4px',
+              paddingTop: bgmMergeWithPrev ? '6px' : '10px',
+              paddingBottom: bgmMergeWithNext ? '6px' : '10px',
+              paddingLeft: `${r(paddingHorizontal)}px`,
+              paddingRight: `${r(paddingHorizontal)}px`,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center'
+            }}
+          >
+            <BgmItem
+              id={bgmData.id || log.id}
+              title={bgmData.title || '🎧 BGM'}
+              url={bgmData.url || ''}
+              videoId={bgmData.videoId}
+              startTime={bgmData.startTime}
+              useTimestamp={bgmData.useTimestamp}
+              isPlaying={currentPlayingBgmId === (bgmData.id || log.id) && isGlobalBgmPlaying}
+              onSelectBgm={(track) => onSelectBgmTrack && onSelectBgmTrack(track)}
+              tabFormat={bgmFormat}
+              tabColor={bgmTabColor}
+              tabTextColor={bgmTabTextColor}
+            />
+          </div>
+        ) : (
+          <div className="w-full flex justify-center pt-1.5 pb-1 relative group/img">
+            <BgmItem
+              id={bgmData.id || log.id}
+              title={bgmData.title || '🎧 BGM'}
+              url={bgmData.url || ''}
+              videoId={bgmData.videoId}
+              startTime={bgmData.startTime}
+              useTimestamp={bgmData.useTimestamp}
+              isPlaying={currentPlayingBgmId === (bgmData.id || log.id) && isGlobalBgmPlaying}
+              onSelectBgm={(track) => onSelectBgmTrack && onSelectBgmTrack(track)}
+            />
+          </div>
+        )}
+
+        {renderBlocks(insertedBlocks, stableId)}
+
+        {/* 하단 구분선 (Divider) */}
+        {hasDividerBelow && !isSplit && (
+          <div 
+            style={{
+              marginTop: `${r(dividerMarginTop * scale)}px`,
+              marginBottom: `${r(dividerMarginBottom * scale)}px`,
+              marginLeft: ((bgmFormat === 'info' || bgmFormat === 'secret') && bgmMergeWithNext) ? `${r(paddingHorizontal)}px` : '0',
+              marginRight: ((bgmFormat === 'info' || bgmFormat === 'secret') && bgmMergeWithNext) ? `${r(paddingHorizontal)}px` : '0',
+              background: ((bgmFormat === 'info' || bgmFormat === 'secret') && bgmMergeWithNext) 
+                ? (bgmFormat === 'secret' ? getSecretBg(bgmTabColor) : (theme === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)')) 
+                : 'transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'stretch',
+              pointerEvents: 'none'
+            }}
+          >
+            <div style={{
+              width: '100%',
+              borderBottom: '1px solid',
+              borderColor: theme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+            }} />
+          </div>
+        )}
+
         {!isAnyEditing && (
           <div 
             onMouseEnter={() => setIsHoveringButton(true)}
             onMouseLeave={() => setIsHoveringButton(false)}
-            className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
+            className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-40 pointer-events-auto"
           >
             <div className="bg-black/85 text-white/95 border border-white/10 rounded px-1.5 py-0.5 text-[9.5px] font-bold font-mono tracking-wider shadow-md leading-none">
               #{originalLogIndex + 1}
@@ -1141,7 +1388,6 @@ export const LogItem = React.memo(({
             </button>
           </div>
         )}
-        {renderBlocks(insertedBlocks, stableId)}
       </div>
     );
   }
@@ -1202,13 +1448,13 @@ export const LogItem = React.memo(({
         {renderHeader && (
           <div style={{ margin: `${hasSpecialDividerAbove ? 0 : 12}px ${r(paddingHorizontal)}px 8px ${r(paddingHorizontal)}px`, display: 'flex' }}>
             <div style={{ 
-              background: getSecretBg(illTabColor), 
+              background: illIsSecret ? getSecretBg(illTabColor) : (theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'), 
               color: illTabColor,
               padding: '2px 10px',
               borderRadius: '4px',
               fontSize: `${r(nameSize * 0.8)}px`,
               fontWeight: 'bold',
-              border: `1px solid ${illTabColor}44`
+              border: `1px solid ${illTabColor}44`,
             }}>
               {illTabSet?.name || 'Unknown'}
             </div>
@@ -1219,7 +1465,7 @@ export const LogItem = React.memo(({
           <div 
             onMouseEnter={() => setIsHoveringButton(true)}
             onMouseLeave={() => setIsHoveringButton(false)}
-            className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
+            className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-40 pointer-events-auto"
           >
             <div className="bg-black/85 text-white/95 border border-white/10 rounded px-1.5 py-0.5 text-[9.5px] font-bold font-mono tracking-wider shadow-md leading-none">
               #{originalLogIndex + 1}
@@ -1409,6 +1655,8 @@ export const LogItem = React.memo(({
           </div>
         )}
 
+        {renderBlocks(insertedBlocks, stableId)}
+
         {hasDividerBelow && !isSplit && (
           <div 
             style={{
@@ -1437,8 +1685,6 @@ export const LogItem = React.memo(({
             />
           </div>
         )}
-
-        {renderBlocks(insertedBlocks, stableId)}
       </div>
     );
   }
@@ -1471,7 +1717,7 @@ export const LogItem = React.memo(({
         <div 
           onMouseEnter={() => setIsHoveringButton(true)}
           onMouseLeave={() => setIsHoveringButton(false)}
-          className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-20"
+          className="absolute top-2 right-4 flex items-center gap-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity z-40 pointer-events-auto"
         >
           <div className="bg-black/85 text-white/95 border border-white/10 rounded px-1.5 py-0.5 text-[9.5px] font-bold font-mono tracking-wider shadow-md leading-none">
             #{originalLogIndex + 1}
@@ -1540,13 +1786,13 @@ export const LogItem = React.memo(({
         {!log.isHiddenContent && shouldShowIndex && (
           <div style={{ margin: `${hasSpecialDividerAbove ? 0 : 12}px ${r(paddingHorizontal)}px 8px ${r(paddingHorizontal)}px`, display: 'flex' }}>
             <div style={{ 
-              background: getSecretBg(tabColor), 
+              background: format === 'secret' ? getSecretBg(tabColor) : (theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'), 
               color: tabColor,
               padding: '2px 10px',
               borderRadius: '4px',
               fontSize: `${r(nameSize * 0.8)}px`,
               fontWeight: 'bold',
-              border: `1px solid ${tabColor}44`
+              border: `1px solid ${tabColor}44`,
             }}>
               {log.tab}
             </div>
@@ -1908,7 +2154,7 @@ export const LogItem = React.memo(({
         </div>
       )}
 
-      {renderBlocks(insertedBlocks, stableId)}
+      {renderBlocks(insertedBlocks, stableId, false, isChatToMainOrSecret)}
 
       {hasDividerBelow && !isSplit && (
         <div 

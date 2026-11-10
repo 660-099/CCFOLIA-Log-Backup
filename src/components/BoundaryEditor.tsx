@@ -7,6 +7,7 @@ import { useSettings } from '../contexts/SettingsContext';
 interface BoundaryEditorProps {
   id: string;
   isTopLevel?: boolean;
+  isShiftDown?: boolean;
   allowSplit?: boolean;
   onToggleSplit: () => void;
   onInsertImage: () => void;
@@ -18,6 +19,7 @@ interface BoundaryEditorProps {
 export const BoundaryEditor = React.memo(({
   id,
   isTopLevel,
+  isShiftDown,
   allowSplit = true,
   onToggleSplit,
   onInsertImage,
@@ -75,6 +77,7 @@ export const BoundaryEditor = React.memo(({
       className={cn(
         "boundary-wrapper", 
         isTopLevel && "is-top-level", 
+        isShiftDown && "is-shift-down",
         isDark ? "dark" : "", 
         (isClicked || disabled) && "opacity-0 pointer-events-none",
         isDragOver && "is-drag-over bg-[#e6005c]/10"
