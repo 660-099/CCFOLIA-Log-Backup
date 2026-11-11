@@ -1,6 +1,36 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { TabFormat } from '../types';
+import { TabFormat, ProjectSaveOptions } from '../types';
+
+export const DEFAULT_PROJECT_SAVE_OPTIONS: ProjectSaveOptions = {
+  chars: {
+    enabled: true,
+    charNames: true,
+    narration: true,
+    charColors: true,
+    charImages: true,
+  },
+  tabs: {
+    enabled: true,
+    tabMergeSettings: true,
+    tabNames: true,
+    tabIndividualSettings: true,
+  },
+  design: {
+    enabled: true,
+    themeBg: true,
+    logDisplay: true,
+    fontAndSpacing: true,
+    cssFormat: true,
+  },
+  dialogue: {
+    enabled: true,
+    dialogueEdits: true,
+    bgm: true,
+    illustrations: true,
+    splits: true,
+  },
+};
 
 interface SettingsState {
   rememberSettings: boolean;
@@ -37,8 +67,8 @@ interface SettingsState {
   setDefaultIllWidth: (val: string) => void;
   defaultIllAlign: 'left' | 'center' | 'right';
   setDefaultIllAlign: (val: 'left' | 'center' | 'right') => void;
-  saveOptions: any;
-  setSaveOptions: (val: any) => void;
+  saveOptions: ProjectSaveOptions;
+  setSaveOptions: (val: ProjectSaveOptions | ((prev: ProjectSaveOptions) => ProjectSaveOptions)) => void;
   librarySortMode: 'newest' | 'oldest' | 'alphabetical';
   setLibrarySortMode: (val: 'newest' | 'oldest' | 'alphabetical') => void;
   mergeTabs: TabFormat[];
@@ -122,8 +152,8 @@ export const useSettingsStore = create<SettingsState>()(
       setDefaultIllWidth: (val) => set({ defaultIllWidth: val }),
       defaultIllAlign: 'center',
       setDefaultIllAlign: (val) => set({ defaultIllAlign: val }),
-      saveOptions: {},
-      setSaveOptions: (val) => set({ saveOptions: val }),
+      saveOptions: DEFAULT_PROJECT_SAVE_OPTIONS,
+      setSaveOptions: (val) => set((state) => ({ saveOptions: typeof val === 'function' ? val(state.saveOptions || DEFAULT_PROJECT_SAVE_OPTIONS) : val })),
       librarySortMode: 'newest',
       setLibrarySortMode: (val) => set({ librarySortMode: val }),
       mergeTabs: [],
@@ -175,6 +205,9 @@ export const useSettingsStore = create<SettingsState>()(
         if (state) {
           state.narrationCharacter = null;
           state.narrationCharacter2 = null;
+          if (!state.saveOptions || !state.saveOptions.chars || typeof state.saveOptions.chars !== 'object') {
+            state.saveOptions = DEFAULT_PROJECT_SAVE_OPTIONS;
+          }
         }
       }
     }

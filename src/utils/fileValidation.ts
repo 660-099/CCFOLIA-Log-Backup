@@ -107,7 +107,12 @@ export const isAppProjectJson = (json: any): boolean => {
     return (hasCharSettings && hasTabSettings) || hasFiles;
   }
 
-  return (hasCharSettings && hasTabSettings) || hasFiles || (hasLogs && (hasCharSettings || hasTabSettings || hasVersion)) || (hasVersion && (hasCharSettings || hasTabSettings));
+  return (
+    (hasCharSettings && hasTabSettings) ||
+    hasFiles ||
+    (hasLogs && (hasCharSettings || hasTabSettings || hasVersion)) ||
+    (hasVersion && (hasCharSettings || hasTabSettings || hasFiles || hasLogs || !!json.exportOptions || !!json.theme || !!json.cssFormat || !!json.fontSize))
+  );
 };
 
 /**

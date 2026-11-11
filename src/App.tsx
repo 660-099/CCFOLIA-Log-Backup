@@ -109,7 +109,9 @@ import { SettingsProvider } from './contexts/SettingsContext';
 import { GlobalBgmPlayer } from './components/GlobalBgmPlayer';
 import { inspectUploadedFile, isAppProjectJson } from './utils/fileValidation';
 import { LogMergeStudio } from './components/LogMergeStudio';
-import { MergeSourceFile } from './types';
+import { MergeSourceFile, ProjectSaveOptions } from './types';
+import { ProjectSaveModal } from './components/ProjectSaveModal';
+import { DEFAULT_PROJECT_SAVE_OPTIONS } from './store/useSettingsStore';
 
 const ENABLE_MULTI_FILE_UI = false;
 
@@ -794,14 +796,7 @@ export default function App() {
         setTabSortMode('appearance');
         setIllustrationSortMode('appearance');
         setLibrarySortMode('newest');
-        setSaveOptions({
-          tabs: true,
-          chars: true,
-          design: true,
-          splits: true,
-          images: true,
-          edits: true
-        });
+        setSaveOptions(DEFAULT_PROJECT_SAVE_OPTIONS);
         clearHistory();
       }
     }
@@ -1538,6 +1533,8 @@ export default function App() {
       if (json.narrationCharacter !== undefined) setNarrationCharacter(json.narrationCharacter);
       if (json.narrationCharacter2 !== undefined) setNarrationCharacter2(json.narrationCharacter2);
       if (json.additionalNarrationSlots) setAdditionalNarrationSlots(json.additionalNarrationSlots);
+      if (json.exportMode !== undefined) setExportMode(json.exportMode);
+      if (json.exportOptions) setSaveOptions(json.exportOptions);
 
       clearHistory();
       setJsonFileName(file.name);
@@ -1547,72 +1544,92 @@ export default function App() {
     e.target.value = '';
   };
 
-  const exportProject = () => {
+  const exportProject = (customOpts?: ProjectSaveOptions) => {
+    const opts: ProjectSaveOptions = customOpts || saveOptions || DEFAULT_PROJECT_SAVE_OPTIONS;
+
     const data: any = { 
-      version: '1.12.0',
-      files,
-      activeFileId,
+      version: '1.12.1',
+      pageTitle,
       originalFileName,
-      pageTitle
+      activeFileId,
+      exportOptions: opts
     };
     
-    if (saveOptions.chars) {
-      data.charSettings = charSettings;
-      data.charOrder = charOrder;
-      data.narrationCharacter = narrationCharacter;
-      data.narrationCharacter2 = narrationCharacter2;
-      data.additionalNarrationSlots = additionalNarrationSlots;
-      data.hideEmptyAvatars = hideEmptyAvatars;
-      data.cropFaceTop = cropFaceTop;
-      data.hideAllAvatars = hideAllAvatars;
+    // 1. 캐릭터 설정
+    if (opts.chars?.enabled) {
+      if (opts.chars.charNames || opts.chars.charColors || opts.chars.charImages) {
+        data.charSettings = charSettings;
+        data.charOrder = charOrder;
+      }
+      if (opts.chars.narration) {
+        data.narrationCharacter = narrationCharacter;
+        data.narrationCharacter2 = narrationCharacter2;
+        data.additionalNarrationSlots = additionalNarrationSlots;
+        data.enableSentenceSpacing = enableSentenceSpacing;
+        data.enableSentenceSpacing2 = enableSentenceSpacing2;
+        data.enableSecretNarration = enableSecretNarration;
+        data.enableSecretNarration2 = enableSecretNarration2;
+        data.narrationFormat = narrationFormat;
+        data.narrationFormat2 = narrationFormat2;
+      }
     }
     
-    if (saveOptions.tabs) {
-      data.tabSettings = tabSettings;
-      data.tabOrder = tabOrder;
-      data.mergeTabs = Array.from(mergeTabs);
-      data.showTabNames = Array.from(showTabNames);
-      data.mergeTabStyles = Array.from(mergeTabStyles);
-      data.disableOtherColor = disableOtherColor;
+    // 2. 탭 설정
+    if (opts.tabs?.enabled) {
+      if (opts.tabs.tabMergeSettings) {
+        data.mergeTabs = Array.from(mergeTabs);
+        data.showTabNames = Array.from(showTabNames);
+        data.mergeTabStyles = Array.from(mergeTabStyles);
+      }
+      if (opts.tabs.tabNames || opts.tabs.tabIndividualSettings) {
+        data.tabSettings = tabSettings;
+        // User requested: 탭 표시 순서 (tabOrder) 제외
+      }
     }
     
-    if (saveOptions.design) {
-      data.cssFormat = cssFormat;
-      data.fontSize = fontSize;
-      data.textFontSize = textFontSize;
-      data.lineHeight = lineHeight;
-      data.letterSpacing = letterSpacing;
-      data.blockSpacing = blockSpacing;
-      data.contentPadding = contentPadding;
-      data.avatarSizeValue = avatarSizeValue;
-      data.fontFamily = fontFamily;
-      data.theme = theme;
-      data.darkBgColor = darkBgColor;
-      data.lightBgColor = lightBgColor;
-      data.filterBarMode = filterBarMode;
-      data.enableSentenceSpacing = enableSentenceSpacing;
-      data.enableSentenceSpacing2 = enableSentenceSpacing2;
-      data.enableSecretNarration = enableSecretNarration;
-      data.enableSecretNarration2 = enableSecretNarration2;
-      data.narrationFormat = narrationFormat;
-      data.narrationFormat2 = narrationFormat2;
-      data.showLogDivider = showLogDivider;
+    // 3. 디자인 서식
+    if (opts.design?.enabled) {
+      if (opts.design.themeBg) {
+        data.theme = theme;
+        data.darkBgColor = darkBgColor;
+        data.lightBgColor = lightBgColor;
+      }
+      if (opts.design.logDisplay) {
+        data.showLogDivider = showLogDivider;
+        data.disableOtherColor = disableOtherColor;
+        data.hideAllAvatars = hideAllAvatars;
+        data.cropFaceTop = cropFaceTop;
+        data.hideEmptyAvatars = hideEmptyAvatars;
+        data.filterBarMode = filterBarMode;
+      }
+      if (opts.design.fontAndSpacing) {
+        data.fontFamily = fontFamily;
+        data.fontSize = fontSize;
+        data.textFontSize = textFontSize;
+        data.lineHeight = lineHeight;
+        data.letterSpacing = letterSpacing;
+        data.blockSpacing = blockSpacing;
+        data.contentPadding = contentPadding;
+        data.avatarSizeValue = avatarSizeValue;
+      }
+      if (opts.design.cssFormat) {
+        data.cssFormat = cssFormat;
+        data.exportMode = exportMode;
+      }
     }
     
-    if (saveOptions.splits || saveOptions.images) {
+    // 4. 대사 및 연출 편집
+    if (opts.dialogue?.enabled) {
+      data.files = files;
+      data.logs = logs;
       data.insertedBlocks = insertedBlocks;
-      // Legacy export support just in case
-      if (saveOptions.splits) {
+      if (opts.dialogue.splits) {
         data.splitPoints = Array.from(splitPoints);
         data.sectionNames = sectionNames;
       }
-      if (saveOptions.images) {
+      if (opts.dialogue.illustrations) {
         data.insertedImages = insertedImages;
       }
-    }
-    
-    if (saveOptions.edits) {
-      data.logs = logs;
     }
     
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1624,11 +1641,12 @@ export default function App() {
     if (pageTitle) {
       baseName = pageTitle;
     } else if (originalFileName) {
-      baseName = originalFileName.replace(/\.html$/, '');
+      baseName = originalFileName.replace(/\.(html|htm|json)$/i, '');
     }
     
     a.download = `${baseName}.json`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const mergedLogs = useMemo(() => {
@@ -6686,7 +6704,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/30 hover:text-white/50 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.12.0</span>
+            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.12.1</span>
           </div>
         </div>
       </aside>
@@ -6862,183 +6880,14 @@ export default function App() {
 
               <AnimatePresence>
                 {showSaveMenu && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowSaveMenu(false)} />
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 mt-2 w-[320px] bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden py-2 flex flex-col"
-                    >
-                      {/* Unified Notices & Settings Card */}
-                      <div className="mx-2 mb-2 p-2.5 rounded-xl border bg-white/[0.03] border-white/10 space-y-2">
-                        <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-white/80 hover:text-white transition-colors">
-                          <input 
-                            type="checkbox"
-                            checked={excludeUnlinkedImages}
-                            onChange={(e) => setExcludeUnlinkedImages(e.target.checked)}
-                            className="w-3.5 h-3.5 rounded border-white/20 bg-black/20 accent-[#e6005c] cursor-pointer"
-                          />
-                          <span>링크로 교체되지 않은 이미지 제외 ({usedBase64Images.length}개)</span>
-                        </label>
-
-                        {exportMode === 'html' && (
-                          <div className="pt-2 border-t border-white/5 flex items-start gap-2 text-rose-300">
-                            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
-                            <div>
-                              <p className="font-bold text-[10px] text-rose-200">BGM 기능 제외 안내</p>
-                              <p className="text-[10px] text-rose-300/80 leading-relaxed mt-0.5">
-                                HTML 다운로드용 모드에서는 BGM 기능이 제외됩니다.
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {exportMode !== 'html' && usedBase64Images.length > 0 && !excludeUnlinkedImages && (
-                          <div className="pt-2 border-t border-white/5 flex items-start gap-2 text-amber-300">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                            <div>
-                              <p className="font-bold text-[10px] text-amber-200">용량 초과 주의</p>
-                              <p className="text-[10px] text-amber-300/80 leading-relaxed mt-0.5">
-                                Base64(내장) 이미지가 포함되어 용량 초과가 발생할 수 있습니다. 외부 링크로의 교체를 권장합니다. ({usedBase64Images.join(', ')})
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Bulk Save Section */}
-                      <div className="px-2 pb-2 border-b border-white/10 mb-2">
-                        {ENABLE_MULTI_FILE_UI ? (
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={() => openChunkCopyForCombined()}
-                              className="flex-1 p-2 rounded-xl hover:bg-white/5 text-white/70 hover:text-white transition-colors flex flex-col items-center justify-center gap-1 group"
-                              title="연속 파일 복사"
-                            >
-                              <Copy className="w-5 h-5 mb-1 text-white/50 group-hover:text-white transition-colors" />
-                              <span className="text-[11px] font-bold">연속 파일 복사</span>
-                              <span className="text-[9px] opacity-60">전체 통합 복사</span>
-                            </button>
-                            <button 
-                              onClick={async (e) => { 
-                                try {
-                                  await downloadCombinedHtml(); 
-                                  setShowSaveMenu(false); 
-                                } catch(err: any) {
-                                  alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
-                                }
-                              }}
-                              className="flex-1 p-2 rounded-xl hover:bg-[#e6005c]/10 transition-colors flex flex-col items-center justify-center gap-1 group text-[#e6005c]"
-                            >
-                              <Download className="w-5 h-5 mb-1 opacity-70 group-hover:opacity-100 transition-opacity" />
-                              <span className="text-[11px] font-bold">연속 파일 저장</span>
-                              <span className="text-[9px] opacity-60">전체 통합 저장</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <button 
-                            onClick={async (e) => { 
-                              try {
-                                await downloadAllZip(); 
-                                setShowSaveMenu(false); 
-                              } catch(err: any) {
-                                alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
-                              }
-                            }}
-                            className="w-full py-3 px-2 rounded-xl hover:bg-[#e6005c]/5 transition-colors flex items-center gap-4 text-[#e6005c] group text-left"
-                          >
-                            <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                              <span className="text-[22px] font-light leading-none mb-1">+</span>
-                            </div>
-                            <div>
-                              <div className="text-[13px] font-bold tracking-tight">분할된 모든 파일 ZIP 저장</div>
-                              <div className="text-[11px] opacity-60 mt-0.5">모든 파일/섹션을 압축파일로 저장</div>
-                            </div>
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="px-3 pb-1">
-                        <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">파일 목록</p>
-                      </div>
-
-                      <div className="max-h-80 overflow-y-auto custom-scrollbar flex flex-col px-2">
-                        {(files.length > 0 ? files : (activeFile ? [activeFile] : [])).map((f) => {
-                          const fSections = getFileSectionsList(f);
-                          return (
-                            <div key={f.id} className="mb-2 last:mb-0">
-                              <div className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-colors group">
-                                <div className="flex items-center gap-2 min-w-0 pr-2">
-                                  <FileText className="w-4 h-4 text-white/40 group-hover:text-[#e6005c] transition-colors shrink-0" />
-                                  <span className="text-[12px] font-bold text-white/90 truncate">{f.name}</span>
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    onClick={() => openChunkCopyForFile(f)}
-                                    className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
-                                    title="복사"
-                                  >
-                                    <Copy className="w-3 h-3" /> 복사
-                                  </button>
-                                  <button
-                                    onClick={async (e) => { 
-                                      try { 
-                                        await downloadHtmlForFile(f); 
-                                        setShowSaveMenu(false); 
-                                      } catch(err: any) {
-                                        alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
-                                      } 
-                                    }}
-                                    className="px-2 py-1 bg-[#e6005c]/20 hover:bg-[#e6005c]/80 text-[#e6005c] hover:text-white rounded md:rounded-md text-[10px] font-bold transition-colors flex items-center gap-1"
-                                    title="전체 저장"
-                                  >
-                                    <Download className="w-3 h-3" /> 저장
-                                  </button>
-                                </div>
-                              </div>
-
-                              {fSections.length > 0 && (
-                                <div className="pl-6 pr-2 py-1 flex flex-col gap-1 border-l-2 border-white/5 ml-3 mt-1">
-                                  {fSections.map((s, sIdx) => (
-                                    <div key={sIdx} className="flex items-center justify-between group/sec py-1 px-2 rounded hover:bg-white/5 transition-colors">
-                                      <div className="flex flex-col min-w-0 pr-2">
-                                        <span className="text-[11px] font-medium text-white/70 truncate">{s.name}</span>
-                                        <span className="text-[9px] text-white/30">{s.startBlock} ~ {s.endBlock}번 블록</span>
-                                      </div>
-                                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/sec:opacity-100 transition-opacity">
-                                        <button
-                                          onClick={() => openChunkCopyForFile(f, s)}
-                                          className="p-1.5 bg-white/5 hover:bg-white/20 text-white/60 hover:text-white rounded transition-colors"
-                                          title="섹션 복사"
-                                        >
-                                          <Copy className="w-3 h-3" />
-                                        </button>
-                                        <button
-                                          onClick={async (e) => { 
-                                            try { 
-                                              await downloadHtmlForFile(f, s); 
-                                              setShowSaveMenu(false); 
-                                            } catch(err: any) {
-                                              alert('저장 중 오류가 발생했습니다: ' + (err?.message || err));
-                                            }
-                                          }}
-                                          className="p-1.5 bg-[#e6005c]/80 hover:bg-[#e6005c] text-white rounded transition-colors shadow-sm"
-                                          title="섹션 저장"
-                                        >
-                                          <Download className="w-3 h-3" />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </motion.div>
-                  </>
+                  <ProjectSaveModal
+                    isOpen={showSaveMenu}
+                    onClose={() => setShowSaveMenu(false)}
+                    options={saveOptions}
+                    onOptionsChange={setSaveOptions}
+                    onExport={() => exportProject(saveOptions)}
+                    theme={theme}
+                  />
                 )}
               </AnimatePresence>
             </div>
@@ -7064,49 +6913,53 @@ export default function App() {
                       className="absolute right-0 mt-2 w-80 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden p-3 space-y-3"
                     >
                       {/* Unified Notices & Settings Card */}
-                      <div className="p-2.5 rounded-xl border bg-white/[0.03] border-white/10 space-y-2">
-                        <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-white/80 hover:text-white transition-colors">
-                          <input 
-                            type="checkbox"
-                            checked={excludeUnlinkedImages}
-                            onChange={(e) => setExcludeUnlinkedImages(e.target.checked)}
-                            className="w-3.5 h-3.5 rounded border-white/20 bg-black/20 accent-[#e6005c] cursor-pointer"
-                          />
-                          <span>링크로 교체되지 않은 이미지 제외 ({usedBase64Images.length}개)</span>
-                        </label>
+                      {(exportMode !== 'html' || exportMode === 'html') && (
+                        <div className="p-2.5 rounded-xl border bg-white/[0.03] border-white/10 space-y-2">
+                          {exportMode !== 'html' && (
+                            <label className="flex items-center gap-2 cursor-pointer select-none text-[12px] text-white/80 hover:text-white transition-colors">
+                              <input 
+                                type="checkbox"
+                                checked={excludeUnlinkedImages}
+                                onChange={(e) => setExcludeUnlinkedImages(e.target.checked)}
+                                className="w-3.5 h-3.5 rounded border-white/20 bg-black/20 accent-[#e6005c] cursor-pointer"
+                              />
+                              <span>링크로 교체되지 않은 이미지 제외 ({usedBase64Images.length}개)</span>
+                            </label>
+                          )}
 
-                        {exportMode === 'html' && (
-                          <div className="pt-2 border-t border-white/5 flex items-start gap-2 text-rose-300">
-                            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
-                            <div>
-                              <p className="font-bold text-[10px] text-rose-200">BGM 기능 제외 안내</p>
-                              <p className="text-[10px] text-rose-300/80 leading-relaxed mt-0.5">
-                                HTML 다운로드용 모드에서는 BGM 기능이 제외됩니다.
-                              </p>
+                          {exportMode === 'html' && (
+                            <div className="flex items-start gap-2 text-rose-300">
+                              <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="font-bold text-[11px] text-rose-200">BGM 기능 제외 안내</p>
+                                <p className="text-[11px] text-rose-300/80 leading-relaxed mt-0.5">
+                                  HTML 다운로드용 모드에서는 BGM 기능이 제외됩니다.
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
 
-                        {exportMode !== 'html' && usedBase64Images.length > 0 && !excludeUnlinkedImages && (
-                          <div className="pt-2 border-t border-white/5 flex items-start gap-2 text-amber-300">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                            <div>
-                              <p className="font-bold text-[10px] text-amber-200">용량 초과 주의</p>
-                              <p className="text-[10px] text-amber-300/80 leading-relaxed mt-0.5">
-                                Base64(내장) 이미지가 포함되어 용량 초과가 발생할 수 있습니다. 외부 링크로의 교체를 권장합니다. ({usedBase64Images.join(', ')})
-                              </p>
+                          {exportMode !== 'html' && usedBase64Images.length > 0 && !excludeUnlinkedImages && (
+                            <div className="pt-2 border-t border-white/5 flex items-start gap-2 text-amber-300">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                              <div>
+                                <p className="font-bold text-[11px] text-amber-200">용량 초과 주의</p>
+                                <p className="text-[11px] text-amber-300/80 leading-relaxed mt-0.5">
+                                  Base64(내장) 이미지가 포함되어 용량 초과가 발생할 수 있습니다. 외부 링크로의 교체를 권장합니다. ({usedBase64Images.join(', ')})
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
 
                       {ENABLE_MULTI_FILE_UI ? (
                         <div className="bg-[#e6005c]/10 border border-[#e6005c]/30 rounded-xl p-3 space-y-2">
                           <div className="flex items-center gap-2">
                             <FileText className="w-4 h-4 text-[#e6005c] shrink-0" />
                             <div>
-                              <p className="text-[12px] font-bold text-white">연속 파일 (전체 로그 통합)</p>
-                              <p className="text-[10px] text-white/50 mt-0.5">목록 순서대로 모든 로그를 하나의 파일로 내보냅니다.</p>
+                              <p className="text-[13px] font-bold text-white">연속 파일 (전체 로그 통합)</p>
+                              <p className="text-[11px] text-white/50 mt-0.5">목록 순서대로 모든 로그를 하나의 파일로 내보냅니다.</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 pt-1">

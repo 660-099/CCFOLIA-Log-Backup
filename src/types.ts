@@ -127,3 +127,33 @@ export interface MergeClip {
   sectionTitle?: string; // Optional divider/section title
 }
 
+export interface ProjectSaveOptions {
+  chars: {
+    enabled: boolean;
+    charNames: boolean;
+    narration: boolean;
+    charColors: boolean;
+    charImages: boolean;
+  };
+  tabs: {
+    enabled: boolean;
+    tabMergeSettings: boolean;
+    tabNames: boolean;
+    tabIndividualSettings: boolean;
+  };
+  design: {
+    enabled: boolean;
+    themeBg: boolean;
+    logDisplay: boolean;
+    fontAndSpacing: boolean;
+    cssFormat: boolean;
+  };
+  dialogue: {
+    enabled: boolean;
+    dialogueEdits: boolean;
+    bgm: boolean;
+    illustrations: boolean;
+    splits: boolean;
+  };
+}
+
