@@ -102,9 +102,26 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
       .map(normalizeHex)
   ));
 
+  const handleClose = () => {
+    if (selectedColor !== color && onChangeComplete) {
+      onChangeComplete(selectedColor);
+    }
+    onClose();
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isEditing) {
+        handleClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isEditing, selectedColor, color, onChangeComplete, onClose]);
+
   return createPortal(
     <div className="fixed inset-0 z-[100]">
-      <div className="absolute inset-0" onClick={onClose} />
+      <div className="absolute inset-0" onClick={handleClose} />
       <div 
         ref={popupRef}
         className={cn(

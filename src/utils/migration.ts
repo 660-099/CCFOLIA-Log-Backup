@@ -34,6 +34,16 @@ export function migrateToInsertedBlocks(images: any, splits: any, names: any): R
       });
     }
   });
+
+  const sec0Name = names?.[0] ?? names?.['0'] ?? names?.['__section_0__'];
+  if (sec0Name !== undefined && sec0Name !== '') {
+    blocks['__section_0__'] = [{
+      id: 'split_sec_0',
+      type: 'split',
+      name: sec0Name
+    }];
+  }
+
   return blocks;
 }
 
@@ -43,6 +53,15 @@ export function extractOldFormat(blocks: Record<string, InsertedBlock[]>) {
   const sectionNames: Record<string, string> = {};
 
   Object.entries(blocks).forEach(([logId, arr]) => {
+    if (logId === '__section_0__') {
+      const sec0 = arr.find(b => b.type === 'split');
+      if (sec0) {
+        sectionNames[0] = sec0.name;
+        sectionNames['0'] = sec0.name;
+      }
+      return;
+    }
+
     arr.forEach(block => {
       if (block.type === 'image') {
         if (!insertedImages[logId]) insertedImages[logId] = [];

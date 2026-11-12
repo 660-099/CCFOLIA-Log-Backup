@@ -345,7 +345,7 @@ export const LogItem = React.memo(({
                   if (e.key === 'Enter') {
                     const url = imageInputVal.trim();
                     if (url && onAddIllustration) {
-                      onAddIllustration(stableId, url, tabOverrideValue);
+                      onAddIllustration(isTopLevel ? logId : stableId, url, tabOverrideValue);
                     }
                   }
                 }}
@@ -354,7 +354,7 @@ export const LogItem = React.memo(({
                 onClick={() => {
                   const url = imageInputVal.trim();
                   if (url && onAddIllustration) {
-                    onAddIllustration(stableId, url, tabOverrideValue);
+                    onAddIllustration(isTopLevel ? logId : stableId, url, tabOverrideValue);
                   }
                 }}
                 className="px-4 py-2 bg-[#e6005c] hover:bg-[#ff007f] text-white rounded-lg text-[11px] h-9 font-bold shrink-0 flex items-center justify-center transition-colors"

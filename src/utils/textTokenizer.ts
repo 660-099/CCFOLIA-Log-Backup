@@ -24,14 +24,8 @@ export const splitNarration = (text: string): string[] => {
   const isPunctuation = (c: string) => ['.', '?', '!', '~'].includes(c);
   const isDigit = (c: string) => /[0-9]/.test(c);
   const isSpace = (c: string) => /\s/.test(c);
-  // Matches letters (Korean, English, etc.), digits, or any opening brackets
-  const isWordOrOpenChar = (c: string) => {
-    if (!c) return false;
-    if (Object.keys(bracketPairs).includes(c)) return true;
-    return /[a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ]/.test(c);
-  };
 
-  // Heuristic to decide if a quote acts as opening or closing
+  // Parse quote opening/closing heuristic
   const parseQuoteType = (txt: string, index: number): 'open' | 'close' => {
     if (index === 0) return 'open';
     const prev = txt[index - 1];
@@ -41,7 +35,6 @@ export const splitNarration = (text: string): string[] => {
     return 'close';
   };
 
-  // Get outermost matched pairs
   interface MatchedPair {
     start: number;
     end: number;
@@ -50,11 +43,8 @@ export const splitNarration = (text: string): string[] => {
     hasPunctuation: boolean;
   }
 
-  // Resolves the outer bracket/quote pairs to be protected or specially split
-  const getOutermostPairs = (txt: string): MatchedPair[] => {
-    const allPairs: { start: number; end: number; openChar: string; closeChar: string; hasPunctuation: boolean }[] = [];
-    
-    // Create an independent stack for each opening bracket character
+  const getMatchedPairs = (txt: string): MatchedPair[] => {
+    const allPairs: MatchedPair[] = [];
     const stacks: Record<string, number[]> = {};
     for (const openChar of Object.keys(bracketPairs)) {
       stacks[openChar] = [];
@@ -65,99 +55,64 @@ export const splitNarration = (text: string): string[] => {
       while (k > startIdx && (isSpace(str[k]) || closingBrackets.includes(str[k]))) {
         k--;
       }
-      if (k > startIdx && isPunctuation(str[k])) {
-        return true;
-      }
-      return false;
+      return k > startIdx && isPunctuation(str[k]);
     };
 
     for (let idx = 0; idx < txt.length; idx++) {
       const char = txt[idx];
-      const isOpen = Object.keys(bracketPairs).includes(char);
-      const isClose = closingBrackets.includes(char);
-
-      if (isOpen) {
-        if (char === '"' || char === "'") {
-          const type = parseQuoteType(txt, idx);
-          if (type === 'close') {
-            const stack = stacks[char];
-            if (stack.length > 0) {
-              const startIdx = stack.pop()!;
-              if (stack.length === 0) {
-                const endsPunct = endsWithPunctuation(txt, startIdx, idx);
-                allPairs.push({
-                  start: startIdx,
-                  end: idx,
-                  openChar: char,
-                  closeChar: char,
-                  hasPunctuation: endsPunct
-                });
-              }
-            } else {
-              stacks[char].push(idx);
-            }
+      if (char === '"' || char === "'") {
+        const type = parseQuoteType(txt, idx);
+        if (type === 'close') {
+          const stack = stacks[char];
+          if (stack.length > 0) {
+            const startIdx = stack.pop()!;
+            allPairs.push({
+              start: startIdx,
+              end: idx,
+              openChar: char,
+              closeChar: char,
+              hasPunctuation: endsWithPunctuation(txt, startIdx, idx)
+            });
           } else {
             stacks[char].push(idx);
           }
         } else {
           stacks[char].push(idx);
         }
-      } else if (isClose) {
+      } else if (Object.keys(bracketPairs).includes(char)) {
+        stacks[char].push(idx);
+      } else {
         const openChar = Object.keys(bracketPairs).find(k => bracketPairs[k] === char);
-        if (openChar && openChar !== char) {
-          const stack = stacks[openChar];
-          if (stack.length > 0) {
-            const startIdx = stack.pop()!;
-            if (stack.length === 0) {
-              const endsPunct = endsWithPunctuation(txt, startIdx, idx);
-              allPairs.push({
-                start: startIdx,
-                end: idx,
-                openChar,
-                closeChar: char,
-                hasPunctuation: endsPunct
-              });
-            }
-          }
+        if (openChar && openChar !== char && stacks[openChar].length > 0) {
+          const startIdx = stacks[openChar].pop()!;
+          allPairs.push({
+            start: startIdx,
+            end: idx,
+            openChar,
+            closeChar: char,
+            hasPunctuation: endsWithPunctuation(txt, startIdx, idx)
+          });
         }
       }
     }
 
-    // Filter to obtain only the outermost pairs (not nested within any other pair)
-    const outermostPairs: MatchedPair[] = [];
-    // Sort pairs by span: longest first
-    const sortedPairs = [...allPairs].sort((a, b) => (b.end - b.start) - (a.end - a.start));
-    
-    for (const p of sortedPairs) {
-      const isEnclosed = outermostPairs.some(outer => p.start >= outer.start && p.end <= outer.end);
-      if (!isEnclosed) {
-        outermostPairs.push(p);
-      }
-    }
-
-    // Sort by starting position ascending and filter abnormally long quotes
-    return outermostPairs.sort((a, b) => a.start - b.start).filter(p => {
-      const len = p.end - p.start;
-      if (len > 300) return false;
-      return true;
-    });
+    return allPairs;
   };
 
-  const outermostPairs = getOutermostPairs(normalizedText);
+  const matchedPairs = getMatchedPairs(normalizedText);
 
-  const getContainingPair = (idx: number): MatchedPair | null => {
-    for (const p of outermostPairs) {
-      if (idx >= p.start && idx <= p.end) {
-        return p;
-      }
-    }
-    return null;
+  // Returns the innermost pair that contains idx
+  const getPairAt = (idx: number): MatchedPair | null => {
+    const containing = matchedPairs.filter(p => idx >= p.start && idx <= p.end);
+    if (containing.length === 0) return null;
+    containing.sort((a, b) => (a.end - a.start) - (b.end - b.start));
+    return containing[0];
   };
 
   for (let i = 0; i < normalizedText.length; i++) {
     const char = normalizedText[i];
     
-    // Check explicit newlines -> guaranteed split
+    // Explicit newlines -> guaranteed split
     if (char === '\n') {
       if (currentBlock.trim().length > 0) {
         blocks.push(currentBlock.trim());
@@ -166,52 +121,41 @@ export const splitNarration = (text: string): string[] => {
       continue;
     }
 
-    // Check if we are at the START index of a splittable outermost pair
-    const containingPair = getContainingPair(i);
-    if (containingPair && i === containingPair.start) {
-      if (containingPair.hasPunctuation) {
-        // Splittable pair! Split before the pair starts if there's text before it.
-        if (currentBlock.trim().length > 0) {
-          blocks.push(currentBlock.trim());
-          currentBlock = '';
-        }
+    const pair = getPairAt(i);
+
+    // If starting a sentence-level quote pair (with punctuation), split before if there's preceding content
+    if (pair && i === pair.start && pair.hasPunctuation && (pair.openChar === "'" || pair.openChar === '"' || pair.openChar === '「' || pair.openChar === '『')) {
+      if (currentBlock.trim().length > 0) {
+        blocks.push(currentBlock.trim());
+        currentBlock = '';
       }
     }
 
-    // Append char to current block
     currentBlock += char;
 
-    // Check if we can split AFTER this character
     let canSplit = false;
     let punctuationIndex = -1;
 
-    if (containingPair) {
-      // If we are INSIDE an outermost pair, we ONLY split at the exact END of the pair, and ONLY if the pair contains a sentence-ending punctuation
-      if (i === containingPair.end && containingPair.hasPunctuation) {
+    if (pair) {
+      // Inside a pair:
+      // ONLY split at the exact END of the pair, AND ONLY IF hasPunctuation is true!
+      // If the quote does NOT end with sentence-ending punctuation (e.g. '이런건', '쿼테이션'), it MUST NOT split!
+      if (i === pair.end && pair.hasPunctuation) {
         canSplit = true;
-        // Find the punctuation before the end of the pair to check digit sandwich
-        let k = i - 1;
-        while (k >= containingPair.start && (closingBrackets.includes(normalizedText[k]) || isSpace(normalizedText[k]))) {
-          k--;
-        }
-        if (k >= containingPair.start && isPunctuation(normalizedText[k])) {
-          punctuationIndex = k;
-        }
+        punctuationIndex = i - 1;
       }
     } else {
-      // OUTSIDE any outermost pair:
+      // OUTSIDE any pair:
       if (isPunctuation(char)) {
-        // Check if next char is also a punctuation (e.g. "...", "?!", "~~")
         if (i + 1 < normalizedText.length && isPunctuation(normalizedText[i + 1])) {
-          // Do not split yet, wait until the last punctuation
+          // Wait until last punctuation mark in sequence (e.g. "...", "?!")
         } else {
           canSplit = true;
           punctuationIndex = i;
         }
-      } else if (closingBrackets.includes(char)) {
-        // Check if there is sentence-ending punctuation right before (allowing other closing brackets/spaces)
+      } else if (['」', '』', ')', '）', ']', '}', '>'].includes(char)) {
         let k = i - 1;
-        while (k >= 0 && (closingBrackets.includes(normalizedText[k]) || isSpace(normalizedText[k]))) {
+        while (k >= 0 && (isSpace(normalizedText[k]) || ['」', '』', ')', '）', ']', '}', '>'].includes(normalizedText[k]))) {
           k--;
         }
         if (k >= 0 && isPunctuation(normalizedText[k])) {
@@ -222,9 +166,6 @@ export const splitNarration = (text: string): string[] => {
     }
 
     if (canSplit) {
-      // Look ahead to check the split condition:
-      // Condition A: 1+ spaces followed by any char/digit (non-space) or another open sign
-      // Condition B (Improvement): No space but the very next character is a word/digit/bracket start (Korean/English letter, open bracket) and we are terminating a bracket/quote pair.
       let j = i + 1;
       let spaceCount = 0;
       
@@ -233,27 +174,26 @@ export const splitNarration = (text: string): string[] => {
         j++;
       }
       
-      // Check if it's a valid split point based on lookahead
       if (j < normalizedText.length) {
         const prevChar = punctuationIndex > 0 ? normalizedText[punctuationIndex - 1] : '';
         const nextChar = normalizedText[j];
         
-        // Skip splitting if it looks like a decimal/number sandwich (e.g. 1.5)
+        // Skip splitting if it looks like a decimal number (e.g. 1.5)
         if (isDigit(prevChar) && isDigit(nextChar)) {
           continue;
         }
 
-        // We split if:
-        // 1. There is at least one space (e.g. ". " or ".  ")
-        // 2. OR there is NO space, but the next character is a word or brackets (Korean/English letter, digit, raw opening symbol)
-        //    AND the current position (char) is one of the closing brackets so we only perform no-space-splits on paired sentences ("안 갔냐?!"그 목소리에, 않음.>짜잔~)
-        const isClosingPairSite = closingBrackets.includes(char);
+        // For quote pairs, NEVER split if spaceCount === 0 and the next character is part of a word/particle (e.g. '문장.'이라고)
+        if (spaceCount === 0 && pair && (pair.openChar === "'" || pair.openChar === '"' || pair.openChar === '「' || pair.openChar === '『')) {
+          continue;
+        }
 
-        if (spaceCount > 0 || (isClosingPairSite && isWordOrOpenChar(nextChar))) {
+        // We split if:
+        // 1. There is at least one space after sentence/quote
+        // 2. OR the next char is an opening bracket or quotation
+        if (spaceCount > 0 || Object.keys(bracketPairs).includes(nextChar)) {
           blocks.push(currentBlock.trim());
           currentBlock = '';
-          
-          // skip the spaces we already evaluated
           i = j - 1; 
         }
       }

@@ -2055,10 +2055,27 @@ export default function App() {
   }, [insertedBlocks, saveToHistory]);
 
   const onAddIllustration = useCallback((afterLogId: string, url: string, tabOverride: string) => {
-    const logIdx = logs.findIndex((l: any) => l.id === afterLogId);
-    if (logIdx === -1) return;
+    let targetIndex = 0;
+    let referenceLog: LogEntry | undefined;
 
-    const referenceLog = logs[logIdx];
+    if (afterLogId === '__start__') {
+      targetIndex = 0;
+      referenceLog = logs[0];
+    } else {
+      const lastId = afterLogId.startsWith('merged:')
+        ? afterLogId.replace('merged:', '').split(',').pop()!
+        : afterLogId;
+      const logIdx = logs.findIndex((l: any) => l.id === lastId);
+      if (logIdx === -1) return;
+      referenceLog = logs[logIdx];
+      targetIndex = logIdx + 1;
+    }
+
+    if (!referenceLog && logs.length > 0) {
+      referenceLog = logs[0];
+    }
+    if (!referenceLog) return;
+
     const defaultTabId = tabOverride === 'auto' || !tabOverride ? referenceLog.tabId : tabOverride;
     const newIllustrationLog: LogEntry = {
       id: `ill_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
@@ -2078,11 +2095,11 @@ export default function App() {
     };
 
     const nextLogs = [...logs];
-    nextLogs.splice(logIdx + 1, 0, newIllustrationLog);
+    nextLogs.splice(targetIndex, 0, newIllustrationLog);
     setLogs(nextLogs);
     saveToHistory({ logs: nextLogs });
     setImageInputLoc(null);
-  }, [logs, tabSettings, saveToHistory]);
+  }, [logs, tabSettings, defaultIllWidth, defaultIllAlign, saveToHistory]);
 
   const onUpdateIllustration = useCallback((id: string, updates: Partial<Illustration> & { afterLogIndex?: number | null, targetLogId?: string, position?: 'before' | 'after' }, targetFileId?: string) => {
     if (files.length > 0) {
@@ -2779,14 +2796,34 @@ export default function App() {
   }, []);
 
   const onAddBgmBlock = useCallback((id: string, index: number, bgmData: { title: string; url: string; videoId: string; startTime: number; useTimestamp: boolean }) => {
-    const logIdx = logs.findIndex((l: any) => l.id === id);
-    if (logIdx === -1) return;
+    let targetIndex = 0;
+    let referenceLog: LogEntry | undefined;
 
-    const referenceLog = logs[logIdx];
+    if (id === '__start__') {
+      targetIndex = 0;
+      referenceLog = logs[0];
+    } else {
+      const lastId = id.startsWith('merged:')
+        ? id.replace('merged:', '').split(',').pop()!
+        : id;
+      const logIdx = logs.findIndex((l: any) => l.id === lastId);
+      if (logIdx === -1) return;
+      referenceLog = logs[logIdx];
+      // renderBlocks is rendered at the bottom of the log, so inserting at index 0 inserts after the log (logIdx + 1)
+      targetIndex = logIdx + 1 + index;
+    }
+
+    if (!referenceLog && logs.length > 0) {
+      referenceLog = logs[0];
+    }
+
+    const defaultTabId = referenceLog ? referenceLog.tabId : (tabOrder[0] || 'main');
+    const defaultTabName = referenceLog ? referenceLog.tab : (tabSettings[defaultTabId]?.name || '메인');
+
     const newBgmLog: LogEntry = {
       id: `bgm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      tabId: referenceLog.tabId,
-      tab: referenceLog.tab,
+      tabId: defaultTabId,
+      tab: defaultTabName,
       charId: 'system',
       name: '',
       color: '',
@@ -2804,12 +2841,12 @@ export default function App() {
 
     setLogs(prev => {
       const next = [...prev];
-      next.splice(logIdx + index, 0, newBgmLog);
+      next.splice(targetIndex, 0, newBgmLog);
       saveToHistory({ logs: next });
       return next;
     });
     setBgmInputLoc(null);
-  }, [logs, saveToHistory]);
+  }, [logs, tabOrder, tabSettings, saveToHistory]);
 
   const rowVirtualizer = useVirtualizer({
     count: displayItems.length,
@@ -2819,6 +2856,10 @@ export default function App() {
     scrollMargin: listOffset,
     getItemKey: (index) => displayItems[index].log.id,
   });
+
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [blockSpacing, lineHeight, fontSize, textFontSize, letterSpacing, contentPadding, avatarSizeValue, showLogDivider]);
 
   useEffect(() => {
     if (searchMatchIndices.length > 0 && currentMatchIndex >= 0 && currentMatchIndex < searchMatchIndices.length) {
@@ -3254,15 +3295,12 @@ export default function App() {
         onOpenChunkCopy();
         return;
       }
-      const wasHtmlMode = exportMode === 'html';
-      // 복사 시에는 항상 블로그 복붙용 코드를 생성 (HTML 모드인 경우 블로그 복붙용으로 자동 전환)
-      const html = await getHtmlFn('blog');
+      // 복사 시에도 사용자가 선택한 내보내기 모드(HTML 다운로드용 / 블로그 복붙용)를 그대로 존중
+      const html = await getHtmlFn(exportMode);
       
-      let message = '클립보드에 복사되었습니다.';
-      if (wasHtmlMode) {
-        setExportMode('blog');
-        message = "현재 'HTML 다운로드용' 모드로 설정되어 있어, '블로그 복붙용'으로 자동 전환하여 복사되었습니다.";
-      }
+      const message = exportMode === 'html'
+        ? 'HTML 코드가 클립보드에 복사되었습니다.'
+        : '블로그 복붙용 코드가 클립보드에 복사되었습니다.';
       
       const success = await copyToClipboard(html, message);
       if (success && onSuccess) {
@@ -7206,7 +7244,14 @@ export default function App() {
                           initialName={sectionNames[0] || ''}
                           defaultName="섹션 1"
                           onSave={(name) => {
-                            const nextBlocks = migrateToInsertedBlocks(insertedImages, splitPointsArr, { ...sectionNames, [0]: name });
+                            const nextBlocks = {
+                              ...insertedBlocks,
+                              ['__section_0__']: [{
+                                id: 'split_sec_0',
+                                type: 'split' as const,
+                                name
+                              }]
+                            };
                             setInsertedBlocks(nextBlocks);
                             saveToHistory({ insertedBlocks: nextBlocks });
                           }}
@@ -7321,7 +7366,7 @@ export default function App() {
 
                         return (
                           <div
-                            key={virtualItem.key}
+                            key={`${virtualItem.key}-${blockSpacing}-${lineHeight}-${fontSize}`}
                             id={`log-item-${originalLogIndex}`}
                             data-index={virtualItem.index}
                             data-log-id={log.id}
