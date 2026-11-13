@@ -13,6 +13,7 @@ interface CharImagePanelPopupProps {
   onAddImage: (url: string) => void;
   onRemoveImage: (id: string) => void;
   onUpdateImageName?: (id: string, name: string) => void;
+  onUpdateImageUrl?: (id: string, url: string) => void;
   onSetRepresentative: (id: string) => void;
   isPinned: boolean;
   onMouseEnter?: () => void;
@@ -31,6 +32,7 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
   onRemoveImage,
   onSetRepresentative,
   onUpdateImageName,
+  onUpdateImageUrl,
   isPinned,
   onTogglePin,
   color,
@@ -201,9 +203,10 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
                 onChange={(e) => {
                   if (isNew) {
                     handleInputChange(item.id, e.target.value);
+                  } else if (onUpdateImageUrl) {
+                    onUpdateImageUrl(item.id, e.target.value);
                   }
                 }}
-                readOnly={!isNew}
                 className="flex-1 min-w-0 bg-black/40 text-[10px] outline-none text-white/80 placeholder:text-white/20 border border-white/10 focus:border-[#e6005c] rounded px-1.5 py-1 transition-colors"
               />
               

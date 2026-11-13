@@ -282,10 +282,12 @@ const generateFinalHtmlInternal = (
 
   if (isFilterEnabled) {
     filteredLogs.forEach(log => {
-      // Find actual character settings color if available
+      // Find actual character settings name & color if available
+      const charName = charSettings[log.charId]?.name || log.name;
       const charColor = charSettings[log.charId]?.color || log.color;
-      activeTabs.set(log.tabId, { id: log.tabId, name: log.tab });
-      activeChars.set(log.charId, { id: log.charId, name: log.name, color: charColor });
+      const tabName = tabSettings[log.tabId]?.name || log.tab;
+      activeTabs.set(log.tabId, { id: log.tabId, name: tabName });
+      activeChars.set(log.charId, { id: log.charId, name: charName, color: charColor });
     });
   }
 

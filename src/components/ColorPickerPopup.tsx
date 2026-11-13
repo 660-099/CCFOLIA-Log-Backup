@@ -119,6 +119,35 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
     return () => window.removeEventListener('keydown', onKey);
   }, [isEditing, selectedColor, color, onChangeComplete, onClose]);
 
+  const commitColor = (val: string) => {
+    let col = val.trim();
+    if (mode === 'hex') {
+      if (!col.startsWith('#')) col = '#' + col;
+      if (/^#[0-9A-Fa-f]{3}$/.test(col)) {
+        col = '#' + col.slice(1).split('').map(x => x + x).join('');
+      }
+      if (/^#[0-9A-Fa-f]{6}$/.test(col)) {
+        setSelectedColor(col);
+        if (onChange) onChange(col);
+        if (onChangeComplete) onChangeComplete(col);
+        setIsEditing(false);
+        return true;
+      }
+    } else {
+      const parts = col.split(',').map(x => parseInt(x.trim(), 10));
+      if (parts.length === 3 && parts.every(x => !isNaN(x) && x >= 0 && x <= 255)) {
+        const hex = '#' + parts.map(x => x.toString(16).padStart(2, '0')).join('');
+        setSelectedColor(hex);
+        if (onChange) onChange(hex);
+        if (onChangeComplete) onChangeComplete(hex);
+        setIsEditing(false);
+        return true;
+      }
+    }
+    setIsEditing(false);
+    return false;
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-[100]">
       <div className="absolute inset-0" onClick={handleClose} />
@@ -162,24 +191,7 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
                   onKeyDown={(e) => {
                     if (e.nativeEvent.isComposing) return;
                     if (e.key === 'Enter') {
-                      let col = tempColorInput.trim();
-                      if (mode === 'hex') {
-                         if (!col.startsWith('#')) col = '#' + col;
-                         if (/^#[0-9A-Fa-f]{6}$/.test(col)) {
-                           setSelectedColor(col);
-                           onChange(col);
-                           setIsEditing(false);
-                         }
-                      } else {
-                         // parse rgb
-                         const parts = col.split(',').map(x => parseInt(x.trim()));
-                         if (parts.length === 3 && parts.every(x => !isNaN(x) && x >= 0 && x <= 255)) {
-                           const hex = '#' + parts.map(x => x.toString(16).padStart(2, '0')).join('');
-                           setSelectedColor(hex);
-                           onChange(hex);
-                           setIsEditing(false);
-                         }
-                      }
+                      commitColor(tempColorInput);
                     }
                     if (e.key === 'Escape') {
                       setIsEditing(false);
@@ -188,7 +200,8 @@ export const ColorPickerPopup = ({ color, extractedColors, triggerRect, onClose,
                   }}
                   className="w-full text-[10px] font-bold px-1.5 py-1 bg-black/40 border border-[#e6005c] rounded-md text-white outline-none"
                   autoFocus
-                  onBlur={() => setIsEditing(false)}
+                  onFocus={(e) => e.target.select()}
+                  onBlur={() => commitColor(tempColorInput)}
                 />
               </div>
             ) : (

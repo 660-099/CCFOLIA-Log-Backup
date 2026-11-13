@@ -20,9 +20,9 @@ export const MenuHeaderWrapper = ({
   tooltip?: React.ReactNode,
   isSubHeader?: boolean
 }) => (
-  <div className="flex items-center gap-1.5">
+  <div className="flex items-center gap-1.5 whitespace-nowrap shrink-0">
     {Icon && <Icon className={cn("w-3.5 h-3.5 shrink-0", isSubHeader ? "text-white/50" : "text-white/40")} />}
-    <h2 className={cn("text-[10px] font-bold tracking-tight flex items-center pr-1 m-0 p-0 leading-none", isSubHeader ? "text-white/50" : "text-white/40")}>
+    <h2 className={cn("text-[10px] font-bold tracking-tight flex items-center pr-1 m-0 p-0 leading-none whitespace-nowrap shrink-0", isSubHeader ? "text-white/50" : "text-white/40")}>
       {title}
     </h2>
     {tooltip && (
@@ -34,9 +34,9 @@ export const MenuHeaderWrapper = ({
 );
 
 export const SectionTitle = ({ icon: Icon, title, rightElement, tooltip }: { icon?: any, title: React.ReactNode, rightElement?: React.ReactNode, tooltip?: React.ReactNode }) => (
-  <div className="flex items-center justify-between min-h-[20px]">
+  <div className="flex items-center justify-between min-h-[20px] gap-2">
     <MenuHeaderWrapper icon={Icon} title={title} tooltip={tooltip} />
-    {rightElement && <div className="flex items-center gap-1.5">{rightElement}</div>}
+    {rightElement && <div className="flex items-center gap-1.5 min-w-0">{rightElement}</div>}
   </div>
 );
 

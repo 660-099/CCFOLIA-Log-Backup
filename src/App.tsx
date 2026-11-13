@@ -1861,10 +1861,11 @@ export default function App() {
     if (mergedLogs.length === 0) return [];
     const list = [];
     
+    const topSectionName = (insertedBlocks['__section_0__'] as any)?.[0]?.name || sectionNames[0] || '섹션 1';
     const firstEnd = splitPointsArray.length > 0 ? splitPointsArray[0] : mergedLogs.length - 1;
     list.push({ 
       id: 'section-0', 
-      name: sectionNames[0] || '섹션 1',
+      name: topSectionName,
       startBlock: 1,
       endBlock: firstEnd + 1,
       targetOriginalIndex: 0
@@ -1875,17 +1876,18 @@ export default function App() {
       const stableId = splitLog ? (splitLog.id.startsWith('merged:') ? splitLog.id.split(',').pop()! : splitLog.id) : '';
       const startBlock = idx + 2; // +1 for 0-index, +1 for next block
       const endBlock = i + 1 < splitPointsArray.length ? splitPointsArray[i + 1] + 1 : mergedLogs.length;
+      const splitBlock = (insertedBlocks[stableId] as any)?.find((b: any) => b.type === 'split');
       
       list.push({ 
         id: `section-${stableId}`, 
-        name: sectionNames[stableId] || `섹션 ${i + 2}`,
+        name: splitBlock?.name || sectionNames[stableId] || `섹션 ${i + 2}`,
         startBlock,
         endBlock,
         targetOriginalIndex: idx + 1
       });
     });
     return list;
-  }, [splitPointsArray, sectionNames, mergedLogs]);
+  }, [splitPointsArray, sectionNames, mergedLogs, insertedBlocks]);
 
   const scrollToSection = (targetOriginalIndex: number, sectionId: string) => {
     if (targetOriginalIndex === 0 || sectionId === 'section-0') {
@@ -2527,6 +2529,7 @@ export default function App() {
       const initSelected: Record<string, boolean> = {};
       fetched.forEach((f: any) => initSelected[f.url] = true);
       setSelectedIllBulkImages(initSelected);
+      setIsIllBulkModalOpen(true);
     } catch (e: any) {
       alert(e.message || '오류가 발생했습니다.');
     } finally {
@@ -2742,6 +2745,27 @@ export default function App() {
     });
   };
 
+  const updateCharacterImageUrl = (charId: string, idOrUrl: string, newUrl: string) => {
+    setCharSettings(prev => {
+      const next = { ...prev };
+      if (next[charId] && next[charId].images) {
+        let isRep = false;
+        next[charId].images = next[charId].images!.map((i: any) => {
+          if (i.id === idOrUrl || i.url === idOrUrl) {
+            if (i.isRepresentative) isRep = true;
+            return { ...i, url: newUrl };
+          }
+          return i;
+        });
+        if (isRep || next[charId].imageUrl === idOrUrl) {
+          next[charId].imageUrl = newUrl;
+        }
+      }
+      saveToHistory({ charSettings: next });
+      return next;
+    });
+  };
+
   const handleApplyBulkIllustrationSettings = useCallback(() => {
     if (files.length > 0) {
       setFiles(prevFiles => prevFiles.map(f => ({
@@ -2857,9 +2881,52 @@ export default function App() {
     getItemKey: (index) => displayItems[index].log.id,
   });
 
+  const remeasureMountedRows = useCallback(() => {
+    const container = listRef.current;
+    if (!container) return;
+    const rows = container.querySelectorAll('.virtualize-row');
+    for (let i = 0; i < rows.length; i++) {
+      rowVirtualizer.measureElement(rows[i] as HTMLElement);
+    }
+  }, [rowVirtualizer]);
+
+  useLayoutEffect(() => {
+    remeasureMountedRows();
+  }, [
+    remeasureMountedRows,
+    blockSpacing,
+    lineHeight,
+    fontSize,
+    textFontSize,
+    letterSpacing,
+    contentPadding,
+    avatarSizeValue,
+    showLogDivider,
+    fontFamily,
+    hideAllAvatars,
+    hideEmptyAvatars,
+    mergeTabs,
+    showTabNames,
+    narrationFormat,
+    narrationFormat2,
+    editingLogId,
+  ]);
+
   useEffect(() => {
-    rowVirtualizer.measure();
-  }, [blockSpacing, lineHeight, fontSize, textFontSize, letterSpacing, contentPadding, avatarSizeValue, showLogDivider]);
+    if (typeof document === 'undefined' || !('fonts' in document)) return;
+    let cancelled = false;
+    const handleFontsReady = () => {
+      if (!cancelled) {
+        remeasureMountedRows();
+      }
+    };
+    document.fonts.ready.then(handleFontsReady);
+    document.fonts.addEventListener?.('loadingdone', handleFontsReady);
+    return () => {
+      cancelled = true;
+      document.fonts.removeEventListener?.('loadingdone', handleFontsReady);
+    };
+  }, [remeasureMountedRows, fontFamily]);
 
   useEffect(() => {
     if (searchMatchIndices.length > 0 && currentMatchIndex >= 0 && currentMatchIndex < searchMatchIndices.length) {
@@ -3166,17 +3233,31 @@ export default function App() {
       }
     };
 
+    remeasureMountedRows();
+
     // Immediate sync before paint
     syncScroll();
 
-    // Secondary sync on next animation frame after virtualizer layout/measurement updates
-    const rafId = requestAnimationFrame(() => {
-      syncScroll();
-      pendingMoveLogRef.current = null;
-    });
+    // Multi-frame sync to stay perfectly aligned across virtualizer remeasurement and repositioning
+    let frameCount = 0;
+    let rafId: number;
 
-    return () => cancelAnimationFrame(rafId);
-  }, [logs]);
+    const multiFrameSync = () => {
+      syncScroll();
+      frameCount++;
+      if (frameCount < 4) {
+        rafId = requestAnimationFrame(multiFrameSync);
+      } else {
+        pendingMoveLogRef.current = null;
+      }
+    };
+
+    rafId = requestAnimationFrame(multiFrameSync);
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [logs, remeasureMountedRows]);
 
   const onDeleteLog = useCallback((id: string) => {
     // Find index in mergedLogs before deleting
@@ -3313,45 +3394,45 @@ export default function App() {
 
   const getFileSectionsList = (targetFile: LogFile) => {
     const fileBlocks = (targetFile.insertedBlocks || {}) as unknown as Record<string, InsertedBlock[]>;
-    const { splitPoints: spArr, sectionNames: secNames } = extractOldFormat(fileBlocks);
+    const { sectionNames: secNames } = extractOldFormat(fileBlocks);
 
     const result: { id: string; name: string; startBlock: number; endBlock: number }[] = [];
 
-    let currentSectionId = 'sec_0';
-    let currentStart = 1;
-    let sectionCount = 0;
-
+    // Collect all split points in order
+    const splitItems: { idx: number; splitBlock: any; logId: string }[] = [];
     targetFile.logs.forEach((log, idx) => {
       const splitBlock = (fileBlocks[log.id] as any)?.find((b: any) => b.type === 'split');
       if (splitBlock) {
-        const secName = sectionCount === 0 
-          ? (secNames[0] || secNames['0'] || secNames['section-0'] || splitBlock.name || '섹션 1')
-          : (splitBlock.name || secNames[log.id] || secNames[sectionCount] || `섹션 ${sectionCount + 1}`);
-        result.push({
-          id: currentSectionId,
-          name: secName,
-          startBlock: currentStart,
-          endBlock: idx + 1
-        });
-        sectionCount++;
-        currentSectionId = `sec_${sectionCount}`;
-        currentStart = idx + 2;
+        splitItems.push({ idx, splitBlock, logId: log.id });
       }
     });
 
-    if (currentStart <= targetFile.logs.length) {
-      const lastSplitLogId = targetFile.logs[currentStart - 2]?.id;
-      const lastSplitBlock = lastSplitLogId ? (fileBlocks[lastSplitLogId] as any)?.find((b: any) => b.type === 'split') : null;
-      const lastName = sectionCount === 0 
-        ? '전체' 
-        : (lastSplitBlock?.name || (lastSplitLogId ? secNames[lastSplitLogId] : null) || secNames[sectionCount] || `섹션 ${sectionCount + 1}`);
-      result.push({
-        id: currentSectionId,
-        name: lastName,
-        startBlock: currentStart,
-        endBlock: targetFile.logs.length
-      });
+    if (splitItems.length === 0) {
+      return result;
     }
+
+    const topSectionName = (fileBlocks['__section_0__'] as any)?.[0]?.name || secNames[0] || secNames['0'] || secNames['section-0'] || '섹션 1';
+
+    // Section 1: from block 1 to first split block
+    result.push({
+      id: 'sec_0',
+      name: topSectionName,
+      startBlock: 1,
+      endBlock: splitItems[0].idx + 1
+    });
+
+    // Following sections: each starts right after splitBlock (idx + 2)
+    splitItems.forEach((item, i) => {
+      const startBlock = item.idx + 2;
+      const endBlock = i + 1 < splitItems.length ? splitItems[i + 1].idx + 1 : targetFile.logs.length;
+      const secName = item.splitBlock?.name || secNames[item.logId] || secNames[i + 1] || `섹션 ${i + 2}`;
+      result.push({
+        id: `sec_${i + 1}`,
+        name: secName,
+        startBlock,
+        endBlock
+      });
+    });
 
     return result;
   };
@@ -3526,7 +3607,7 @@ export default function App() {
       mergeTabs,
       mergeTabStyles,
       showTabNames,
-      targetFile.name || pageTitle,
+      (sectionId && fileSections.find(s => s.id === sectionId)) ? `${targetFile.name || pageTitle} - ${fileSections.find(s => s.id === sectionId)?.name}` : (targetFile.name || pageTitle),
       selectedFont.value,
       textFontSize,
       lineHeight,
@@ -3663,7 +3744,7 @@ export default function App() {
         mergeTabs,
         mergeTabStyles,
         showTabNames,
-        targetFile.name || pageTitle,
+        (sectionId && fileSections.find(s => s.id === sectionId)) ? `${targetFile.name || pageTitle} - ${fileSections.find(s => s.id === sectionId)?.name}` : (targetFile.name || pageTitle),
         selectedFont.value,
         textFontSize,
         lineHeight,
@@ -6051,7 +6132,7 @@ export default function App() {
                           {illustrationSortMode === 'appearance' ? '등장순' : '가나다순'}
                         </button>
                         {logs.length > 0 && (
-                          <div className="flex items-center gap-1.5 min-w-0 max-w-[170px] sm:max-w-[210px]">
+                          <div className="flex items-center gap-1 min-w-0 w-[145px] sm:w-[175px]">
                             <input
                               type="text"
                               placeholder="Imgur 앨범 주소"
@@ -7282,6 +7363,7 @@ export default function App() {
                     {/* Inject Base Styles */}
                     <style>{`
                       @import url('https://hangeul.pstatic.net/hangeul_static/css/nanum-gothic-coding.css');
+                      ${fonts.map(f => f.import).filter(Boolean).join('\n')}
                       .log-item-wrapper { 
                         position: relative; 
                         transition: background-color 0s;
@@ -7352,7 +7434,6 @@ export default function App() {
                         height: `${rowVirtualizer.getTotalSize()}px`,
                         width: '100%',
                         position: 'relative',
-                        marginTop: '-12px'
                       }}
                     >
                       {rowVirtualizer.getVirtualItems().map((virtualItem) => {
@@ -7366,7 +7447,7 @@ export default function App() {
 
                         return (
                           <div
-                            key={`${virtualItem.key}-${blockSpacing}-${lineHeight}-${fontSize}`}
+                            key={virtualItem.key}
                             id={`log-item-${originalLogIndex}`}
                             data-index={virtualItem.index}
                             data-log-id={log.id}
@@ -7377,7 +7458,7 @@ export default function App() {
                               top: 0,
                               left: 0,
                               width: '100%',
-                              transform: `translateY(${Math.round(virtualItem.start)}px)`,
+                              transform: `translateY(${Math.round(virtualItem.start - rowVirtualizer.options.scrollMargin)}px)`,
                               transition: isMovingBlock ? 'transform 0.2s ease-in-out' : 'none',
                             }}
                           >
@@ -8096,6 +8177,7 @@ export default function App() {
               onRemoveImage={(id) => removeCharacterImage(charId, id)}
               onSetRepresentative={(id) => setRepresentativeImage(charId, id)}
               onUpdateImageName={(id, name) => updateCharacterImageName(charId, id, name)}
+              onUpdateImageUrl={(id, url) => updateCharacterImageUrl(charId, id, url)}
             />
           );
         })()}

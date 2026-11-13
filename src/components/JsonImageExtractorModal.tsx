@@ -90,15 +90,21 @@ export function JsonImageExtractorModal({ onClose, initialFile, onOpenBulkImgur 
       const extractedAssets: ImageAsset[] = [];
       const seenUrls = new Set<string>();
 
-      // 1. 메시지 데이터를 스캔하여 이미지 해시별 발언 캐릭터 이름 및 표정 번호 매핑
+      // 1. 메시지 데이터를 스캔하여 실제 등장 순서 및 이미지 해시별 발언 캐릭터 이름 매핑
       const hashToCharName = new Map<string, string>();
       const hashToExprIndex = new Map<string, number>();
       const charCounts = new Map<string, number>();
+      const appearanceHashes: string[] = [];
+      const seenAppearanceHashes = new Set<string>();
 
       if (data && Array.isArray(data.messages)) {
         data.messages.forEach((msg: any) => {
           const hash = msg.iconImage;
           if (hash && typeof hash === 'string') {
+            if (!seenAppearanceHashes.has(hash)) {
+              seenAppearanceHashes.add(hash);
+              appearanceHashes.push(hash);
+            }
             if (!hashToCharName.has(hash)) {
               let rawName = (msg.name !== undefined && msg.name !== null ? String(msg.name).trim() : '');
               rawName = rawName.replace(/[/\\?%*:|"<>]/g, '_').trim();
@@ -115,17 +121,23 @@ export function JsonImageExtractorModal({ onClose, initialFile, onOpenBulkImgur 
 
       // IF this is a standard V2 json log with `images` object
       if (data && data.images && typeof data.images === 'object') {
-          // Create deterministic short IDs for images exactly like parser.ts
-          const hashToShortId = new Map<string, string>();
-          let imgCounter = 1;
-          const sortedHashes = Object.keys(data.images).sort();
-          sortedHashes.forEach(hash => {
-              hashToShortId.set(hash, `img_${imgCounter.toString().padStart(3, '0')}`);
-              imgCounter++;
+          // 메시지에 실제 등장한 순서대로 우선 배치하고, 미등장 이미지는 뒤에 배치
+          const allImageHashes = Object.keys(data.images);
+          const orderedHashes: string[] = [];
+          const addedHashes = new Set<string>();
+
+          appearanceHashes.forEach(hash => {
+            if (data.images[hash] && !addedHashes.has(hash)) {
+              orderedHashes.push(hash);
+              addedHashes.add(hash);
+            }
           });
+
+          const remainingHashes = allImageHashes.filter(h => !addedHashes.has(h)).sort();
+          remainingHashes.forEach(h => orderedHashes.push(h));
           
           let otherCounter = 1;
-          sortedHashes.forEach(hashId => {
+          orderedHashes.forEach(hashId => {
              const url = data.images[hashId];
              if (typeof url === 'string' && url.startsWith('data:image/')) {
                 seenUrls.add(url);
