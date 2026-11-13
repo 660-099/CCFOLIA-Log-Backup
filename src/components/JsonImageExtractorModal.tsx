@@ -483,12 +483,14 @@ export function JsonImageExtractorModal({ onClose, initialFile, onOpenBulkImgur 
                           )}
                           title={`${asset.id} (${isSelected ? '선택됨 - 클릭 시 제외' : '제외됨 - 클릭 시 선택'})`}
                         >
-                          <img 
-                            src={asset.url} 
-                            alt={asset.id} 
-                            className="w-full h-full object-contain pointer-events-none"
-                            loading="lazy"
-                          />
+                          {asset.url?.trim() ? (
+                            <img 
+                              src={asset.url.trim()} 
+                              alt={asset.id} 
+                              className="w-full h-full object-contain pointer-events-none"
+                              loading="lazy"
+                            />
+                          ) : null}
                           {/* Selection / Exclusion Badge */}
                           <div className={cn(
                             "absolute top-1.5 right-1.5 z-10 transition-all",

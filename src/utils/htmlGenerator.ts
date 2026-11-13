@@ -77,7 +77,8 @@ const generateFinalHtmlInternal = (
   originalLogs: LogEntry[] = [],
   exportMode: 'html' | 'blog' = 'html',
   narrationSlots?: Array<{ charId: string; format: 'style1' | 'style2' | 'style3'; enableSentenceSpacing: boolean; enableSecretNarration: boolean; }>,
-  chunkSize?: number
+  chunkSize?: number,
+  usePerTabNameDisplay: boolean = false
 ) => {
   const getTabSetting = (tabId?: string, tabName?: string): TabSetting | undefined => {
     if (tabId && tabSettings[tabId]) return tabSettings[tabId];
@@ -106,6 +107,15 @@ const generateFinalHtmlInternal = (
     if (tName.includes('other') || tName.includes('잡담')) return 'other';
     if (tName.includes('info') || tName.includes('정보')) return 'info';
     return 'main';
+  };
+
+  const isTabNameVisibleFor = (tabId?: string, tabName?: string, resolvedFormat?: string): boolean => {
+    const ts = getTabSetting(tabId, tabName);
+    const fmt = resolvedFormat || ts?.format || resolveTabFormat(tabId, tabName);
+    if (usePerTabNameDisplay) {
+      return Boolean(ts?.showTabName);
+    }
+    return showTabNames.has(fmt);
   };
 
   const getNarrationConfig = (charId?: string, charName?: string) => {
@@ -922,27 +932,29 @@ const generateFinalHtmlInternal = (
       return true;
     }
 
-    const getFormatOf = (l: any) => {
+    const getTabAndFormatOf = (l: any) => {
       if (l.isIllustration) {
         const ill = l.illustration || { tabOverride: l.tabOverride || 'auto' };
         const resolvedTabOverride = ill.tabOverride === 'auto' || !ill.tabOverride ? (l.tabId || 'main') : ill.tabOverride;
         const illTabSet = getTabSetting(resolvedTabOverride) || tabSettings['main'];
-        return illTabSet?.format || 'main';
+        return { tabId: resolvedTabOverride, tabName: illTabSet?.name, format: illTabSet?.format || 'main' };
       }
       const formatVal = resolveTabFormat(l.tabId, l.tab);
-      if (isNarrationChar(l.charId, l.name) && formatVal === 'main') {
-        return 'narration';
-      }
-      return formatVal;
+      const effectiveFormat = (isNarrationChar(l.charId, l.name) && formatVal === 'main') ? 'narration' : formatVal;
+      return { tabId: l.tabId, tabName: l.tab, format: effectiveFormat };
     };
 
-    const formatA = getFormatOf(logA);
-    const formatB = getFormatOf(logB);
+    const infoA = getTabAndFormatOf(logA);
+    const infoB = getTabAndFormatOf(logB);
+    const formatA = infoA.format;
+    const formatB = infoB.format;
+    const showNameA = isTabNameVisibleFor(infoA.tabId, infoA.tabName, formatA);
+    const showNameB = isTabNameVisibleFor(infoB.tabId, infoB.tabName, formatB);
 
     const isISA = formatA === 'info' || formatA === 'secret';
     const isISB = formatB === 'info' || formatB === 'secret';
-    const isTabNameAndMergeA = isISA && showTabNames.has(formatA) && mergeTabStyles.has(formatA);
-    const isTabNameAndMergeB = isISB && showTabNames.has(formatB) && mergeTabStyles.has(formatB);
+    const isTabNameAndMergeA = isISA && showNameA && mergeTabStyles.has(formatA);
+    const isTabNameAndMergeB = isISB && showNameB && mergeTabStyles.has(formatB);
 
     // [강제 규칙] 정보/비밀 탭이고 '탭 이름 표시' & '탭별 통합'이 활성화되었을 때, 탭 묶음의 상/하단에는 무조건 구분선 적용
     if (isTabNameAndMergeA && (logA.tabId !== logB.tabId || !isISB)) {
@@ -970,14 +982,14 @@ const generateFinalHtmlInternal = (
           if (mergeTabStyles.has(formatA) || mergeTabStyles.has(formatB)) {
             return true;
           }
-          return showTabNames.has(formatB);
+          return showNameB;
         }
       } else if (!isISA && isISB) {
         // 가장 첫 정보/비밀 위: '탭 이름 표시'가 활성화되어 있다면 구분선이 있음
-        return showTabNames.has(formatB);
+        return showNameB;
       } else if (isISA && !isISB) {
         // 가장 마지막 정보/비밀 아래: 해당 비밀/정보탭의 '탭 이름 표시'가 활성화되어 있을 때만 구분선이 들어감
-        return showTabNames.has(formatA);
+        return showNameA;
       }
     } else {
       // 우선순위 4위: 잡담 탭 (잡담끼리는 하나로 취급해 사이사이에 구분선 없고, 첫 잡담 위와 마지막 잡담 아래에만 선이 있음)
@@ -1085,7 +1097,7 @@ const generateFinalHtmlInternal = (
         }
 
         let headerHtml = '';
-        if (showTabNames.has(format) && isSectionStart) {
+        if (isTabNameVisibleFor(log.tabId, log.tab, format) && isSectionStart) {
           headerHtml = `<div style="${cleanStyle(`margin:12px ${paddingHorizontal}px 8px ${paddingHorizontal}px;display:flex;`)}">
             <div style="${cleanStyle(`background:${format === 'secret' ? secretBg : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)')};color:${tabColor};padding:2px 10px;border-radius:4px;font-size:${s(nameSize * 0.8)}px;font-weight:bold;border:1px solid ${tabColor}44;`)}">
               ${tabSet?.name || 'Unknown'}
@@ -1307,8 +1319,8 @@ const generateFinalHtmlInternal = (
           widthVal = wStr.endsWith('px') || wStr.endsWith('%') ? `width: ${wStr};` : `width: ${wStr}px;`;
         }
 
-        // 1. Render Tab Name Badge if showTabNames has this format and isFirstInSection
-        if (showTabNames.has(illFormat) && !isPrevSameTab) {
+        // 1. Render Tab Name Badge if tab name is enabled and isFirstInSection
+        if (isTabNameVisibleFor(ill.tabOverride, illTabSet?.name, illFormat) && !isPrevSameTab) {
           const tabName = illTabSet?.name || 'Unknown';
           const tabBg = getSecretBg(illTabColor);
           const isMainTab = illFormat === 'main' ? 'true' : 'false';
@@ -1411,7 +1423,7 @@ const generateFinalHtmlInternal = (
       let nextShouldShowIndex = false;
       if (nextLogObj && nextFormat) {
         const isSameTab = log.tabId === nextLogObj.tabId;
-        nextShouldShowIndex = showTabNames.has(nextFormat) && (!isSameTab || hasBlockAfter);
+        nextShouldShowIndex = isTabNameVisibleFor(nextLogObj.tabId, nextLogObj.tab, nextFormat) && (!isSameTab || hasBlockAfter);
       }
 
       let marginTopVal = hasSpecialDividerBelow ? 12 : 0;
@@ -1526,8 +1538,9 @@ const generateFinalHtmlInternal = (
     let finalHtmlContent = finalHtmlContentPieces.map(pieces => pieces.join(`<div class="${spacingClass}"></div>`)).join(`<div class="${spacingClass}"></div>`);
 
     if (!isHidden) {
-      const hasSpecialDividerAboveAndNoBadge = hasSpecialDividerAbove && !(showTabNames.has(format) && !isPrevSameTab);
-      if (showTabNames.has(format) && !isPrevSameTab) {
+      const shouldRenderTabBadge = isTabNameVisibleFor(log.tabId, log.tab, format) && !isPrevSameTab;
+      const hasSpecialDividerAboveAndNoBadge = hasSpecialDividerAbove && !shouldRenderTabBadge;
+      if (shouldRenderTabBadge) {
         const tabName = log.tab;
         const tabColor = tabSet?.color || '#ffd400';
         const tabBg = getSecretBg(tabColor);
@@ -2348,7 +2361,8 @@ export const generateFinalHtmlStr = (
   illustrations: Illustration[] = [],
   originalLogs: LogEntry[] = [],
   exportMode: 'html' | 'blog' = 'html',
-  narrationSlots?: Array<{ charId: string; format: 'style1' | 'style2' | 'style3'; enableSentenceSpacing: boolean; enableSecretNarration: boolean; }>
+  narrationSlots?: Array<{ charId: string; format: 'style1' | 'style2' | 'style3'; enableSentenceSpacing: boolean; enableSecretNarration: boolean; }>,
+  usePerTabNameDisplay: boolean = false
 ): string => {
   return generateFinalHtmlInternal(
     filteredLogs,
@@ -2390,7 +2404,9 @@ export const generateFinalHtmlStr = (
     illustrations,
     originalLogs,
     exportMode,
-    narrationSlots
+    narrationSlots,
+    undefined,
+    usePerTabNameDisplay
   ).fullHtml;
 };
 
@@ -2434,7 +2450,8 @@ export const generateFinalHtmlBlogChunks = (
   illustrations: Illustration[] = [],
   originalLogs: LogEntry[] = [],
   chunkSize: number = 1500,
-  narrationSlots?: Array<{ charId: string; format: 'style1' | 'style2' | 'style3'; enableSentenceSpacing: boolean; enableSecretNarration: boolean; }>
+  narrationSlots?: Array<{ charId: string; format: 'style1' | 'style2' | 'style3'; enableSentenceSpacing: boolean; enableSecretNarration: boolean; }>,
+  usePerTabNameDisplay: boolean = false
 ): BlogHtmlChunk[] => {
   return generateFinalHtmlInternal(
     filteredLogs,
@@ -2477,7 +2494,8 @@ export const generateFinalHtmlBlogChunks = (
     originalLogs,
     'blog',
     narrationSlots,
-    chunkSize
+    chunkSize,
+    usePerTabNameDisplay
   ).chunks;
 };
 

@@ -165,6 +165,7 @@ export default function App() {
 
   const {
     rememberSettings, setRememberSettings,
+    resetAllSettingsToDefaults,
     standingZoomed, setStandingZoomed,
     cssFormat, setCssFormat,
     fontSize, setFontSize,
@@ -186,6 +187,7 @@ export default function App() {
     librarySortMode, setLibrarySortMode,
     mergeTabs, setMergeTabs,
     showTabNames, setShowTabNames,
+    usePerTabNameDisplay, setUsePerTabNameDisplay,
     mergeTabStyles, setMergeTabStyles,
     hideEmptyAvatars, setHideEmptyAvatars,
     cropFaceTop, setCropFaceTop,
@@ -640,6 +642,7 @@ export default function App() {
       insertedBlocks,
       mergeTabs: Array.from(mergeTabs),
       showTabNames: Array.from(showTabNames),
+      usePerTabNameDisplay,
       mergeTabStyles: Array.from(mergeTabStyles),
       hideEmptyAvatars,
       cropFaceTop,
@@ -660,7 +663,7 @@ export default function App() {
     charSettings, charOrder, charSortMode, tabSettings, tabOrder, tabSortMode, illustrationSortMode,
     cssFormat, fontSize, textFontSize, lineHeight, letterSpacing, blockSpacing, contentPadding, avatarSizeValue,
     fontFamily, theme, darkBgColor, lightBgColor, disableOtherColor, filterBarMode, logs, insertedBlocks,
-    mergeTabs, showTabNames, mergeTabStyles, hideEmptyAvatars, cropFaceTop, hideAllAvatars,
+    mergeTabs, showTabNames, usePerTabNameDisplay, mergeTabStyles, hideEmptyAvatars, cropFaceTop, hideAllAvatars,
     narrationCharacter, narrationCharacter2, additionalNarrationSlots, enableSentenceSpacing, enableSentenceSpacing2,
     enableSecretNarration, enableSecretNarration2, narrationFormat, narrationFormat2, showLogDivider, pageTitle
   ]);
@@ -706,6 +709,7 @@ export default function App() {
     }
     if (state.mergeTabs !== undefined) setMergeTabs(new Set(state.mergeTabs));
     if (state.showTabNames !== undefined) setShowTabNames(new Set(state.showTabNames));
+    if (state.usePerTabNameDisplay !== undefined) setUsePerTabNameDisplay(state.usePerTabNameDisplay);
     if (state.mergeTabStyles !== undefined) setMergeTabStyles(new Set(state.mergeTabStyles));
     if (state.hideEmptyAvatars !== undefined) setHideEmptyAvatars(state.hideEmptyAvatars);
     if (state.cropFaceTop !== undefined) setCropFaceTop(state.cropFaceTop);
@@ -758,6 +762,7 @@ export default function App() {
         }
         setMergeTabs(new Set(state.mergeTabs || ['main', 'secret', 'other']));
         setShowTabNames(new Set(state.showTabNames || ['secret']));
+        setUsePerTabNameDisplay(state.usePerTabNameDisplay || false);
         setMergeTabStyles(new Set(state.mergeTabStyles || ['secret']));
         setHideEmptyAvatars(state.hideEmptyAvatars || false);
         setCropFaceTop(state.cropFaceTop || false);
@@ -773,30 +778,7 @@ export default function App() {
         setShowLogDivider(state.showLogDivider || false);
         saveToHistory(state);
       } else {
-        setCssFormat('internal');
-        setFontSize(14);
-        setTextFontSize(14);
-        setLineHeight(1.6);
-        setLetterSpacing(0);
-        setBlockSpacing(2);
-        setContentPadding(12);
-        setFontFamily('Noto Sans KR');
-        setTheme('dark');
-        setDarkBgColor('#212121');
-        setLightBgColor('#ffffff');
-        setDisableOtherColor(true);
-        setMergeTabs(new Set(['main', 'secret', 'other']));
-        setShowTabNames(new Set(['secret']));
-        setMergeTabStyles(new Set(['secret']));
-        setHideEmptyAvatars(false);
-        setHideAllAvatars(false);
-        setEnableSentenceSpacing(false);
-        setShowLogDivider(false);
-        setCharSortMode('appearance');
-        setTabSortMode('appearance');
-        setIllustrationSortMode('appearance');
-        setLibrarySortMode('newest');
-        setSaveOptions(DEFAULT_PROJECT_SAVE_OPTIONS);
+        resetAllSettingsToDefaults();
         clearHistory();
       }
     }
@@ -1112,14 +1094,7 @@ export default function App() {
         setActiveFileId(unifiedFiles[0].id);
       }
       if (!preserveSettings) {
-        setMergeTabs(new Set(['main', 'secret', 'other']));
-        setMergeTabStyles(new Set(['secret']));
-        setShowTabNames(new Set(['secret']));
-        setHideEmptyAvatars(false);
-        setCssFormat('internal');
-        setFontSize(14);
-        setDisableOtherColor(true);
-        setStandingZoomed(false);
+        resetAllSettingsToDefaults();
       }
       // Always reset narration characters to null on new log upload regardless of preserveSettings
       setNarrationCharacter(null);
@@ -1526,6 +1501,7 @@ export default function App() {
       
       if (json.mergeTabs) setMergeTabs(new Set(json.mergeTabs));
       if (json.showTabNames) setShowTabNames(new Set(json.showTabNames));
+      if (json.usePerTabNameDisplay !== undefined) setUsePerTabNameDisplay(json.usePerTabNameDisplay);
       if (json.mergeTabStyles) setMergeTabStyles(new Set(json.mergeTabStyles));
       if (json.hideEmptyAvatars !== undefined) setHideEmptyAvatars(json.hideEmptyAvatars);
       if (json.cropFaceTop !== undefined) setCropFaceTop(json.cropFaceTop);
@@ -1548,7 +1524,7 @@ export default function App() {
     const opts: ProjectSaveOptions = customOpts || saveOptions || DEFAULT_PROJECT_SAVE_OPTIONS;
 
     const data: any = { 
-      version: '1.12.1',
+      version: '1.12.2',
       pageTitle,
       originalFileName,
       activeFileId,
@@ -1579,6 +1555,7 @@ export default function App() {
       if (opts.tabs.tabMergeSettings) {
         data.mergeTabs = Array.from(mergeTabs);
         data.showTabNames = Array.from(showTabNames);
+        data.usePerTabNameDisplay = usePerTabNameDisplay;
         data.mergeTabStyles = Array.from(mergeTabStyles);
       }
       if (opts.tabs.tabNames || opts.tabs.tabIndividualSettings) {
@@ -2907,6 +2884,7 @@ export default function App() {
     hideEmptyAvatars,
     mergeTabs,
     showTabNames,
+    usePerTabNameDisplay,
     narrationFormat,
     narrationFormat2,
     editingLogId,
@@ -3515,7 +3493,8 @@ export default function App() {
         combinedIllustrations,
         processedLogs,
         targetMode,
-        allNarrationSlots
+        allNarrationSlots,
+        usePerTabNameDisplay
       );
     } finally {
       setIsConverting(false);
@@ -3619,7 +3598,8 @@ export default function App() {
       fileIllustrations,
       targetLogs,
       targetMode,
-      allNarrationSlots
+      allNarrationSlots,
+      usePerTabNameDisplay
     );
     } finally {
       setIsConverting(false);
@@ -3756,7 +3736,8 @@ export default function App() {
         fileIllustrations,
         targetLogs,
         chunkSize,
-        allNarrationSlots
+        allNarrationSlots,
+        usePerTabNameDisplay
       );
     } catch (err) {
       console.error(err);
@@ -3840,7 +3821,8 @@ export default function App() {
         combinedIllustrations,
         processedLogs,
         chunkSize,
-        allNarrationSlots
+        allNarrationSlots,
+        usePerTabNameDisplay
       );
     } catch (err) {
       console.error(err);
@@ -3961,7 +3943,8 @@ export default function App() {
       illustrations,
       logs,
       exportMode,
-      allNarrationSlots
+      allNarrationSlots,
+      usePerTabNameDisplay
     );
   };
 
@@ -4036,7 +4019,8 @@ export default function App() {
         illustrations,
         logs,
         exportMode,
-        allNarrationSlots
+        allNarrationSlots,
+        usePerTabNameDisplay
       );
       
       const finalName = s.name ? `${fileName}_${s.name}` : `${fileName}_section_${i + 1}`;
@@ -4115,6 +4099,7 @@ export default function App() {
       cssFormat,
       disableOtherColor,
       showTabNames,
+      usePerTabNameDisplay,
       mergeTabStyles,
       charSettings,
       tabSettings,
@@ -4563,14 +4548,41 @@ export default function App() {
                 <Section>
                   <div className="space-y-2">
                     <div className="p-3 bg-white/5 border border-white/5 rounded-xl shadow-sm space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-white/80">탭 이름 표시</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-white/80 shrink-0">탭 이름 표시</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="text-[9px] text-white/40 font-medium text-right leading-tight">
+                            토글을 켜면 개별 탭 설정에서 표시 여부를 정합니다.
+                          </div>
+                          <Toggle
+                            size="sm"
+                            variant="pink"
+                            enabled={usePerTabNameDisplay}
+                            onChange={(val) => {
+                              if (val) {
+                                const nextTabs: Record<string, TabSetting> = {};
+                                Object.keys(tabSettings).forEach(k => {
+                                  const t = tabSettings[k];
+                                  nextTabs[k] = { ...t, showTabName: showTabNames.has(t.format) };
+                                });
+                                setTabSettings(nextTabs);
+                                setUsePerTabNameDisplay(true);
+                                saveToHistory({ usePerTabNameDisplay: true, tabSettings: nextTabs });
+                              } else {
+                                setUsePerTabNameDisplay(false);
+                                saveToHistory({ usePerTabNameDisplay: false });
+                              }
+                            }}
+                          />
+                        </div>
                       </div>
                       <div className="flex bg-black/20 p-0.5 rounded-lg border border-white/5 gap-0.75">
                         {(['main', 'other', 'info', 'secret'] as TabFormat[]).map(f => (
                           <button
                             key={f}
+                            disabled={usePerTabNameDisplay}
                             onClick={(e) => {
+                              if (usePerTabNameDisplay) return;
                               const next = new Set(showTabNames);
                               if (next.has(f)) next.delete(f);
                               else next.add(f);
@@ -4578,9 +4590,11 @@ export default function App() {
                               saveToHistory({ showTabNames: Array.from(next) });
                             }}
                             className={`flex-1 py-1 text-[9px] font-bold rounded-md transition-all ${
-                              showTabNames.has(f) 
-                                ? 'bg-[#e6005c] text-white shadow-sm' 
-                                : 'text-white/40 hover:text-white/70'
+                              usePerTabNameDisplay
+                                ? 'bg-transparent text-white/10 cursor-not-allowed'
+                                : showTabNames.has(f) 
+                                  ? 'bg-[#e6005c] text-white shadow-sm' 
+                                  : 'text-white/40 hover:text-white/70'
                             }`}
                           >
                             {f === 'main' ? '메인' : f === 'other' ? '잡담' : f === 'info' ? '정보' : '비밀'}
@@ -4749,6 +4763,24 @@ export default function App() {
                               </div>
                             )}
                             <div className="flex items-center bg-black/20 rounded-md border border-white/5 p-0.5 ml-1 shrink-0">
+                              {usePerTabNameDisplay && (() => {
+                                const isTabNameVisible = Boolean(tab.showTabName);
+                                return (
+                                  <button
+                                    onClick={(e) => {
+                                      const next = { ...tabSettings, [tab.id]: { ...tab, showTabName: !isTabNameVisible } };
+                                      setTabSettings(next);
+                                      saveToHistory({ tabSettings: next });
+                                    }}
+                                    className={`w-6 h-6 rounded flex items-center justify-center relative transition-colors shrink-0 ${isTabNameVisible ? "bg-white/20 text-white" : "text-white/40 hover:bg-white/10 hover:text-white"}`}
+                                    title={isTabNameVisible ? "탭 이름 표시 중 (클릭 시 숨김)" : "탭 이름 숨김 중 (클릭 시 표시)"}
+                                  >
+                                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                                      <path d="M17.63 5.84C17.27 5.33 16.67 5 16 5L5 5.01C3.9 5.01 3 5.9 3 7v10c0 1.1.9 1.99 2 1.99L16 19c.67 0 1.27-.33 1.63-.84L22 12l-4.37-6.16z" />
+                                    </svg>
+                                  </button>
+                                );
+                              })()}
                               {(() => {
                                 const isNameColorOverridden = Boolean(tab.applyColorToName);
                                 return (
@@ -4761,7 +4793,23 @@ export default function App() {
                                     className={`w-6 h-6 rounded flex items-center justify-center relative transition-colors shrink-0 ${isNameColorOverridden ? "bg-white/20 text-white" : "text-white/40 hover:bg-white/10 hover:text-white"}`}
                                     title={isNameColorOverridden ? "텍스트 색상으로 캐릭터 이름색 덮어쓰기 적용 중 (클릭 시 해제)" : "캐릭터 이름 본래 색상 유지 중 (클릭 시 텍스트 색상으로 덮어쓰기)"}
                                   >
-                                    <User className="w-3.5 h-3.5 -translate-y-[1px]" style={{ color: isNameColorOverridden ? (tab.textColor || 'white') : 'currentColor' }} />
+                                    <svg
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="1.9"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      className="w-4 h-4 -translate-y-[1px]"
+                                      style={{ color: isNameColorOverridden ? (tab.textColor || 'white') : 'currentColor' }}
+                                    >
+                                      <circle cx="7.5" cy="7" r="3" />
+                                      <path d="M2 19c0-2.8 2.3-4.6 5.5-4.6 1 0 1.9.2 2.7.6" />
+                                      <path d="M17.2 9a5.2 5.2 0 0 0-5.2 5.2c0 2.8 2.1 5 4.8 5 .75 0 1.35-.6 1.35-1.35 0-.35-.15-.65-.35-.9-.2-.2-.35-.5-.35-.85 0-.75.6-1.35 1.35-1.35h1.5a2.1 2.1 0 0 0 2.1-2.1c0-2.4-2.3-3.65-5.2-3.65z" />
+                                      <circle cx="14.6" cy="13" r="0.85" fill="currentColor" stroke="none" />
+                                      <circle cx="17.1" cy="11.6" r="0.85" fill="currentColor" stroke="none" />
+                                      <circle cx="19.6" cy="12.6" r="0.85" fill="currentColor" stroke="none" />
+                                    </svg>
                                     <div className="absolute bottom-1 left-1.5 right-1.5 h-[2px] rounded-full transition-colors" style={{ backgroundColor: isNameColorOverridden ? (tab.textColor || 'white') : 'white', opacity: isNameColorOverridden ? 1 : 0.2 }} />
                                   </button>
                                 );
@@ -5535,8 +5583,8 @@ export default function App() {
                                                 .sort((a,b) => a.name.localeCompare(b.name))
                                                 .slice(0, 9)
                                                 .map((c, i) => (
-                                                    c.imageUrl ? (
-                                                      <img key={i} src={c.imageUrl} className={cn("object-cover rounded-md", thumbSizeClass)} alt="" referrerPolicy="no-referrer" />
+                                                    c.imageUrl?.trim() ? (
+                                                      <img key={i} src={c.imageUrl.trim()} className={cn("object-cover rounded-md", thumbSizeClass)} alt="" referrerPolicy="no-referrer" />
                                                     ) : (
                                                       <div key={i} className={cn("bg-black/20 flex items-center justify-center shrink-0 rounded-md", thumbSizeClass)}>
                                                         
@@ -5548,8 +5596,8 @@ export default function App() {
                                         })() : <></>
                                       }>
                                         <div className="w-8 h-8 rounded-lg outline-none shrink-0 border border-white/5 bg-[#1a1a1a] flex items-center justify-center relative">
-                                          {lib.characters[0]?.imageUrl ? (
-                                              <img src={lib.characters[0].imageUrl} className="w-full h-full object-cover rounded-lg" alt="" referrerPolicy="no-referrer" />
+                                          {lib.characters[0]?.imageUrl?.trim() ? (
+                                              <img src={lib.characters[0].imageUrl.trim()} className="w-full h-full object-cover rounded-lg" alt="" referrerPolicy="no-referrer" />
                                             ) : ( <></> )}
                                         </div>
                                       </Tooltip>
@@ -5694,8 +5742,8 @@ export default function App() {
                                                       >
                                                         <div className="absolute left-0 top-0 bottom-0 w-[6px]" style={{ backgroundColor: c.color || '#fff' }} />
                                                         <div className="w-[28px] h-[28px] rounded-md overflow-hidden bg-black/40 border border-white/5 shrink-0 flex items-center justify-center z-10">
-                                                          {c.imageUrl ? (
-                                                            <img src={c.imageUrl} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
+                                                          {c.imageUrl?.trim() ? (
+                                                            <img src={c.imageUrl.trim()} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
                                                           ) : ( <></> )}
                                                         </div>
                                                         <span className="truncate flex-1 font-medium group-hover:text-white transition-colors z-10 relative">{c.name}</span>
@@ -5968,8 +6016,8 @@ export default function App() {
                                     }
                                   }}
                                 >
-                                  {repImgUrl ? (
-                                    <img src={repImgUrl} alt="" referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain p-0.5 rounded-lg" />
+                                  {repImgUrl?.trim() ? (
+                                    <img src={repImgUrl.trim()} alt="" referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain p-0.5 rounded-lg" />
                                   ) : ( <></> )}
                                   
                                   {/* 뱃지 */}
@@ -6195,7 +6243,11 @@ export default function App() {
                                   setHoverImgLabel(null);
                                 }}
                               >
-                                <img src={ill.url} className="w-full h-full object-cover" alt="삽화" referrerPolicy="no-referrer" />
+                                {ill.url?.trim() ? (
+                                  <img src={ill.url.trim()} className="w-full h-full object-cover" alt="삽화" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <ImageIcon className="w-5 h-5 text-white/30" />
+                                )}
                               </div>
 
                               <div className="flex-grow flex flex-col gap-2 min-w-0">
@@ -6823,7 +6875,7 @@ export default function App() {
                 <HelpCircle className="w-3 h-3 text-white/30 hover:text-white/50 cursor-help transition-colors" />
               </Tooltip>
             </div>
-            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.12.1</span>
+            <span className="text-[8px] font-bold text-white/30 uppercase tracking-[0.3em]">v1.12.2</span>
           </div>
         </div>
       </aside>
@@ -7526,7 +7578,7 @@ export default function App() {
                     <div className="w-full shrink-0" style={{ height: '60px' }} />
 
                     {/* Portal Hover Image Tooltip */}
-                    {hoverImgRect && hoverImgUrl && (() => {
+                    {hoverImgRect && hoverImgUrl?.trim() && (() => {
                       const tooltipWidth = 200;
                       const showOnRight = hoverImgRect.left - tooltipWidth < 10;
                       const leftPos = showOnRight 
@@ -7546,7 +7598,7 @@ export default function App() {
                           }}
                         >
                           <div className="bg-[#1a1a1a] p-2 rounded-2xl border border-white/20 shadow-2xl flex flex-col items-center justify-center max-w-[200px]">
-                            <img src={hoverImgUrl} alt="" referrerPolicy="no-referrer" className="w-auto h-auto min-w-[80px] min-h-[80px] max-w-[180px] max-h-[180px] object-contain rounded-xl block bg-black/40" />
+                            <img src={hoverImgUrl.trim()} alt="" referrerPolicy="no-referrer" className="w-auto h-auto min-w-[80px] min-h-[80px] max-w-[180px] max-h-[180px] object-contain rounded-xl block bg-black/40" />
                             {hoverImgLabel && (
                               <div className="text-[10px] font-bold text-white/80 text-center mt-1.5 truncate w-full px-1">
                                 {hoverImgLabel}
@@ -7809,7 +7861,9 @@ export default function App() {
                           return (
                             <div key={idx} className="flex items-center gap-3 p-2.5 hover:bg-white/5 rounded-xl transition-colors border border-white/5 bg-white/[0.01]">
                               <div className="w-12 h-12 shrink-0 rounded bg-black/40 border border-white/10 overflow-hidden flex items-center justify-center">
-                                <img src={img.url} className="w-full h-full object-contain" alt={img.fileName} referrerPolicy="no-referrer" />
+                                {img.url?.trim() ? (
+                                  <img src={img.url.trim()} className="w-full h-full object-contain" alt={img.fileName} referrerPolicy="no-referrer" />
+                                ) : null}
                               </div>
                               <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
                                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -7909,7 +7963,9 @@ export default function App() {
                                         : "border-white/10 hover:border-white/20 hover:scale-[1.02]"
                                     )}
                                   >
-                                    <img src={img.url} className="w-full h-full object-contain p-1 select-none pointer-events-none" alt={img.fileName} referrerPolicy="no-referrer" />
+                                    {img.url?.trim() ? (
+                                      <img src={img.url.trim()} className="w-full h-full object-contain p-1 select-none pointer-events-none" alt={img.fileName} referrerPolicy="no-referrer" />
+                                    ) : null}
                                     
                                     {/* Checkmark overlay for selected images */}
                                     {isSelected && (
@@ -8052,7 +8108,9 @@ export default function App() {
                                 : "border-white/10 hover:border-white/20 hover:scale-[1.02]"
                             )}
                           >
-                            <img src={img.url} className="w-full h-full object-cover select-none pointer-events-none" alt={img.fileName} referrerPolicy="no-referrer" />
+                            {img.url?.trim() ? (
+                              <img src={img.url.trim()} className="w-full h-full object-cover select-none pointer-events-none" alt={img.fileName} referrerPolicy="no-referrer" />
+                            ) : null}
                             
                             {/* Checkmark overlay for selected images */}
                             {isSelected && (

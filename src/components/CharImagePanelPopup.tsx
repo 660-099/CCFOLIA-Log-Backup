@@ -174,10 +174,10 @@ export const CharImagePanelPopup: React.FC<CharImagePanelPopupProps> = ({
                 disabled={isNew}
                 title={isNew ? "" : item.isRepresentative ? "대표 이미지" : "대표 이미지로 설정"}
               >
-                {isNew ? (
+                {isNew || !item.url?.trim() ? (
                   <ImageIcon className="w-3.5 h-3.5" />
                 ) : (
-                  <img src={item.url} alt="" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+                  <img src={item.url.trim()} alt="" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
                 )}
               </button>
               

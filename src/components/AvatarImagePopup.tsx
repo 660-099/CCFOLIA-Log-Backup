@@ -118,13 +118,15 @@ const StandingThumbnailButton: React.FC<StandingThumbnailButtonProps> = ({
           : "border-white/10 hover:border-white/30"
       )}
     >
-      <img 
-        src={img.url} 
-        alt="" 
-        referrerPolicy="no-referrer" 
-        style={transformStyle}
-        className="w-full h-full pointer-events-none select-none" 
-      />
+      {img.url?.trim() ? (
+        <img 
+          src={img.url.trim()} 
+          alt="" 
+          referrerPolicy="no-referrer" 
+          style={transformStyle}
+          className="w-full h-full pointer-events-none select-none" 
+        />
+      ) : null}
       {img.isRepresentative && (
         <div className="absolute inset-0 border-2 border-white/40 rounded-xl pointer-events-none" />
       )}

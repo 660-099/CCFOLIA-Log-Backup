@@ -58,6 +58,7 @@ export interface TabSetting {
   color?: string; // For secret format
   textColor?: string;
   applyColorToName?: boolean;
+  showTabName?: boolean;
   isBold?: boolean;
   isItalic?: boolean;
 }

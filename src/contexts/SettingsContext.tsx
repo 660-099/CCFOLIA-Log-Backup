@@ -9,6 +9,7 @@ export type SettingsContextType = {
   cssFormat: 'inline' | 'class';
   disableOtherColor: boolean;
   showTabNames: Set<string>;
+  usePerTabNameDisplay: boolean;
   mergeTabStyles: Set<string>;
   charSettings: Record<string, CharSetting>;
   tabSettings: Record<string, TabSetting>;
@@ -54,6 +55,7 @@ export const SettingsProvider: React.FC<{
     settings.cssFormat,
     settings.disableOtherColor,
     settings.showTabNames,
+    settings.usePerTabNameDisplay,
     settings.mergeTabStyles,
     settings.charSettings,
     settings.tabSettings,

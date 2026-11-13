@@ -32,9 +32,52 @@ export const DEFAULT_PROJECT_SAVE_OPTIONS: ProjectSaveOptions = {
   },
 };
 
+export const DEFAULT_SETTINGS_VALUES = {
+  exportMode: 'blog' as const,
+  cssFormat: 'internal' as const,
+  fontSize: 14,
+  textFontSize: 14,
+  lineHeight: 1.6,
+  letterSpacing: 0,
+  blockSpacing: 2,
+  contentPadding: 12,
+  avatarSizeValue: 46,
+  fontFamily: 'Noto Sans KR',
+  theme: 'dark' as const,
+  darkBgColor: '#212121',
+  lightBgColor: '#ffffff',
+  disableOtherColor: true,
+  filterBarMode: 'none' as const,
+  defaultIllWidth: '100%',
+  defaultIllAlign: 'center' as const,
+  saveOptions: DEFAULT_PROJECT_SAVE_OPTIONS,
+  librarySortMode: 'newest' as const,
+  mergeTabs: ['main', 'secret', 'other'] as TabFormat[],
+  showTabNames: ['secret'] as TabFormat[],
+  usePerTabNameDisplay: false,
+  mergeTabStyles: ['secret'] as TabFormat[],
+  hideEmptyAvatars: false,
+  cropFaceTop: false,
+  hideAllAvatars: false,
+  enableSentenceSpacing: false,
+  enableSentenceSpacing2: false,
+  enableSecretNarration: false,
+  enableSecretNarration2: false,
+  narrationFormat: 'style1' as const,
+  narrationFormat2: 'style1' as const,
+  showLogDivider: false,
+  narrationCharacter: null as string | null,
+  narrationCharacter2: null as string | null,
+  standingZoomed: false,
+  tabSortMode: 'appearance' as const,
+  charSortMode: 'appearance' as const,
+  illustrationSortMode: 'appearance' as const,
+};
+
 interface SettingsState {
   rememberSettings: boolean;
   setRememberSettings: (val: boolean) => void;
+  resetAllSettingsToDefaults: () => void;
   cssFormat: 'inline' | 'internal';
   setCssFormat: (val: 'inline' | 'internal') => void;
   fontSize: number;
@@ -75,6 +118,8 @@ interface SettingsState {
   setMergeTabs: (val: TabFormat[]) => void;
   showTabNames: TabFormat[];
   setShowTabNames: (val: TabFormat[]) => void;
+  usePerTabNameDisplay: boolean;
+  setUsePerTabNameDisplay: (val: boolean) => void;
   mergeTabStyles: TabFormat[];
   setMergeTabStyles: (val: TabFormat[]) => void;
   hideEmptyAvatars: boolean;
@@ -118,91 +163,66 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       rememberSettings: true,
       setRememberSettings: (val) => set({ rememberSettings: val }),
-      exportMode: 'blog',
+      resetAllSettingsToDefaults: () => set((state) => ({
+        ...DEFAULT_SETTINGS_VALUES,
+        rememberSettings: state.rememberSettings,
+      })),
+      ...DEFAULT_SETTINGS_VALUES,
       setExportMode: (val) => set({ exportMode: val }),
-      cssFormat: 'internal',
       setCssFormat: (val) => set({ cssFormat: val }),
-      fontSize: 14,
       setFontSize: (val) => set({ fontSize: val }),
-      textFontSize: 14,
       setTextFontSize: (val) => set({ textFontSize: val }),
-      lineHeight: 1.6,
       setLineHeight: (val) => set({ lineHeight: val }),
-      letterSpacing: 0,
       setLetterSpacing: (val) => set({ letterSpacing: val }),
-      blockSpacing: 2,
       setBlockSpacing: (val) => set({ blockSpacing: val }),
-      contentPadding: 12,
       setContentPadding: (val) => set({ contentPadding: val }),
-      avatarSizeValue: 46,
       setAvatarSizeValue: (val) => set({ avatarSizeValue: val }),
-      fontFamily: 'Noto Sans KR',
       setFontFamily: (val) => set({ fontFamily: val }),
-      theme: 'dark',
       setTheme: (val) => set({ theme: val }),
-      darkBgColor: '#212121',
       setDarkBgColor: (val) => set({ darkBgColor: val }),
-      lightBgColor: '#ffffff',
       setLightBgColor: (val) => set({ lightBgColor: val }),
-      disableOtherColor: true,
       setDisableOtherColor: (val) => set({ disableOtherColor: val }),
-      filterBarMode: 'none',
       setFilterBarMode: (val) => set({ filterBarMode: val }),
-      defaultIllWidth: '100%',
       setDefaultIllWidth: (val) => set({ defaultIllWidth: val }),
-      defaultIllAlign: 'center',
       setDefaultIllAlign: (val) => set({ defaultIllAlign: val }),
-      saveOptions: DEFAULT_PROJECT_SAVE_OPTIONS,
       setSaveOptions: (val) => set((state) => ({ saveOptions: typeof val === 'function' ? val(state.saveOptions || DEFAULT_PROJECT_SAVE_OPTIONS) : val })),
-      librarySortMode: 'newest',
       setLibrarySortMode: (val) => set({ librarySortMode: val }),
-      mergeTabs: [],
       setMergeTabs: (val) => set({ mergeTabs: val }),
-      showTabNames: [],
       setShowTabNames: (val) => set({ showTabNames: val }),
-      mergeTabStyles: [],
+      setUsePerTabNameDisplay: (val) => set({ usePerTabNameDisplay: val }),
       setMergeTabStyles: (val) => set({ mergeTabStyles: val }),
-      hideEmptyAvatars: false,
       setHideEmptyAvatars: (val) => set({ hideEmptyAvatars: val }),
-      cropFaceTop: false,
       setCropFaceTop: (val) => set({ cropFaceTop: val }),
-      hideAllAvatars: false,
       setHideAllAvatars: (val) => set({ hideAllAvatars: val }),
-      enableSentenceSpacing: false,
       setEnableSentenceSpacing: (val) => set({ enableSentenceSpacing: val }),
-      enableSentenceSpacing2: false,
       setEnableSentenceSpacing2: (val) => set({ enableSentenceSpacing2: val }),
-      enableSecretNarration: false,
       setEnableSecretNarration: (val) => set({ enableSecretNarration: val }),
-      enableSecretNarration2: false,
       setEnableSecretNarration2: (val) => set({ enableSecretNarration2: val }),
-      narrationFormat: 'style1',
       setNarrationFormat: (val) => set({ narrationFormat: val }),
-      narrationFormat2: 'style1',
       setNarrationFormat2: (val) => set({ narrationFormat2: val }),
-      showLogDivider: false,
       setShowLogDivider: (val) => set({ showLogDivider: val }),
-      narrationCharacter: null,
       setNarrationCharacter: (val) => set({ narrationCharacter: val }),
-      narrationCharacter2: null,
       setNarrationCharacter2: (val) => set({ narrationCharacter2: val }),
-      standingZoomed: false,
       setStandingZoomed: (val) => set({ standingZoomed: val }),
-      tabSortMode: 'appearance',
       setTabSortMode: (val) => set((state) => ({ tabSortMode: typeof val === 'function' ? val(state.tabSortMode) : val })),
-      charSortMode: 'appearance',
       setCharSortMode: (val) => set((state) => ({ charSortMode: typeof val === 'function' ? val(state.charSortMode) : val })),
-      illustrationSortMode: 'appearance',
       setIllustrationSortMode: (val) => set((state) => ({ illustrationSortMode: typeof val === 'function' ? val(state.illustrationSortMode) : val }))
     }),
     {
       name: 'ccfolia_settings',
       partialize: (state) => {
+        if (!state.rememberSettings) {
+          return { rememberSettings: false } as unknown as SettingsState;
+        }
         const { narrationCharacter, narrationCharacter2, ...rest } = state;
         return rest;
       },
       onRehydrateStorage: () => (state) => {
         if (state) {
+          if (!state.rememberSettings) {
+            Object.assign(state, DEFAULT_SETTINGS_VALUES, { rememberSettings: false });
+            return;
+          }
           state.narrationCharacter = null;
           state.narrationCharacter2 = null;
           if (!state.saveOptions || !state.saveOptions.chars || typeof state.saveOptions.chars !== 'object') {

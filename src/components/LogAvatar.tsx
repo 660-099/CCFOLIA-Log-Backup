@@ -15,15 +15,15 @@ export const LogAvatar = React.memo(({ img, theme, avatarSize, hideEmptyAvatars,
       alignItems: 'center', 
       justifyContent: 'center' 
     }}>
-      {img && !hasError ? (
+      {img?.trim() && !hasError ? (
         <img 
-          src={img} 
+          src={img.trim()} 
           alt="" 
           style={{ width: '100%', height: '100%', objectFit: cropFaceTop ? 'cover' : 'contain', objectPosition: cropFaceTop ? 'top' : 'center' }} 
           onError={() => setHasError(true)}
           referrerPolicy="no-referrer"
         />
-      ) : img && hasError ? (
+      ) : img?.trim() && hasError ? (
         <div className="text-red-500/40">
           <ImageIcon className="w-4 h-4" />
         </div>

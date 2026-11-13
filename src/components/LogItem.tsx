@@ -91,7 +91,7 @@ export const LogItem = React.memo(({
 }: any) => {
   const { 
     theme, disableOtherColor, fontSize, textFontSize,
-    mergeTabStyles, showTabNames, hideEmptyAvatars, cropFaceTop, hideAllAvatars,
+    mergeTabStyles, showTabNames, usePerTabNameDisplay = false, hideEmptyAvatars, cropFaceTop, hideAllAvatars,
     narrationCharacter, narrationCharacter2, narrationSlots, charSettings: charSettingsFromContext, tabSettings,
     enableSentenceSpacing, enableSentenceSpacing2, enableSecretNarration, enableSecretNarration2, narrationFormat, narrationFormat2,
     lineHeight = 1.6, letterSpacing = 0, blockSpacing = 2, contentPadding = 15.5, avatarSizeValue = 46,
@@ -134,6 +134,14 @@ export const LogItem = React.memo(({
   };
 
   const tabSet = getTabSetting(log.tabId, log.tab);
+  const isTabNameVisibleFor = (tabId?: string, tabName?: string, resolvedFormat?: string): boolean => {
+    const ts = getTabSetting(tabId, tabName);
+    const fmt = resolvedFormat || ts?.format || resolveTabFormat(tabId, tabName);
+    if (usePerTabNameDisplay) {
+      return Boolean(ts?.showTabName);
+    }
+    return showTabNames.has(fmt);
+  };
   const char = charSettings[log.charId] || { id: log.charId, name: log.name, color: log.color, visible: true, imageUrl: '', images: [] };
 
   const isEditing = editingLogId === log.id;
@@ -818,7 +826,7 @@ export const LogItem = React.memo(({
   const mergeWithPrev = !isPrevBlock && (log.isContinuation || (shouldMergeStyle && isPrevSameTab && !isSectionStart));
   const mergeWithNext = isNextContinuation || (shouldMergeStyle && isNextSameTab && !isSectionEnd);
 
-  const shouldShowIndex = showTabNames.has(format) && (!isPrevSameTab || isPrevBlock);
+  const shouldShowIndex = isTabNameVisibleFor(log.tabId, log.tab, format) && (!isPrevSameTab || isPrevBlock);
   
   let itemMarginTop = '0';
   let itemMarginBottom = '0';
@@ -849,27 +857,29 @@ export const LogItem = React.memo(({
     const logB = mergedLogs[i + 1];
     if (!logA || !logB) return false;
 
-    const getFormatOf = (l: any) => {
+    const getTabAndFormatOf = (l: any) => {
       if (l.isIllustration) {
         const ill = l.illustration || { tabOverride: l.tabOverride || 'auto' };
         const resolvedTabOverride = ill.tabOverride === 'auto' || !ill.tabOverride ? (l.tabId || 'main') : ill.tabOverride;
         const illTabSet = getTabSetting(resolvedTabOverride) || tabSettings['main'];
-        return illTabSet?.format || 'main';
+        return { tabId: resolvedTabOverride, tabName: illTabSet?.name, format: illTabSet?.format || 'main' };
       }
       const formatVal = resolveTabFormat(l.tabId, l.tab);
-      if (Boolean(getNarrationConfig(l.charId, l.name)) && formatVal === 'main') {
-        return 'narration';
-      }
-      return formatVal;
+      const effectiveFormat = (Boolean(getNarrationConfig(l.charId, l.name)) && formatVal === 'main') ? 'narration' : formatVal;
+      return { tabId: l.tabId, tabName: l.tab, format: effectiveFormat };
     };
 
-    const formatA = getFormatOf(logA);
-    const formatB = getFormatOf(logB);
+    const infoA = getTabAndFormatOf(logA);
+    const infoB = getTabAndFormatOf(logB);
+    const formatA = infoA.format;
+    const formatB = infoB.format;
+    const showNameA = isTabNameVisibleFor(infoA.tabId, infoA.tabName, formatA);
+    const showNameB = isTabNameVisibleFor(infoB.tabId, infoB.tabName, formatB);
 
     const isISA = formatA === 'info' || formatA === 'secret';
     const isISB = formatB === 'info' || formatB === 'secret';
-    const isTabNameAndMergeA = isISA && showTabNames.has(formatA) && mergeTabStyles.has(formatA);
-    const isTabNameAndMergeB = isISB && showTabNames.has(formatB) && mergeTabStyles.has(formatB);
+    const isTabNameAndMergeA = isISA && showNameA && mergeTabStyles.has(formatA);
+    const isTabNameAndMergeB = isISB && showNameB && mergeTabStyles.has(formatB);
 
     // [강제 규칙] 정보/비밀 탭이고 '탭 이름 표시' & '탭별 통합'이 활성화되었을 때, 탭 묶음의 상/하단에는 무조건 구분선 적용
     if (isTabNameAndMergeA && (logA.tabId !== logB.tabId || !isISB)) {
@@ -897,16 +907,16 @@ export const LogItem = React.memo(({
           if (mergeTabStyles.has(formatA) || mergeTabStyles.has(formatB)) {
             return true;
           }
-          return showTabNames.has(formatB);
+          return showNameB;
         }
       }
       if (!isISA && isISB) {
         // 가장 첫 정보/비밀 위: '탭 이름 표시'가 활성화되어 있다면 구분선이 있음
-        return showTabNames.has(formatB);
+        return showNameB;
       }
       if (isISA && !isISB) {
         // 가장 마지막 정보/비밀 아래: 해당 비밀/정보탭의 '탭 이름 표시'가 활성화되어 있을 때만 구분선이 들어감
-        return showTabNames.has(formatA);
+        return showNameA;
       }
     }
 
@@ -932,11 +942,11 @@ export const LogItem = React.memo(({
 
   const hasDividerBelow = useMemo(() => {
     return getHasDividerBelow(idx);
-  }, [idx, mergedLogsCount, mergedLogs, tabSettings, narrationCharacter, narrationCharacter2, showTabNames, mergeTabStyles, showLogDivider]);
+  }, [idx, mergedLogsCount, mergedLogs, tabSettings, narrationCharacter, narrationCharacter2, showTabNames, usePerTabNameDisplay, mergeTabStyles, showLogDivider]);
 
   const hasDividerAbove = useMemo(() => {
     return idx > 0 ? getHasDividerBelow(idx - 1) : false;
-  }, [idx, mergedLogsCount, mergedLogs, tabSettings, narrationCharacter, narrationCharacter2, showTabNames, mergeTabStyles, showLogDivider]);
+  }, [idx, mergedLogsCount, mergedLogs, tabSettings, narrationCharacter, narrationCharacter2, showTabNames, usePerTabNameDisplay, mergeTabStyles, showLogDivider]);
 
   const prevLog = idx > 0 ? mergedLogs[idx - 1] : null;
   const prevFormat = useMemo(() => {
@@ -988,11 +998,11 @@ export const LogItem = React.memo(({
 
   const nextShouldShowIndex = useMemo(() => {
     if (!nextLog) return false;
-    const tabSet = tabSettings[nextLog.tabId];
-    const nFormat = tabSet?.format || 'main';
+    const nextTabSet = getTabSetting(nextLog.tabId, nextLog.tab);
+    const nFormat = nextTabSet?.format || 'main';
     const isSameTab = log.tabId === nextLog.tabId;
-    return showTabNames.has(nFormat) && (!isSameTab || hasBlockAfter);
-  }, [nextLog, log.tabId, tabSettings, showTabNames, hasBlockAfter]);
+    return isTabNameVisibleFor(nextLog.tabId, nextLog.tab, nFormat) && (!isSameTab || hasBlockAfter);
+  }, [nextLog, log.tabId, tabSettings, showTabNames, usePerTabNameDisplay, hasBlockAfter]);
 
   const dividerMarginTop = useMemo(() => {
     if (!hasSpecialDividerBelow) return 0;
@@ -1099,7 +1109,7 @@ export const LogItem = React.memo(({
     const paddingHorizontal = contentPaddingValue * scale;
     const paddingVertical = basePaddingVertical * scale;
 
-    const renderHeader = showTabNames.has(bgmFormat) && isFirstInSection;
+    const renderHeader = isTabNameVisibleFor(resolvedBgmTabId, bgmTabSet?.name, bgmFormat) && isFirstInSection;
 
     if (isEditing) {
       return (
@@ -1421,7 +1431,7 @@ export const LogItem = React.memo(({
     const paddingHorizontal = contentPaddingValue * scale;
     const paddingVertical = basePaddingVertical * scale;
 
-    const renderHeader = showTabNames.has(illFormat) && isFirstInSection;
+    const renderHeader = isTabNameVisibleFor(resolvedTabOverride, illTabSet?.name, illFormat) && isFirstInSection;
 
     return (
       <div 

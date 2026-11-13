@@ -502,12 +502,14 @@ export const BulkImageAllocatorModal: React.FC<BulkImageAllocatorModalProps> = (
                           >
                             {/* Image Preview Container */}
                             <div className="flex-1 w-full relative flex items-center justify-center p-2 overflow-hidden bg-black/20">
-                              <img 
-                                src={img.url} 
-                                alt={img.fileName} 
-                                className="w-full h-full object-contain pointer-events-none select-none" 
-                                referrerPolicy="no-referrer"
-                              />
+                              {img.url?.trim() ? (
+                                <img 
+                                  src={img.url.trim()} 
+                                  alt={img.fileName} 
+                                  className="w-full h-full object-contain pointer-events-none select-none" 
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : null}
 
                               {/* Top-left: Assigned Character Badge */}
                               <div className="absolute top-2 left-2 flex items-center gap-1 pointer-events-none">
@@ -591,12 +593,14 @@ export const BulkImageAllocatorModal: React.FC<BulkImageAllocatorModalProps> = (
                                   title="클릭하여 현재 캐릭터에게 배정"
                                 >
                                   <div className="flex-1 w-full relative flex items-center justify-center p-2 bg-black/20">
-                                    <img 
-                                      src={img.url} 
-                                      alt={img.fileName} 
-                                      className="w-full h-full object-contain pointer-events-none select-none" 
-                                      referrerPolicy="no-referrer"
-                                    />
+                                    {img.url?.trim() ? (
+                                      <img 
+                                        src={img.url.trim()} 
+                                        alt={img.fileName} 
+                                        className="w-full h-full object-contain pointer-events-none select-none" 
+                                        referrerPolicy="no-referrer"
+                                      />
+                                    ) : null}
                                     {/* Hover prompt to assign */}
                                     <div className="absolute inset-0 bg-[#e6005c]/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                       <div className="w-7 h-7 rounded-full bg-[#e6005c] text-white flex items-center justify-center shadow-lg">
@@ -663,12 +667,14 @@ export const BulkImageAllocatorModal: React.FC<BulkImageAllocatorModalProps> = (
                                   title="클릭하여 배정 해제"
                                 >
                                   <div className="flex-1 w-full relative flex items-center justify-center p-2 bg-black/20">
-                                    <img 
-                                      src={img.url} 
-                                      alt={img.fileName} 
-                                      className="w-full h-full object-contain pointer-events-none select-none" 
-                                      referrerPolicy="no-referrer"
-                                    />
+                                    {img.url?.trim() ? (
+                                      <img 
+                                        src={img.url.trim()} 
+                                        alt={img.fileName} 
+                                        className="w-full h-full object-contain pointer-events-none select-none" 
+                                        referrerPolicy="no-referrer"
+                                      />
+                                    ) : null}
                                     {/* Hover prompt to remove */}
                                     <div className="absolute inset-0 bg-red-500/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                       <div className="w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg">

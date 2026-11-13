@@ -58,7 +58,7 @@ export const LogImage = React.memo(({
       minHeight: '44px',
       width: '100%'
     }} className="group/img min-h-[44px] w-full">
-      {hasError ? (
+      {hasError || !url?.trim() ? (
         <div className="flex flex-col items-center justify-center p-6 mx-auto bg-red-500/10 border border-red-500/20 rounded-xl gap-2 w-full max-w-md">
           <div className="text-red-400/40">
             <ImageIcon className="w-8 h-8" />
@@ -75,7 +75,7 @@ export const LogImage = React.memo(({
           width: width ? (isNaN(Number(width)) ? width : `${width}px`) : 'auto',
         }} className="flex items-start justify-center">
           <img 
-            src={url} 
+            src={url.trim()} 
             alt="" 
             style={{ 
               maxWidth: '100%', 
